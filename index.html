@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Vendor Cost Portal</title>
+  <meta name="description" content="FOB vendor cost collection, comparison and program placement portal">
+  <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+
+  <!-- ── Login Screen ──────────────────────────────────────── -->
+  <div id="login-screen">
+    <div class="login-card">
+      <div class="login-logo">
+        <div class="logo-icon-lg">💼</div>
+        <h1>Vendor Cost Portal</h1>
+        <p>FOB costing, comparison &amp; program placement</p>
+      </div>
+      <div id="login-error" class="alert alert-danger" style="display:none"></div>
+      <form id="login-form">
+        <div class="form-group">
+          <label class="form-label" for="login-email">Email Address</label>
+          <input class="form-input" id="login-email" type="email" placeholder="you@company.com" required
+            autocomplete="email">
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="login-password">Password</label>
+          <input class="form-input" id="login-password" type="password" placeholder="••••••••" required
+            autocomplete="current-password">
+        </div>
+        <button class="btn btn-primary w-full" type="submit" style="justify-content:center;margin-top:8px">Sign In
+          →</button>
+      </form>
+      <p class="text-center text-muted text-sm" style="margin-top:24px">
+        Admin: <code>admin@company.com</code> / <code>admin123</code><br>
+        Trading Co. demo: <code>shk@vendor.com</code> / <code>vendor123</code>
+      </p>
+    </div>
+  </div>
+
+  <!-- ── Main App ───────────────────────────────────────────── -->
+  <div id="main-layout" style="display:none">
+
+    <!-- Sidebar -->
+    <nav id="sidebar">
+      <div class="sidebar-logo">
+        <div class="logo-mark">
+          <div class="logo-icon">💼</div>
+          <div>
+            <div class="logo-text">Cost Portal</div>
+            <div class="logo-sub">Vendor FOB Management</div>
+          </div>
+        </div>
+      </div>
+      <div id="sidebar-nav"></div>
+      <div class="sidebar-footer">
+        <div id="sidebar-user"></div>
+      </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main id="content"></main>
+
+  </div>
+
+  <!-- Sidebar toggle (outside layout so it never slides with the sidebar) -->
+  <button id="sidebar-toggle" title="Toggle sidebar" onclick="App.toggleSidebar()">◀</button>
+
+  <!-- Modals: overlay wraps box so flex-centering works -->
+  <div id="modal-overlay" class="modal-overlay hidden" onclick="App.closeModalOutside(event)">
+    <div id="modal-box" class="modal hidden"></div>
+  </div>
+
+  <!-- Scripts -->
+  <script src="db.js"></script>
+  <script src="views-admin.js"></script>
+  <script src="views-vendor.js"></script>
+  <script src="app.js"></script>
+</body>
+
+</html>
