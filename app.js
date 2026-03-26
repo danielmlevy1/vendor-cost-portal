@@ -6,7 +6,7 @@
 const App = (() => {
   const $ = id => document.getElementById(id);
   const v = id => ($(`${id}`)?.value || '').trim();
-  const nv = id => { const x = parseFloat($(`${id}`)?.value); return isNaN(x) ? null : x; };
+  const nv = id => { const raw = ($(id)?.value||'').replace(/^\$/,''); const x = parseFloat(raw); return isNaN(x) ? null : x; };
 
   // ── State ──────────────────────────────────────────────────
   const state = {
@@ -49,10 +49,19 @@ const App = (() => {
     const emailEl = document.getElementById('login-email');
     const pwdEl = document.getElementById('login-password');
     const errEl = document.getElementById('login-error');
-    const user = DB.Auth.login((emailEl?.value || '').trim(), (pwdEl?.value || '').trim());
-    if (!user) { if (errEl) { errEl.style.display = ''; errEl.textContent = 'Invalid email or password'; } return; }
+    const email = (emailEl?.value || '').trim();
+    const password = (pwdEl?.value || '').trim();
+    console.log('[Login] Attempting:', email, '/ len:', password.length);
+    const user = DB.Auth.login(email, password);
+    console.log('[Login] Result:', user);
+    if (!user) {
+      if (errEl) { errEl.style.display = ''; errEl.textContent = 'Invalid email or password'; }
+      console.warn('[Login] FAILED. Users in DB:', DB.Users ? DB.Users.all() : 'no Users API');
+      return;
+    }
     state.user = user; renderApp();
   }
+
 
   function logout() {
     DB.Auth.logout(); state.user = null;
@@ -73,8 +82,40 @@ const App = (() => {
     if (ls) ls.style.display = 'none';
     if (ml) ml.style.display = '';
 
+    // ── Role switcher panel (inject once, update active user indicator) ──
+    if (!document.getElementById('role-switcher')) {
+      const allUsers = DB.PCUsers.allStaff();
+      const allTCs   = DB.TradingCompanies.all();
+      const accounts = [
+        ...allUsers.map(u => ({ label: u.name, sub: u.role === 'admin' ? 'Admin' : 'Production', email: u.email, password: u.password })),
+        ...allTCs.map(t  => ({ label: t.name,  sub: t.code + ' · Vendor', email: t.email, password: t.password })),
+      ];
+      const panel = document.createElement('div');
+      panel.id = 'role-switcher';
+      panel._accounts = accounts;
+      panel.innerHTML = `
+        <button id="rs-toggle-btn" onclick="App.toggleRoleSwitcher()" title="Switch user account">👤 Switch</button>
+        <div id="rs-menu" style="display:none">
+          <div class="rs-menu-title">Switch Account</div>
+          ${accounts.map((a, i) => `
+            <button class="rs-item" onclick="App.switchToUser(${i})">
+              <span class="rs-label">${a.label}</span>
+              <span class="rs-sub">${a.sub}</span>
+            </button>`).join('')}
+        </div>`;
+      document.body.appendChild(panel);
+    }
+    // Highlight current user in switcher
+    const panel = document.getElementById('role-switcher');
+    if (panel?._accounts) {
+      panel.querySelectorAll('.rs-item').forEach((btn, i) => {
+        btn.classList.toggle('rs-active', panel._accounts[i]?.email === state.user.email);
+      });
+    }
+
     const isAdmin = state.user.role === 'admin';
     const isPC    = state.user.role === 'pc';
+
     const navEl = document.getElementById('sidebar-nav');
     const userEl = document.getElementById('sidebar-user');
     const pendingCount = (isAdmin) ? DB.PendingChanges.pending().length : 0;
@@ -97,7 +138,12 @@ const App = (() => {
           <button class="nav-item ${state.route === 'staff' ? 'active' : ''}" onclick="App.navigate('staff')"><span class="icon">👤</span> Staff</button>
         ` : ''}
       ` : `
-        <button class="nav-item ${state.route === 'my-styles' ? 'active' : ''}" onclick="App.navigate('my-styles')"><span class="icon">📋</span> My Styles</button>
+        <button class="nav-item ${
+          state.route === '' || state.route === 'vendor-home' || state.route === 'vendor-program' ? 'active' : ''
+        }" onclick="App.navigate('')"><span class="icon">🏠</span> My Programs</button>
+        <button class="nav-item ${state.route === 'my-styles' ? 'active' : ''}" onclick="App.navigate('my-styles')"><span class="icon">📋</span> All Styles</button>
+        <div class="sidebar-section"><div class="sidebar-section-label">Account</div></div>
+        <button class="nav-item ${state.route === 'my-company' ? 'active' : ''}" onclick="App.navigate('my-company')"><span class="icon">🏣</span> My Company</button>
       `}
       </div>`;
 
@@ -131,7 +177,15 @@ const App = (() => {
       else if (route === 'staff'           && isAdmin) mc.innerHTML = AdminViews.renderStaff();
       else mc.innerHTML = AdminViews.renderPrograms();
     } else {
-      if (route === 'my-styles' || !route) mc.innerHTML = VendorViews.renderMyStyles(user.tcId);
+      // TC / Vendor routes — guard against admin route access
+      const tcForbidden = ['programs','styles','cost-summary','compare','cross-program',
+        'trading-companies','internal','coo','pending-changes','staff'];
+      if (tcForbidden.includes(route)) { navigate(''); return; }
+
+      if      (route === 'vendor-program')   mc.innerHTML = VendorViews.renderProgramStyles(user.tcId, routeParam);
+      else if (route === 'my-styles')        mc.innerHTML = VendorViews.renderMyStyles(user.tcId);
+      else if (route === 'my-company')       mc.innerHTML = VendorViews.renderMyCompany(user.tcId);
+      else                                   mc.innerHTML = VendorViews.renderPrograms(user.tcId);
     }
     // Post-render setup
     setTimeout(() => {
@@ -498,8 +552,110 @@ const App = (() => {
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'style_template.csv'; a.click();
   }
 
+  // ── TC inline cell save (FOB / Factory Cost) ───────────────
+  function saveVendorCellInline(styleId, tcId, coo, field, inputEl) {
+    const raw = (inputEl.value || '').replace(/^\$/, '').trim();
+    const value = raw === '' ? null : parseFloat(raw);
+    if (raw !== '' && isNaN(value)) return; // invalid — don't save
+
+    const existing = DB.Submissions.all().find(s => s.tcId === tcId && s.styleId === styleId && s.coo === coo);
+    const oldValue = existing?.[field] ?? null;
+    const hasChanged = value !== null && String(value) !== String(oldValue);
+
+    const doSave = (reason) => {
+      const updateData = existing
+        ? { ...existing, [field]: value }
+        : { tcId, styleId, coo, [field]: value };
+      if (value != null && updateData.status === 'skipped') delete updateData.status;
+      const user = state.user;
+      const sub = DB.Submissions.upsert(updateData, user?.name || user?.email);
+      // Patch reason + submittedByName into the revision entry that upsert just wrote
+      if (hasChanged && sub?.id && reason) {
+        const revs = JSON.parse(localStorage.getItem('vcp_revisions') || '[]');
+        // Find the most recent entry for this sub+field (the one just written)
+        let lastIdx = -1;
+        for (let i = revs.length - 1; i >= 0; i--) {
+          if (revs[i].subId === sub.id && revs[i].field === field && !revs[i].type) { lastIdx = i; break; }
+        }
+        if (lastIdx >= 0) {
+          revs[lastIdx].reason = reason;
+          revs[lastIdx].submittedByName = user?.name || user?.email || revs[lastIdx].submittedByName;
+          localStorage.setItem('vcp_revisions', JSON.stringify(revs));
+        }
+      }
+      if (value != null) inputEl.value = '$' + value.toFixed(2);
+    };
+
+    if (hasChanged && oldValue !== null) {
+      // Prompt for reason
+      closeCellMenu();
+      const menu = document.createElement('div');
+      menu.id = 'cell-highlight-menu';
+      menu.style.cssText = `position:fixed;z-index:9998;bottom:80px;right:24px;
+        background:rgba(18,18,32,0.97);border:1px solid rgba(255,255,255,0.12);border-radius:10px;
+        padding:14px;min-width:260px;box-shadow:0 8px 32px rgba(0,0,0,.55);backdrop-filter:blur(12px);font-family:var(--font);`;
+      menu.innerHTML = `
+        <div style="font-size:.75rem;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:#64748b;margin-bottom:8px">Reason for price change?</div>
+        <input id="price-change-reason" class="form-input" style="width:100%;margin-bottom:8px" placeholder="e.g. Material cost update (optional)">
+        <div style="display:flex;gap:8px;justify-content:flex-end">
+          <button class="cm-item" style="width:auto;padding:5px 12px" onclick="document.getElementById('cell-highlight-menu')?.remove();App._pendingSave()">Skip</button>
+          <button class="cm-item" style="width:auto;padding:5px 12px;background:rgba(99,102,241,.2)" onclick="App._pendingSave(document.getElementById('price-change-reason')?.value)">Save</button>
+        </div>`;
+      document.body.appendChild(menu);
+      App._pendingSave = (reason) => { closeCellMenu(); doSave(reason || ''); };
+      setTimeout(() => document.getElementById('price-change-reason')?.focus(), 50);
+    } else {
+      doSave('');
+    }
+  }
+
+  // ── TC Skip / Un-skip a COO ────────────────────────────────
+  function openSkipVendorCoo(styleId, tcId, coo) {
+    const existing = DB.Submissions.all().find(s => s.tcId === tcId && s.styleId === styleId && s.coo === coo);
+    const currentReason = existing?.skipReason || '';
+    showModal(`
+      <div class="modal-header" style="display:block;margin-bottom:16px">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <h2>⊘ Skip ${coo} for this Style</h2>
+          <button class="btn btn-ghost btn-icon" onclick="App.closeModal()">✕</button>
+        </div>
+        <p class="text-sm text-muted mt-1">Skipping removes this COO from your quote. Please provide a reason so Production can review.</p>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Reason for Skipping *</label>
+        <textarea class="form-textarea" id="skip-reason-input" rows="3" placeholder="e.g. Cannot source this fabrication in ${coo}, MOQ too low at expected price…">${currentReason}</textarea>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="App.closeModal()">Cancel</button>
+        <button class="btn btn-danger" onclick="App.confirmSkipVendorCoo('${styleId}','${tcId}','${coo}')">Confirm Skip</button>
+      </div>`);
+  }
+
+  function confirmSkipVendorCoo(styleId, tcId, coo) {
+    const reasonEl = document.getElementById('skip-reason-input');
+    const reason = reasonEl ? reasonEl.value.trim() : '';
+    if (!reason) { reasonEl?.classList.add('input-error'); return; }
+    const existing = DB.Submissions.all().find(s => s.tcId === tcId && s.styleId === styleId && s.coo === coo);
+    DB.Submissions.upsert({ ...(existing || { tcId, styleId, coo }), status: 'skipped', skipReason: reason, fob: null, factoryCost: null });
+    closeModal();
+    navigate(state.route, state.routeParam);
+  }
+
+  function unskipVendorCoo(styleId, tcId, coo) {
+    const existing = DB.Submissions.all().find(s => s.tcId === tcId && s.styleId === styleId && s.coo === coo);
+    if (existing) DB.Submissions.upsert({ ...existing, status: 'pending', skipReason: null, fob: null, factoryCost: null });
+    navigate(state.route, state.routeParam);
+  }
+
+
   // ── Vendor (TC) Bulk Quote Upload ──────────────────────────
+  // ── Vendor Navigation ─────────────────────────────────────
+  function navigateVendorHome(tcId) { navigate('vendor-home'); }
+  function navigateVendorProgram(tcId, programId) { navigate('vendor-program', programId); }
+  function navigateVendorAllStyles(tcId) { navigate('my-styles'); }
+
   function openVendorBulkUpload(tcId) { showModal(VendorViews.bulkUploadForm(tcId), 'modal-lg'); }
+
 
   function handleVendorDrop(e, tcId) {
     e.preventDefault(); $('vendor-upload-zone')?.classList.remove('dragover');
@@ -737,7 +893,7 @@ const App = (() => {
   // ── Inline Submission Save (FOB / Factory Cost) ────────────
   function saveSubmissionInline(styleId, tcId, coo, inputEl) {
     const field = inputEl.dataset.field;
-    const raw = inputEl.value.trim();
+    const raw = inputEl.value.trim().replace(/^\$/, ''); // strip currency prefix
     const value = raw === '' ? null : parseFloat(raw);
     if (raw !== '' && isNaN(value)) return; // invalid — don't save
 
@@ -1156,37 +1312,329 @@ const App = (() => {
     navigate('coo');
   }
 
+
+  // ── Cell Flag Menu (right-click context menu) ───────────────
+  function openFlagMenu(event, subId, field) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!subId) return; // no submission yet — nothing to flag
+    const user = state.user;
+    if (!user || (user.role !== 'admin' && user.role !== 'pc')) return;
+
+    // Remove any existing menu
+    const old = document.getElementById('flag-context-menu');
+    if (old) old.remove();
+
+    const existing = DB.CellFlags.get(subId, field);
+    const label = field === 'fob' ? 'FOB' : 'Factory Cost';
+
+    const menu = document.createElement('div');
+    menu.id = 'flag-context-menu';
+    menu.className = 'flag-context-menu';
+    menu.style.left = event.pageX + 'px';
+    menu.style.top  = event.pageY + 'px';
+    menu.innerHTML = `
+      <div class="flag-menu-title">Flag ${label}</div>
+      <button class="flag-menu-item" onclick="App.openFlagNoteModal('${subId}','${field}','red')"><span class="flag-swatch flag-red"></span>Red</button>
+      <button class="flag-menu-item" onclick="App.openFlagNoteModal('${subId}','${field}','orange')"><span class="flag-swatch flag-orange"></span>Orange</button>
+      <button class="flag-menu-item" onclick="App.openFlagNoteModal('${subId}','${field}','purple')"><span class="flag-swatch flag-purple"></span>Purple</button>
+      ${existing ? `<hr class="flag-menu-sep"><button class="flag-menu-item flag-menu-clear" onclick="App.clearCellFlag('${subId}','${field}')">✕ Clear Flag</button>` : ''}
+      <hr class="flag-menu-sep">
+      <button class="flag-menu-item" onclick="App.openRevisionHistory('${subId}','${field}')">🕐 View History</button>
+    `;
+    document.body.appendChild(menu);
+
+    // Dismiss on next click
+    const dismiss = (e) => { if (!menu.contains(e.target)) { menu.remove(); document.removeEventListener('click', dismiss); } };
+    setTimeout(() => document.addEventListener('click', dismiss), 0);
+  }
+
+  function openFlagNoteModal(subId, field, color) {
+    const existing = DB.CellFlags.get(subId, field);
+    const label = field === 'fob' ? 'FOB' : 'Factory Cost';
+    const colorLabel = color.charAt(0).toUpperCase() + color.slice(1);
+    showModal(`
+      <div class="modal-header">
+        <h2><span class="flag-swatch-inline flag-${color}"></span>${colorLabel} Flag — ${label}</h2>
+        <button class="btn btn-ghost btn-icon" onclick="App.closeModal()">✕</button>
+      </div>
+      <div class="modal-body" style="display:flex;flex-direction:column;gap:14px">
+        <p class="text-muted text-sm">This note will be visible to the Trading Company on their quote form.</p>
+        <textarea id="flag-note" class="input" rows="4" placeholder="Add a note for the TC (optional)...">${existing?.note || ''}</textarea>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" onclick="App.closeModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="App.saveCellFlag('${subId}','${field}','${color}')">Save Flag</button>
+      </div>`);
+  }
+
+  function saveCellFlag(subId, field, color) {
+    const note = (document.getElementById('flag-note')?.value || '').trim();
+    const user = state.user;
+    DB.CellFlags.set(subId, field, color, note, user.id, user.name || user.email);
+    // Log flag event into revision timeline
+    DB.Revisions.log({ subId, field, type: 'flag', flagColor: color, flagNote: note,
+      submittedBy: user.id, submittedByName: user.name || user.email });
+    closeModal();
+    renderRoute();
+  }
+
+  function clearCellFlag(subId, field) {
+    const old = document.getElementById('flag-context-menu');
+    if (old) old.remove();
+    const user = state.user;
+    // Log flag-clear event
+    DB.Revisions.log({ subId, field, type: 'flag-clear',
+      submittedBy: user?.id, submittedByName: user?.name || user?.email });
+    DB.CellFlags.clear(subId, field);
+    renderRoute();
+  }
+
+  // ── Revision History Modal ─────────────────────────────────
+  function openRevisionHistory(subId, field) {
+    if (!subId) return;
+    const label = field === 'fob' ? 'FOB Cost' : 'Factory Cost';
+    const sub = DB.Submissions.get(subId);
+    // Use byFieldAll — includes flag events alongside price revisions
+    const entries = DB.Revisions.byFieldAll(subId, field);
+    const flag = DB.CellFlags.get(subId, field);
+
+    // Mark as reviewed: store timestamp of latest entry seen
+    const latestTs = entries.length ? entries[entries.length - 1].submittedAt : 0;
+    if (latestTs) localStorage.setItem(`vcp_rev_seen_${subId}_${field}`, latestTs);
+
+    // Flag banner (current active flag)
+    const flagColors = { red: '#ef4444', yellow: '#eab308', blue: '#3b82f6', green: '#22c55e', orange: '#f97316', purple: '#a855f7' };
+    const flagBanner = flag ? `
+      <div style="display:flex;align-items:flex-start;gap:10px;padding:12px 16px;border-radius:8px;
+        border-left:4px solid ${flagColors[flag.color] || '#94a3b8'};
+        background:rgba(${flag.color==='red'?'239,68,68':flag.color==='yellow'?'234,179,8':flag.color==='green'?'34,197,94':flag.color==='orange'?'249,115,22':'99,102,241'},0.10);
+        margin-bottom:16px;">
+        <span style="font-size:1.1rem">🚩</span>
+        <div>
+          <div style="font-size:0.75rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:${flagColors[flag.color] || '#94a3b8'}">Active Flag — ${flag.color}</div>
+          ${flag.note ? `<div style="margin-top:3px;font-size:0.875rem;color:var(--text-primary)">${flag.note}</div>` : ''}
+        </div>
+      </div>` : '';
+
+    const vendorNote = (field === 'fob' && sub?.vendorComments) ? `
+      <div style="display:flex;align-items:flex-start;gap:10px;padding:10px 14px;border-radius:8px;
+        background:rgba(148,163,184,0.08);border:1px solid var(--border);margin-bottom:16px;">
+        <span>💬</span>
+        <div>
+          <div style="font-size:0.75rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-secondary)">Vendor Note</div>
+          <div style="margin-top:3px;font-size:0.875rem;color:var(--text-primary)">${sub.vendorComments}</div>
+        </div>
+      </div>` : '';
+
+    // Build merged timeline
+    const rows = entries.length
+      ? entries.map((r, i) => {
+          const dt = new Date(r.submittedAt);
+          const dateStr = dt.toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' })
+                        + ' ' + dt.toLocaleTimeString('en-US', { hour:'numeric', minute:'2-digit' });
+          if (r.type === 'flag') {
+            const fc = flagColors[r.flagColor] || '#94a3b8';
+            return `<tr style="background:rgba(${r.flagColor==='red'?'239,68,68':r.flagColor==='yellow'?'234,179,8':r.flagColor==='orange'?'249,115,22':'99,102,241'},0.07)">
+              <td colspan="2"><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${fc};margin-right:6px"></span>
+                <span style="font-size:0.8rem;font-weight:600;color:${fc}">${r.flagColor?.toUpperCase()} Flag set</span>
+                ${r.flagNote ? `<div style="font-size:0.78rem;color:var(--text-secondary);margin-top:2px">${r.flagNote}</div>` : ''}
+              </td>
+              <td colspan="3" class="text-sm text-muted" style="vertical-align:top">${r.submittedByName || r.submittedBy || ''}<br>${dateStr}</td>
+            </tr>`;
+          }
+          if (r.type === 'flag-clear') {
+            return `<tr>
+              <td colspan="2" class="text-sm text-muted"><span style="margin-right:6px">✕</span>Flag cleared</td>
+              <td colspan="3" class="text-sm text-muted">${r.submittedByName || ''}<br>${dateStr}</td>
+            </tr>`;
+          }
+          // Price revision
+          const priceRevs = entries.filter(e => !e.type);
+          const priceIdx = priceRevs.indexOf(r);
+          const isLatest = i === entries.length - 1 || (entries.slice(i+1).every(e => e.type));
+          const verLabel = priceIdx === 0 ? 'Initial' : 'Rev ' + priceIdx;
+          return `<tr class="${isLatest ? 'revision-latest' : ''}">
+            <td class="text-sm text-muted">${verLabel}${isLatest ? ' <span class="tag tag-success" style="font-size:0.65rem;padding:1px 5px">current</span>' : ''}</td>
+            <td class="font-bold text-success">$${parseFloat(r.newValue).toFixed(2)}</td>
+            <td class="text-sm text-muted">${r.oldValue != null ? '$' + parseFloat(r.oldValue).toFixed(2) : '—'}</td>
+            <td class="text-sm">${r.submittedByName || r.submittedBy || ''}</td>
+            <td class="text-sm text-muted">${dateStr}${r.reason ? `<div style="font-size:0.75rem;color:var(--text-secondary);margin-top:2px">📝 ${r.reason}</div>` : ''}</td>
+          </tr>`;
+        }).join('')
+      : '<tr><td colspan="5" class="text-muted text-center" style="padding:20px">No history yet.</td></tr>';
+
+    const tcName = DB.TradingCompanies.get(sub?.tcId)?.name || sub?.tcId || '?';
+    showModal(`
+      <div class="modal-header">
+        <h2>🕐 Quote History — ${label}</h2>
+        <button class="btn btn-ghost btn-icon" onclick="App.closeModal()">✕</button>
+      </div>
+      <div class="modal-body">
+        <p class="text-muted text-sm mb-2">${tcName} · ${sub?.coo || ''}</p>
+        ${flagBanner}${vendorNote}
+        <div class="table-wrap">
+          <table>
+            <thead><tr>
+              <th>Version</th><th>Value</th><th>Previous</th><th>By</th><th>Date / Notes</th>
+            </tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" onclick="App.closeModal()">Close</button>
+      </div>`);
+  }
+
+  function openCellHighlightMenu(e, styleId, tcId, coo, subId, fob) {
+    e.preventDefault();
+    closeCellMenu();
+    const considerKey = 'vcp_considering';
+    const tag = subId ? `${styleId}:${subId}` : null;
+    const list = JSON.parse(localStorage.getItem(considerKey) || '[]');
+    const isConsidering = tag ? list.includes(tag) : false;
+    const placement = DB.Placements.get(styleId);
+    const isPlaced = placement?.tcId === tcId && placement?.coo === coo;
+
+    const menu = document.createElement('div');
+    menu.id = 'cell-highlight-menu';
+    menu.style.cssText = `position:fixed;z-index:9998;top:${e.clientY}px;left:${e.clientX}px;
+      background:rgba(18,18,32,0.97);border:1px solid rgba(255,255,255,0.12);border-radius:10px;
+      padding:6px;min-width:190px;box-shadow:0 8px 32px rgba(0,0,0,.55);backdrop-filter:blur(12px);
+      font-family:var(--font);`;
+    menu.innerHTML = `
+      <div style="font-size:.68rem;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:#64748b;padding:5px 10px 3px">Highlight Cell</div>
+      <button class="cm-item" onclick="App.setCellHighlight('considering','${styleId}','${tcId}','${coo}','${subId}',${fob})">
+        <span style="color:#eab308">⬤</span> ${isConsidering ? '✓ ' : ''}Considering
+      </button>
+      <button class="cm-item" onclick="App.setCellHighlight('placed','${styleId}','${tcId}','${coo}','${subId}',${fob})">
+        <span style="color:#22c55e">⬤</span> ${isPlaced ? '✓ ' : ''}Order Placed
+      </button>
+      <div style="border-top:1px solid rgba(255,255,255,0.07);margin:4px 0"></div>
+      <button class="cm-item" onclick="App.setCellHighlight('clear','${styleId}','${tcId}','${coo}','${subId}',${fob})">
+        <span style="color:#64748b">✕</span> Clear
+      </button>`;
+    document.body.appendChild(menu);
+    // Close on outside click
+    setTimeout(() => document.addEventListener('click', closeCellMenu, { once: true }), 0);
+  }
+
+  function closeCellMenu() {
+    const m = document.getElementById('cell-highlight-menu');
+    if (m) m.remove();
+  }
+
+  function setCellHighlight(action, styleId, tcId, coo, subId, fob) {
+    closeCellMenu();
+    const considerKey = 'vcp_considering';
+    const tag = subId ? `${styleId}:${subId}` : null;
+
+    if (action === 'considering') {
+      if (!tag) return;
+      let list = JSON.parse(localStorage.getItem(considerKey) || '[]');
+      // Remove ALL previously considering tags for this style (mutually exclusive per style)
+      list = list.filter(t => !t.startsWith(`${styleId}:`));
+      list.push(tag);
+      localStorage.setItem(considerKey, JSON.stringify(list));
+    } else if (action === 'placed') {
+      // Remove considering tag first
+      if (tag) {
+        const list = JSON.parse(localStorage.getItem(considerKey) || '[]');
+        const idx = list.indexOf(tag);
+        if (idx >= 0) { list.splice(idx, 1); localStorage.setItem(considerKey, JSON.stringify(list)); }
+      }
+      DB.Placements.place({ styleId, tcId, coo, confirmedFob: parseFloat(fob) || 0 });
+    } else if (action === 'clear') {
+      // Clear both
+      if (tag) {
+        const list = JSON.parse(localStorage.getItem(considerKey) || '[]');
+        const idx = list.indexOf(tag);
+        if (idx >= 0) { list.splice(idx, 1); localStorage.setItem(considerKey, JSON.stringify(list)); }
+      }
+      const existing = DB.Placements.get(styleId);
+      if (existing?.tcId === tcId && existing?.coo === coo) DB.Placements.unplace(styleId);
+    }
+    const styles = DB.Styles.byProgram ? DB.Programs.all().flatMap(p => DB.Styles.byProgram(p.id)) : [];
+    const styleObj = styles.find(s2 => s2.id === styleId);
+    const prog = styleObj?.programId;
+    if (prog) navigate('cost-summary', prog);
+  }
+
+  function toggleConsidering(tag, styleId) {
+
+    const key = 'vcp_considering';
+    const list = JSON.parse(localStorage.getItem(key) || '[]');
+    const idx = list.indexOf(tag);
+    if (idx >= 0) list.splice(idx, 1); else list.push(tag);
+    localStorage.setItem(key, JSON.stringify(list));
+    openCostComparison(styleId); // re-render to show updated highlight
+  }
+
+  function saveStyleNote(styleId, text) {
+    localStorage.setItem(`vcp_note_${styleId}`, text);
+  }
+
+  function toggleRoleSwitcher() {
+    const menu = document.getElementById('rs-menu');
+    if (menu) menu.style.display = menu.style.display === 'none' ? '' : 'none';
+
+  }
+
+  function switchToUser(idx) {
+    const panel = document.getElementById('role-switcher');
+    const accounts = panel?._accounts;
+    if (!accounts || !accounts[idx]) return;
+    const acct = accounts[idx];
+    const user = DB.Auth.login(acct.email, acct.password);
+    if (!user) return;
+    toggleRoleSwitcher();
+    state.user = user;
+    state.route = '';
+    state.routeParam = null;
+    renderApp();
+  }
+
+
   return {
     init, login, logout, navigate, openProgram, openCostComparison,
     openProgramModal, onInternalProgramChange, saveProgramModal, updateProgramStatus, deleteProgram,
     openStyleModal, previewTargetLDP, saveStyle, deleteStyle,
     openAssignTCs, saveAssignments,
     openUploadModal, handleFileUpload, handleDrop, confirmUpload, downloadTemplate,
-    openVendorBulkUpload, handleVendorDrop, handleVendorFileUpload, downloadVendorTemplate, confirmVendorUpload,
-    openTCModal, saveTC, deleteTC,
-    openInternalProgramModal, saveInternalProgram, deleteInternalProgram,
-    openCooModal, saveCoo, deleteCoo,
-    openFlagModal, confirmFlag, unflagSub, acceptSub,
-    placeStyle, unplaceStyle, openSubmitQuote, openAdminCostEntry,
-    cancelStyle, uncancelStyle, toggleCancelledRows,
-    saveStyleInline, saveSubmissionInline, saveTCTermsInline,
-    fmtFocusRaw, fmtFocusDuty, fmtBlurQty, fmtBlurCurrency, fmtBlurDuty,
-    setProgramsView, filterPrograms, filterCrossProgram, refreshCostSummary,
-    placeAllStyles, approvePendingChange, rejectPendingChange, proposeSetting,
-    openStaffModal, saveStaff, deleteStaff,
-    openProposeTCModal, submitProposeTC,
-    openProposeIPModal, submitProposeIP,
-    openProposeCOOModal, submitProposeCOO,
+    openFlagMenu, openFlagNoteModal, saveCellFlag, clearCellFlag,
+    openRevisionHistory,
     toggleTCCols: (colKey, programId) => AdminViews.toggleTCCols(colKey, programId),
     expandAllTCs: (programId) => AdminViews.expandAllTCs(programId),
     collapseAllTCs: (programId) => AdminViews.collapseAllTCs(programId),
     removeTCFromProgram,
-    toggleSidebar,
+    toggleSidebar, toggleRoleSwitcher, switchToUser,
+    saveSubmissionInline, saveStyleInline, refreshCostSummary,
+    openSubmitQuote, openVendorBulkUpload, downloadVendorTemplate, handleVendorDrop, handleVendorFileUpload, confirmVendorUpload,
+    navigateVendorHome, navigateVendorProgram, navigateVendorAllStyles,
+    saveVendorCellInline, openSkipVendorCoo, confirmSkipVendorCoo, unskipVendorCoo,
+    placeStyle, cancelStyle, uncancelStyle,
+    filterCrossProgram, toggleCancelledRows,
+    setProgramsView, filterPrograms,
+    toggleConsidering, saveStyleNote,
+    openCellHighlightMenu, setCellHighlight, closeCellMenu,
     closeModal, closeModalOutside,
   };
 
 
+
+
 })();
 
-document.addEventListener('DOMContentLoaded', App.init);
+document.addEventListener('DOMContentLoaded', () => {
+  try {
+    App.init();
+  } catch(err) {
+    console.error('[App.init ERROR]', err);
+    document.body.innerHTML = `<div style="padding:40px;font-family:monospace;color:red;background:#111;min-height:100vh">
+      <h2>App failed to start</h2>
+      <pre>${err.message}\n\n${err.stack}</pre>
+    </div>`;
+  }
+});
 

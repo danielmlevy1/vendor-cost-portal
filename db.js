@@ -1,7 +1,7 @@
 // =============================================================
 // VENDOR COST PORTAL — Data Layer (db.js)
 // localStorage-backed data store with seed data
-// Schema v3: TradingCompany (one login, multiple COOs)
+// Schema v8: Bug fix — admin user repair migration
 // =============================================================
 
 const DB = (() => {
@@ -76,30 +76,17 @@ const DB = (() => {
     // ── Init with schema migration ─────────────────────────────
     function init() {
         const ver = localStorage.getItem('vcp_schema_ver');
-        if (ver !== '3' && ver !== '4' && ver !== '5' && ver !== '6') {
+        if (ver !== '3' && ver !== '4' && ver !== '5' && ver !== '6' && ver !== '7' && ver !== '8' && ver !== '9') {
             localStorage.removeItem(KEYS.assignments);
             localStorage.removeItem(KEYS.submissions);
             localStorage.removeItem('vcp_vendors');
             localStorage.removeItem(KEYS.tradingCompanies);
         }
-        if (ver !== '5' && ver !== '6') {
+        if (ver !== '5' && ver !== '6' && ver !== '7' && ver !== '8' && ver !== '9') {
             localStorage.removeItem(KEYS.cooRates);
         }
-        if (ver !== '6' && ver !== '7') {
-            // v6: add pending changes support + PC users; preserve all other data
-            // Re-seed users so PC seed is included if not already present
-            const users = get(KEYS.users);
-            if (!users.find(u => u.role === 'pc')) {
-                users.push({ id: 'pc1', name: 'Production Team', email: 'pc@company.com', password: 'pc123', role: 'pc' });
-                set(KEYS.users, users);
-            }
-        }
-        if (ver !== '7') {
-            // v7: add cell flags + revision history stores (no data wipe)
-            if (!localStorage.getItem(KEYS.cellFlags))  set(KEYS.cellFlags, []);
-            if (!localStorage.getItem(KEYS.revisions))  set(KEYS.revisions, []);
-            localStorage.setItem('vcp_schema_ver', '7');
-        }
+
+        // ── Seed defaults (safe — only runs if key is absent) ──────
         if (!localStorage.getItem(KEYS.users)) set(KEYS.users, SEED_USERS);
         if (!localStorage.getItem(KEYS.cooRates)) set(KEYS.cooRates, SEED_COO_RATES);
         if (!localStorage.getItem(KEYS.internalPrograms)) set(KEYS.internalPrograms, SEED_INTERNAL_PROGRAMS);
@@ -112,7 +99,41 @@ const DB = (() => {
         if (!localStorage.getItem(KEYS.pendingChanges)) set(KEYS.pendingChanges, []);
         if (!localStorage.getItem(KEYS.cellFlags))  set(KEYS.cellFlags, []);
         if (!localStorage.getItem(KEYS.revisions))  set(KEYS.revisions, []);
+
+        // ── Always ensure required users exist (repair broken sessions) ──
+        {
+            const users = get(KEYS.users);
+            let dirty = false;
+            if (!users.find(u => u.role === 'admin')) {
+                users.push(...SEED_USERS.filter(u => u.role === 'admin'));
+                dirty = true;
+            }
+            if (!users.find(u => u.role === 'pc')) {
+                users.push({ id: 'pc1', name: 'Production Team', email: 'pc@company.com', password: 'pc123', role: 'pc' });
+                dirty = true;
+            }
+            if (dirty) set(KEYS.users, users);
+        }
+
+        // ── Always ensure seed TC accounts exist (repair broken sessions) ──
+        {
+            const tcs = get(KEYS.tradingCompanies);
+            let dirty = false;
+            SEED_TRADING_COMPANIES.forEach(seed => {
+                if (!tcs.find(t => t.email === seed.email)) {
+                    tcs.push(seed);
+                    dirty = true;
+                }
+            });
+            if (dirty) set(KEYS.tradingCompanies, tcs);
+        }
+
+        // ── Stamp schema version ────────────────────────────────────
+        localStorage.setItem('vcp_schema_ver', '9');
     }
+
+
+
 
     // ── Auth ───────────────────────────────────────────────────
     const Auth = {
@@ -251,6 +272,9 @@ const DB = (() => {
                 list.push(newSub);
             }
             set(KEYS.submissions, list);
+            // Return the saved sub
+            const saved = get(KEYS.submissions).find(s => s.tcId === data.tcId && s.styleId === data.styleId && s.coo === data.coo);
+            return saved;
         },
         flag(id, reason) { set(KEYS.submissions, get(KEYS.submissions).map(s => s.id === id ? { ...s, status: 'flagged', flagReason: reason } : s)); },
         unflag(id) { set(KEYS.submissions, get(KEYS.submissions).map(s => s.id === id ? { ...s, status: 'submitted', flagReason: '' } : s)); },
@@ -466,7 +490,9 @@ const DB = (() => {
     const Revisions = {
         all()               { return get(KEYS.revisions); },
         bySubmission(subId) { return get(KEYS.revisions).filter(r => r.subId === subId); },
-        byField(subId, field) { return get(KEYS.revisions).filter(r => r.subId === subId && r.field === field).sort((a, b) => a.submittedAt < b.submittedAt ? -1 : 1); },
+        byField(subId, field) { return get(KEYS.revisions).filter(r => r.subId === subId && r.field === field && !r.type).sort((a, b) => a.submittedAt < b.submittedAt ? -1 : 1); },
+        byFieldAll(subId, field) { return get(KEYS.revisions).filter(r => r.subId === subId && r.field === field).sort((a, b) => a.submittedAt < b.submittedAt ? -1 : 1); },
+        log(entry) { const list = get(KEYS.revisions); list.push({ id: uid(), submittedAt: now(), ...entry }); set(KEYS.revisions, list); },
     };
 
     return {
@@ -481,6 +507,3 @@ const DB = (() => {
     };
 
 })();
-
-document.addEventListener('DOMContentLoaded', DB.init);
-

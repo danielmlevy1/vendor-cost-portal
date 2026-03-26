@@ -1749,6 +1749,20 @@ th {
   outline: none;
 }
 
+/* Hide number input spinners (up/down arrows) */
+.cell-input[type="number"]::-webkit-inner-spin-button,
+.cell-input[type="number"]::-webkit-outer-spin-button,
+.form-input[type="number"]::-webkit-inner-spin-button,
+.form-input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.cell-input[type="number"],
+.form-input[type="number"] {
+  -moz-appearance: textfield;
+}
+
+
 .cell-input:hover {
   border-bottom-color: var(--border-hover);
   background: rgba(59, 130, 246, 0.06);
@@ -1786,6 +1800,13 @@ th {
   border-left: 1px solid rgba(139, 92, 246, 0.15);
   border-right: 1px solid rgba(139, 92, 246, 0.15);
 }
+
+/* Best TC column — never wraps */
+td.col-best, th.col-best {
+  white-space: nowrap;
+  min-width: 100px;
+}
+
 
 /* ── Cancelled style rows ── */
 .row-cancelled td {
@@ -1947,4 +1968,410 @@ th {
 .badge-pending {
   background: rgba(251, 191, 36, 0.15);
   color: #f59e0b;
+}
+
+/* ─── Cell Flags & Revision History ───────────────────────── */
+
+/* Wrapper div — relative so we can absolutely-position overlays */
+.flaggable-cell {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.flaggable-cell .cell-input {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Flag dot: small pill top-right corner of the cell */
+.flag-dot {
+  display: inline-flex;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  cursor: pointer;
+  transition: transform 0.15s;
+}
+.flag-dot:hover { transform: scale(1.4); }
+.flag-red    { background: #ef4444; box-shadow: 0 0 4px rgba(239,68,68,0.6); }
+.flag-orange { background: #f97316; box-shadow: 0 0 4px rgba(249,115,22,0.6); }
+.flag-purple { background: #a855f7; box-shadow: 0 0 4px rgba(168,85,247,0.6); }
+
+/* Cell with a flag: subtle tinted background */
+.has-flag { background: rgba(255,255,255,0.03); border-radius: 4px; }
+.cell-flaggable { cursor: context-menu; }
+
+/* Flag colour swatches in menu */
+.flag-swatch             { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:6px; }
+.flag-swatch.flag-red    { background:#ef4444; }
+.flag-swatch.flag-orange { background:#f97316; }
+.flag-swatch.flag-purple { background:#a855f7; }
+.flag-swatch-inline      { display:inline-block; width:12px; height:12px; border-radius:50%; margin-right:6px; vertical-align:middle; }
+.flag-swatch-inline.flag-red    { background:#ef4444; }
+.flag-swatch-inline.flag-orange { background:#f97316; }
+.flag-swatch-inline.flag-purple { background:#a855f7; }
+
+/* Right-click context menu */
+.flag-context-menu {
+  position: absolute;
+  z-index: 9999;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 6px;
+  min-width: 170px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+}
+.flag-menu-title {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  padding: 4px 8px 6px;
+}
+.flag-menu-item {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 7px 10px;
+  font-size: 0.875rem;
+  background: none;
+  border: none;
+  border-radius: 6px;
+  color: var(--text-primary);
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.12s;
+}
+.flag-menu-item:hover { background: var(--bg-elevated); }
+.flag-menu-clear { color: var(--text-muted); font-size: 0.8rem; }
+.flag-menu-sep { border: none; border-top: 1px solid var(--border); margin: 4px 0; }
+
+/* Revision history badge */
+.revision-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: 4px;
+  padding: 1px 4px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: color 0.15s, border-color 0.15s;
+}
+.revision-badge:hover { color: var(--text-primary); border-color: var(--border-light); }
+.vendor-hist { font-size: 0.7rem; }
+
+/* TC Quote form: admin flag banner */
+.flag-banner {
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 0.875rem;
+  margin-bottom: 4px;
+}
+.flag-banner-red    { background: rgba(239,68,68,0.12);  border: 1px solid rgba(239,68,68,0.3);  color: #fca5a5; }
+.flag-banner-orange { background: rgba(249,115,22,0.12); border: 1px solid rgba(249,115,22,0.3); color: #fdba74; }
+.flag-banner-purple { background: rgba(168,85,247,0.12); border: 1px solid rgba(168,85,247,0.3); color: #d8b4fe; }
+
+/* Revision history modal table */
+.revision-latest td { background: rgba(34,197,94,0.05); }
+
+/* ── Vendor Program Cards ─────────────────────────────── */
+.vendor-programs-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+  margin-top: 8px;
+}
+
+.program-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px;
+  cursor: pointer;
+  transition: border-color 0.18s, box-shadow 0.18s, transform 0.12s;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.program-card:hover {
+  border-color: var(--accent);
+  box-shadow: 0 4px 20px rgba(59,130,246,0.12);
+  transform: translateY(-1px);
+}
+.program-card-flagged  { border-color: rgba(249,115,22,0.35); }
+.program-card-complete { border-color: rgba(34,197,94,0.35); }
+.program-card-active   { border-color: var(--border); }
+
+.program-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+}
+.program-card-name {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1.3;
+}
+.program-card-meta {
+  display: flex;
+  gap: 6px;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+.program-progress-bar {
+  height: 4px;
+  background: rgba(255,255,255,0.06);
+  border-radius: 99px;
+  overflow: hidden;
+}
+.program-progress-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 99px;
+  transition: width 0.4s ease;
+}
+.program-card-complete .program-progress-fill { background: #22c55e; }
+.program-card-flagged  .program-progress-fill { background: #f97316; }
+.program-card-footer {
+  margin-top: 4px;
+}
+
+/* ── TC Style Table — COO columns layout ───────────── */
+.tc-style-table th.coo-group-hdr {
+  text-align: center;
+  background: rgba(59,130,246,0.08);
+  border-left: 1px solid rgba(59,130,246,0.25);
+  border-right: 1px solid rgba(59,130,246,0.25);
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: var(--accent);
+}
+
+/* Fabric group header row in TC table */
+.tc-fab-group-hdr td {
+  background: rgba(139, 92, 246, 0.07);
+  padding: 6px 12px;
+  border-top: 1px solid rgba(139, 92, 246, 0.2);
+}
+.fab-group-label {
+  font-weight: 700;
+  font-size: 0.78rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgb(167,139,250);
+}
+
+/* Flagged cell highlight for TC view */
+td.cell-flagged-tc {
+  background: rgba(249,115,22,0.08) !important;
+  border-bottom: 2px solid rgba(249,115,22,0.35);
+}
+
+/* Flag note row — appears below a flagged style row */
+.flag-note-row td {
+  padding: 4px 12px 8px;
+  background: rgba(0,0,0,0);
+}
+.flag-notes-inline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.flag-note-pill {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 0.78rem;
+  font-weight: 500;
+}
+.flag-pill-red    { background: rgba(239,68,68,0.12);  border: 1px solid rgba(239,68,68,0.3);  color: #fca5a5; }
+.flag-pill-orange { background: rgba(249,115,22,0.12); border: 1px solid rgba(249,115,22,0.3); color: #fdba74; }
+.flag-pill-purple { background: rgba(168,85,247,0.12); border: 1px solid rgba(168,85,247,0.3); color: #d8b4fe; }
+
+/* ── TC Inline Input (FOB / Factory Cost cells) ─────────── */
+.tc-inline-input {
+  width: 80px;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid transparent;
+  color: var(--text-primary);
+  font-size: 0.85rem;
+  padding: 2px 4px;
+  border-radius: 4px;
+  transition: border-color 0.15s, background 0.15s;
+  outline: none;
+}
+.tc-inline-input:hover { border-bottom-color: var(--border-light); }
+.tc-inline-input:focus {
+  background: rgba(255,255,255,0.05);
+  border-bottom-color: var(--accent);
+}
+
+/* Skip button */
+.tc-skip-btn {
+  font-size: 0.72rem;
+  opacity: 0.6;
+  padding: 2px 8px;
+  transition: opacity 0.15s;
+}
+.tc-skip-btn:hover { opacity: 1; }
+
+/* Skipped row */
+tr.tc-skipped-row td { opacity: 0.45; }
+td.tc-skipped-cell   { opacity: 0.4; }
+
+/* Skip reason pill */
+.flag-pill-skip {
+  background: rgba(100,116,139,0.15);
+  border: 1px solid rgba(100,116,139,0.3);
+  color: #94a3b8;
+}
+
+/* Error state for required textarea */
+.input-error { border-color: var(--danger) !important; }
+
+/* ── Program view toggle (Table / Cards) ─────────────── */
+.view-toggle-group {
+  display: flex;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--border-light);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.view-toggle-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  padding: 6px 14px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.view-toggle-btn:hover { background: rgba(255,255,255,0.06); color: var(--text-primary); }
+.view-toggle-btn.active {
+  background: var(--accent);
+  color: #fff;
+}
+
+/* ── Role Switcher Panel ──────────────────────────────── */
+#role-switcher {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  font-family: var(--font);
+}
+#rs-toggle-btn {
+  background: rgba(30,30,50,0.95);
+  border: 1px solid rgba(99,102,241,0.4);
+  color: var(--text-primary);
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 7px 14px;
+  border-radius: 20px;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+#rs-toggle-btn:hover {
+  border-color: var(--accent);
+  box-shadow: 0 4px 20px rgba(99,102,241,0.25);
+}
+#rs-menu {
+  background: rgba(22,22,38,0.97);
+  border: 1px solid var(--border-light);
+  border-radius: 12px;
+  padding: 6px;
+  min-width: 200px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+  backdrop-filter: blur(12px);
+}
+.rs-menu-title {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  padding: 6px 10px 4px;
+}
+.rs-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: 100%;
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  padding: 7px 10px;
+  cursor: pointer;
+  transition: background 0.12s;
+  text-align: left;
+}
+.rs-item:hover { background: rgba(255,255,255,0.06); }
+.rs-item.rs-active { background: rgba(99,102,241,0.12); }
+.rs-label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.rs-sub {
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+  margin-top: 1px;
+}
+.rs-item.rs-active .rs-label::after {
+  content: ' ✓';
+  color: var(--accent);
+}
+
+/* ── Placement & Considering Highlights ─────────────────── */
+.cell-placed-fob,
+.cell-placed-ldp   { background: rgba(34,197,94,0.18) !important; }
+.cell-considering-fob { background: rgba(234,179,8,0.18) !important; }
+
+.placed-block  { border-color: rgba(34,197,94,0.4) !important; }
+.considering-block { border-color: rgba(234,179,8,0.35) !important; }
+
+/* ── Cell Highlight Context Menu ────────────────────────── */
+.cm-item {
+  display: flex; align-items: center; gap: 8px;
+  width: 100%; padding: 7px 12px; border: none; border-radius: 6px;
+  background: transparent; color: var(--text-primary); font-size: 0.875rem;
+  cursor: pointer; text-align: left; font-family: var(--font);
+  transition: background 0.12s;
+}
+.cm-item:hover { background: rgba(255,255,255,0.08); }
+
+/* ── Revision badge: reviewed vs unreviewed ─────────────── */
+.revision-badge-seen {
+  opacity: 0.35;
+  color: #64748b !important;
+  filter: grayscale(1);
+}
+.revision-badge-new {
+  opacity: 1;
+  color: var(--accent) !important;
+  animation: badge-pulse 2s ease-in-out infinite;
+}
+@keyframes badge-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.6; }
 }

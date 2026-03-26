@@ -21,15 +21,10 @@ const AdminViews = (() => {
   // ── Programs ───────────────────────────────────────────────
   function renderPrograms() {
     const programs = DB.Programs.all();
-    const isTable = _programsView === 'table';
     return `
     <div class="page-header">
       <div><h1 class="page-title">Programs</h1><p class="page-subtitle">All costing programs</p></div>
       <div style="display:flex;gap:8px;align-items:center">
-        <div class="view-toggle" style="display:flex;border:1px solid var(--border);border-radius:8px;overflow:hidden">
-          <button id="prog-view-cards" class="btn btn-sm${isTable ? ' btn-ghost' : ' btn-primary'}" style="border-radius:0;border:none" onclick="App.setProgramsView('cards')">⊞ Cards</button>
-          <button id="prog-view-table" class="btn btn-sm${isTable ? ' btn-primary' : ' btn-ghost'}" style="border-radius:0;border:none;border-left:1px solid var(--border)" onclick="App.setProgramsView('table')">≡ Table</button>
-        </div>
         <button class="btn btn-primary" onclick="App.openProgramModal()">＋ New Program</button>
       </div>
     </div>
@@ -39,10 +34,8 @@ const AdminViews = (() => {
         <option value="">All Statuses</option><option>Costing</option><option>Placed</option><option>Cancelled</option>
       </select>
     </div>
-    <div id="programs-grid" class="${isTable ? '' : 'grid-auto'}">
-      ${isTable
-        ? programsTable(programs, '', '')
-        : (programs.length ? programs.map(p => programCard(p)).join('') : `<div class="empty-state"><div class="icon">📋</div><h3>No programs yet</h3><p>Create your first costing program.</p></div>`)}
+    <div id="programs-grid">
+      ${programsTable(programs, '', '')}
     </div>`;
   }
 
@@ -54,6 +47,7 @@ const AdminViews = (() => {
     const thead = `<thead><tr>
       <th>Season</th><th>Year</th><th>Program</th><th>Status</th>
       <th style="text-align:center">Total # Styles</th>
+      <th style="text-align:center">TTL Proj Qty</th>
       <th style="text-align:center">Total # Trade Cos.</th>
       <th style="text-align:center">Total Quoted</th>
       <th>Actions</th>
@@ -62,12 +56,14 @@ const AdminViews = (() => {
       const styleCount  = DB.Programs.styleCount(p.id);
       const tcCount     = DB.Programs.tcCount(p.id);
       const quotedCount = DB.Programs.quotedCount(p.id);
+      const projQtyTotal = DB.Styles.byProgram(p.id).reduce((sum, s) => sum + (parseFloat(s.projQty) || 0), 0);
       return `<tr style="cursor:pointer" onclick="App.openProgram('${p.id}')">
         <td>${p.season || '—'}</td>
         <td>${p.year || '—'}</td>
         <td class="primary font-bold">${p.name}</td>
         <td>${statusBadge(p.status)}</td>
         <td style="text-align:center"><span class="tag">${styleCount}</span></td>
+        <td style="text-align:center"><span class="tag">${projQtyTotal > 0 ? projQtyTotal.toLocaleString() : '—'}</span></td>
         <td style="text-align:center"><span class="tag">${tcCount}</span></td>
         <td style="text-align:center"><span class="tag">${quotedCount}</span></td>
         <td onclick="event.stopPropagation()" style="white-space:nowrap">
@@ -234,12 +230,12 @@ const AdminViews = (() => {
         <label class="cs-filter-label" style="margin-left:12px">Group by</label>
         <select id="cs-group-by" class="form-select cs-select" onchange="App.refreshCostSummary('${programId}')">
           <option value="">None</option>
-          <option value="fabrication">Fabrication</option>
+          <option value="fabrication" selected>Fabrication</option>
         </select>
       </div>
       <div class="table-controls" id="summary-table-controls"></div>
       <div class="matrix-scroll-wrap" id="summary-table-wrap">
-        ${buildCostMatrix(styles, colGroups, prog, programId, '', '')}
+        ${buildCostMatrix(styles, colGroups, prog, programId, '', 'fabrication')}
       </div>
     </div>`;
   }
@@ -265,7 +261,7 @@ const AdminViews = (() => {
       <th rowspan="2" data-col="tldp" class="col-target mat-hdr" style="width:64px;min-width:60px">Target LDP</th>
       <th rowspan="2" data-col="dutyRate" class="col-duty-rate mat-hdr" style="width:60px;min-width:60px">Duty Rate</th>
       <th rowspan="2" data-col="estFreight" class="col-est-freight mat-hdr" style="width:64px;min-width:60px">Est Freight</th>
-      <th rowspan="2" data-col="best" class="mat-hdr col-best" style="width:68px;min-width:60px">Best TC</th>`;
+      <th rowspan="2" data-col="best" class="mat-hdr col-best" style="width:110px;min-width:100px;white-space:nowrap">Best TC</th>`;
     const TERMS_LIST = ['FOB', 'CIF', 'First Sale', 'FCA', 'Duty Free', 'CPTPP'];
     colGroups.forEach(({ tc, coo }, tcIdx) => {
       const colKey = `${tc.id}_${coo}`;
@@ -329,6 +325,7 @@ const AdminViews = (() => {
         });
 
         const pid = programId;
+        const placement = DB.Placements.get(s.id); // needed for green highlight in TC cells
 
         // Fixed style-level inline fields
         const styleNameInput = `<input class="cell-input cell-input-wide" data-sid="${s.id}" data-field="styleName" value="${(s.styleName || '').replace(/"/g, '&quot;')}" onblur="App.saveStyleInline('${s.id}',this)" onkeydown="if(event.key==='Enter')this.blur()">`;
@@ -368,19 +365,40 @@ const AdminViews = (() => {
           const over = r && targetLDP && r.ldp > targetLDP;
           const flagIcon = sub?.status === 'flagged' ? ' 🚩' : sub?.status === 'accepted' ? ' ✅' : '';
 
-          const fobInput = `<input class="cell-input" type="number" step="0.01"
+          const fobVal = sub?.fob ? '$' + parseFloat(sub.fob).toFixed(2) : '';
+          const fobInput = `<input class="cell-input" type="text" inputmode="decimal"
             data-sid="${s.id}" data-tcid="${tc.id}" data-coo="${coo}" data-field="fob"
-            value="${sub?.fob || ''}"
+            value="${fobVal}"
             placeholder="FOB"
-            onblur="App.saveSubmissionInline('${s.id}','${tc.id}','${coo}',this)"
+            onfocus="this.value=this.value.replace(/[^0-9.]/g,'')"
+            onblur="App.saveSubmissionInline('${s.id}','${tc.id}','${coo}',this);if(this.value&&!isNaN(parseFloat(this.value)))this.value='$'+parseFloat(this.value).toFixed(2);"
             onkeydown="if(event.key==='Enter')this.blur()">${flagIcon}`;
 
-          const fcInput = `<input class="cell-input" type="number" step="0.01"
+          const fcVal = sub?.factoryCost ? '$' + parseFloat(sub.factoryCost).toFixed(2) : '';
+          const fcInput = `<input class="cell-input" type="text" inputmode="decimal"
             data-sid="${s.id}" data-tcid="${tc.id}" data-coo="${coo}" data-field="factoryCost"
-            value="${sub?.factoryCost || ''}"
+            value="${fcVal}"
             placeholder="Cost"
-            onblur="App.saveSubmissionInline('${s.id}','${tc.id}','${coo}',this)"
+            onfocus="this.value=this.value.replace(/[^0-9.]/g,'')"
+            onblur="App.saveSubmissionInline('${s.id}','${tc.id}','${coo}',this);if(this.value&&!isNaN(parseFloat(this.value)))this.value='$'+parseFloat(this.value).toFixed(2);"
             onkeydown="if(event.key==='Enter')this.blur()">`;
+
+          // Per-cell flags and revision history
+          const fobFlag = sub ? DB.CellFlags.get(sub.id, 'fob') : null;
+          const fcFlag  = sub ? DB.CellFlags.get(sub.id, 'factoryCost') : null;
+          const fobRevs = sub ? DB.Revisions.byField(sub.id, 'fob').length : 0;
+          const fcRevs  = sub ? DB.Revisions.byField(sub.id, 'factoryCost').length : 0;
+          const cellWrap = (inputHtml, flag, revCount, subId, field) => {
+            const dot  = flag ? `<span class="flag-dot flag-${flag.color}" title="${(flag.note||flag.color).replace(/"/g,'&quot;')}" onclick="App.openFlagMenu(event,'${subId}','${field}')"></span>` : '';
+            const lastSeen = subId ? parseInt(localStorage.getItem(`vcp_rev_seen_${subId}_${field}`) || '0') : 0;
+            const allRevs = subId ? JSON.parse(localStorage.getItem('vcp_revisions') || localStorage.getItem('vcp_revisions_') || '[]').filter(r => r.subId === subId && r.field === field) : [];
+            const latestRevTs = allRevs.length ? Math.max(...allRevs.map(r => r.submittedAt || 0)) : 0;
+            const isReviewed = latestRevTs > 0 && lastSeen >= latestRevTs;
+            const hist = revCount > 0
+              ? `<span class="revision-badge${isReviewed ? ' revision-badge-seen' : ' revision-badge-new'}" title="Quote history (${revCount})${isReviewed ? ' — reviewed' : ' — NEW'}" onclick="App.openRevisionHistory('${subId}','${field}')">&#128338;${revCount > 1 ? ' '+revCount : ''}</span>`
+              : '';
+            return `<div class="flaggable-cell${flag?' has-flag':''}" oncontextmenu="App.openFlagMenu(event,'${subId}','${field}');return false;">${inputHtml}${dot}${hist}</div>`;
+          };
 
           const dutyPct = r ? pct(r.dutyRate) : '—';
           const dutyAmt = r ? fmt(r.duty) : '—';
@@ -388,18 +406,29 @@ const AdminViews = (() => {
             ? (r.freight != null ? fmt(r.freight) : `<span class="text-muted text-sm" title="Set Proj Qty to calc">N/A</span>`)
             : '—';
           const ldpCell = r
-            ? `<span class="${isBest ? 'text-success font-bold' : ''}${over ? ' text-danger' : ''}">${fmt(r.ldp)}${isBest ? ' ★' : ''}</span>${r.noQty ? '<span class="text-muted text-sm" title="LDP excl. freight">*</span>' : ''}`
+            ? `<span>${fmt(r.ldp)}</span>${r.noQty ? '<span class="text-muted text-sm" title="LDP excl. freight">*</span>' : ''}`
             : '<span class="text-muted">—</span>';
+
+          // Considering state (stored in localStorage per sub+style) 
+          const consideringKey = 'vcp_considering';
+          const consideringList = JSON.parse(localStorage.getItem(consideringKey) || '[]');
+          const isConsidering = sub?.id ? consideringList.includes(`${s.id}:${sub.id}`) : false;
+          const isPlacedTC = placement?.styleId === s.id && placement?.tcId === tc.id && placement?.coo === coo;
+          const fobCellClass = isPlacedTC ? ' cell-placed-fob' : isConsidering ? ' cell-considering-fob' : '';
+          const ldpCellClass = isPlacedTC ? ' cell-placed-ldp' : '';
+          const fobMinWidth = (fobFlag || fobRevs > 0) ? ' style="min-width:110px"' : '';
 
           const collapsed = _collapsedTCs.has(k);
           const hideStyle = collapsed ? ' style="display:none"' : '';
           rowHtml += `
-          <td data-col="${k}_fob"      class="col-vendor-sub ${tcColorClass}">${fobInput}</td>
-          <td data-col="${k}_fc"       class="col-vendor-sub tc-detail-col ${tcColorClass}" data-tckey="${k}"${hideStyle}>${fcInput}</td>
+          <td data-col="${k}_fob"      class="col-vendor-sub ${tcColorClass} cell-flaggable${fobCellClass}"${fobMinWidth}>${cellWrap(fobInput, fobFlag, fobRevs, sub?.id||"", "fob")}</td>
+          <td data-col="${k}_fc"       class="col-vendor-sub tc-detail-col ${tcColorClass} cell-flaggable" data-tckey="${k}"${hideStyle}>${cellWrap(fcInput, fcFlag, fcRevs, sub?.id||"", "factoryCost")}</td>
           <td data-col="${k}_duty_pct"  class="col-vendor-sub tc-detail-col text-sm ${tcColorClass}" data-tckey="${k}"${hideStyle}>${dutyPct}</td>
           <td data-col="${k}_duty_amt"  class="col-vendor-sub tc-detail-col ${tcColorClass}" data-tckey="${k}"${hideStyle}>${dutyAmt}</td>
           <td data-col="${k}_freight"   class="col-vendor-sub tc-detail-col text-sm ${tcColorClass}" data-tckey="${k}"${hideStyle}>${freightCell}</td>
-          <td data-col="${k}_ldp"       class="col-vendor-sub col-ldp ${tcColorClass} ${isBest ? 'cell-best' : ''} ${over ? 'cell-over' : ''}">` + ldpCell + `</td>`;
+          <td data-col="${k}_ldp"       class="col-vendor-sub col-ldp ${tcColorClass}${ldpCellClass}"
+              oncontextmenu="App.openCellHighlightMenu(event,'${s.id}','${tc.id}','${coo}','${sub?.id||''}',${sub?.fob||0});return false;"
+              title="Right-click to mark as Considering or Placed">` + ldpCell + `</td>`;
         });
 
         // Actions column
@@ -484,6 +513,7 @@ const AdminViews = (() => {
       return a.tc.coos.map(coo => ({ tc: a.tc, coo, sub: subs.find(s => s.tcId === a.tc.id && s.coo === coo) || null }));
     });
 
+    const styleNote = localStorage.getItem(`vcp_note_${styleId}`) || '';
     return `
     <div class="page-header">
       <div>
@@ -498,11 +528,21 @@ const AdminViews = (() => {
     ${placement ? `<div class="alert alert-success mb-3">🏆 Placed with <strong>${DB.TradingCompanies.get(placement.tcId)?.code || ''} (${placement.coo})</strong> at ${fmt(placement.confirmedFob)} FOB</div>` : ''}
     ${tcCooBlocks.length === 0
         ? `<div class="empty-state"><div class="icon">🏭</div><h3>No trading companies assigned</h3><button class="btn btn-primary mt-3" onclick="App.openAssignTCs('${style.programId}')">Assign Trading Companies</button></div>`
-        : `<div class="grid-auto">${tcCooBlocks.map(b => tcBlock(b.tc, b.coo, b.sub, style, bestLDP < Infinity ? bestLDP : null, placement, targetLDP)).join('')}</div>`}`;
+        : `<div class="grid-auto">${tcCooBlocks.map(b => tcBlock(b.tc, b.coo, b.sub, style, bestLDP < Infinity ? bestLDP : null, placement, targetLDP)).join('')}</div>`}
+    <div class="card mt-4" style="padding:20px">
+      <div class="text-sm font-bold mb-2" style="color:var(--text-secondary);text-transform:uppercase;letter-spacing:.06em">📝 Style Notes</div>
+      <textarea id="style-note-${styleId}" class="form-input" rows="4" style="width:100%;resize:vertical;font-size:0.9rem" placeholder="Add internal notes for this style…" onblur="App.saveStyleNote('${styleId}',this.value)" onkeydown="if(event.ctrlKey&&event.key==='Enter')this.blur()">${styleNote}</textarea>
+      <div class="text-sm text-muted mt-1">Ctrl+Enter or click away to save</div>
+    </div>`;
   }
 
   function tcBlock(tc, coo, sub, style, bestLDP, placement, targetLDP) {
     const isPlaced = placement?.tcId === tc.id && placement?.coo === coo;
+    const consideringKey = 'vcp_considering';
+    const consideringList = JSON.parse(localStorage.getItem(consideringKey) || '[]');
+    const consideringTag = sub?.id ? `${style.id}:${sub.id}` : null;
+    const isConsidering = consideringTag ? consideringList.includes(consideringTag) : false;
+
     if (!sub) return `
     <div class="vendor-block">
       <div class="vendor-block-header">
@@ -518,16 +558,18 @@ const AdminViews = (() => {
     const r = sub.fob ? DB.calcLDP(parseFloat(sub.fob), style, coo, style.market || 'USA', 'NY', effectiveTerms, sub.factoryCost) : null;
     const isBest = r && bestLDP !== null && Math.abs(r.ldp - bestLDP) < 0.001;
     const withinTarget = r && targetLDP && r.ldp <= targetLDP;
+    const fobBg = isPlaced ? 'background:rgba(34,197,94,0.18);' : isConsidering ? 'background:rgba(234,179,8,0.18);' : '';
+    const ldpBg = isPlaced ? 'background:rgba(34,197,94,0.18);' : '';
 
     return `
-    <div class="vendor-block ${isBest ? 'best-price' : ''} ${sub.status === 'flagged' ? 'flagged-block' : ''}">
+    <div class="vendor-block ${isBest ? 'best-price' : ''} ${sub.status === 'flagged' ? 'flagged-block' : ''} ${isPlaced ? 'placed-block' : ''} ${isConsidering ? 'considering-block' : ''}">
       ${isBest ? '<div class="best-price-banner">★ Best Price</div>' : ''}
       <div class="vendor-block-header">
         <div><div class="vendor-block-name">${tc.code} — ${coo}</div><div class="vendor-block-coo">${tc.name} · <span class="badge badge-costing" style="font-size:0.7rem">${effectiveTerms}</span></div></div>
         ${statusBadge(isPlaced ? 'Placed' : sub.status)}
       </div>
       <div class="cost-grid">
-        <div class="cost-item"><div class="cost-item-label">FOB</div><div class="cost-item-value">${fmt(sub.fob)}</div></div>
+        <div class="cost-item" style="${fobBg}"><div class="cost-item-label">FOB</div><div class="cost-item-value">${fmt(sub.fob)}</div></div>
         <div class="cost-item"><div class="cost-item-label">Factory Cost</div><div class="cost-item-value">${fmt(sub.factoryCost) || '—'}</div></div>
         <div class="cost-item"><div class="cost-item-label">TC Markup</div><div class="cost-item-value">${sub.tcMarkup ? (parseFloat(sub.tcMarkup) * 100).toFixed(1) + '%' : '—'}</div></div>
         <div class="cost-item"><div class="cost-item-label">MOQ</div><div class="cost-item-value">${fmtN(sub.moq) || '—'}</div></div>
@@ -535,7 +577,7 @@ const AdminViews = (() => {
         ${r ? `<div class="cost-item"><div class="cost-item-label">Duty/unit</div><div class="cost-item-value">${fmt(r.duty)}</div></div>` : ''}
         ${r ? `<div class="cost-item"><div class="cost-item-label">Freight/unit</div><div class="cost-item-value">${r.freight != null ? fmt(r.freight) : 'Set Proj Qty'}</div></div>` : ''}
       </div>
-      <div style="padding:10px 0;border-top:1px solid var(--border);margin-bottom:14px">
+      <div style="padding:10px 0;border-top:1px solid var(--border);margin-bottom:14px;${ldpBg}">
         <div class="cost-item-label">LDP/unit</div>
         <div class="cost-item-value ldp ${isBest ? 'best' : ''}">${r ? fmt(r.ldp) : '—'}${r?.noQty ? '<span class="text-muted text-sm"> *excl freight</span>' : ''}</div>
         ${targetLDP && r ? `<div class="text-sm mt-1 ${withinTarget ? 'text-success' : 'text-danger'}">${withinTarget ? '✓ Within target' : '▲ ' + fmt(r.ldp - targetLDP) + ' over target'}</div>` : ''}
@@ -549,6 +591,8 @@ const AdminViews = (() => {
              <button class="btn btn-secondary btn-sm" onclick="App.openAdminCostEntry('${style.id}','${tc.id}','${coo}')">✏ Edit</button>
              ${sub.status === 'flagged' ? `<button class="btn btn-secondary btn-sm" onclick="App.unflagSub('${sub.id}')">Clear Flag</button>` : `<button class="btn btn-warning btn-sm" onclick="App.openFlagModal('${sub.id}')">🚩 Flag</button>`}
              ${sub.status !== 'accepted' ? `<button class="btn btn-secondary btn-sm" onclick="App.acceptSub('${sub.id}')">✅ Accept</button>` : ''}`}
+        ${consideringTag ? `<button class="btn btn-sm ${isConsidering ? 'btn-warning' : 'btn-ghost'}" onclick="App.toggleConsidering('${consideringTag}','${style.id}')"
+          title="Mark as style under consideration for placement">${isConsidering ? '⭐ Considering' : '☆ Consider'}</button>` : ''}
       </div>
     </div>`;
   }
