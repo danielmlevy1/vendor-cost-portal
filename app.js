@@ -125,7 +125,8 @@ const App = (() => {
       <div class="sidebar-section"><div class="sidebar-section-label">Navigation</div></div>
       <div style="padding:0 8px">
       ${(isAdmin || isPC) ? `
-        <button class="nav-item ${state.route === 'programs' ? 'active' : ''}" onclick="App.navigate('programs')"><span class="icon">🏠</span> Programs</button>
+        <button class="nav-item ${state.route === 'dashboard' ? 'active' : ''}" onclick="App.navigate('dashboard')"><span class="icon">🏡</span> Dashboard</button>
+        <button class="nav-item ${state.route === 'programs' ? 'active' : ''}" onclick="App.navigate('programs')"><span class="icon">📋</span> Programs</button>
         <button class="nav-item ${state.route === 'cross-program' ? 'active' : ''}" onclick="App.navigate('cross-program')"><span class="icon">🌐</span> All Open Programs</button>
         <div class="sidebar-section"><div class="sidebar-section-label">Settings</div></div>
         <button class="nav-item ${state.route === 'trading-companies' ? 'active' : ''}" onclick="App.navigate('trading-companies')"><span class="icon">🏣</span> Trading Companies</button>
@@ -163,7 +164,8 @@ const App = (() => {
     const isPC    = user.role === 'pc';
     if (isAdmin || isPC) {
       // Shared program & cost views — both roles
-      if (route === 'programs')      mc.innerHTML = AdminViews.renderPrograms();
+      if (route === 'dashboard')     mc.innerHTML = AdminViews.renderDashboard(user.role);
+      else if (route === 'programs')      mc.innerHTML = AdminViews.renderPrograms();
       else if (route === 'styles')        mc.innerHTML = AdminViews.renderStyleManager(routeParam);
       else if (route === 'cost-summary')  mc.innerHTML = AdminViews.renderCostSummary(routeParam);
       else if (route === 'compare')       mc.innerHTML = AdminViews.renderCostComparison(routeParam);
@@ -175,7 +177,7 @@ const App = (() => {
       // Admin-only routes
       else if (route === 'pending-changes' && isAdmin) mc.innerHTML = AdminViews.renderPendingChanges();
       else if (route === 'staff'           && isAdmin) mc.innerHTML = AdminViews.renderStaff();
-      else mc.innerHTML = AdminViews.renderPrograms();
+      else mc.innerHTML = AdminViews.renderDashboard(user.role);
     } else {
       // TC / Vendor routes — guard against admin route access
       const tcForbidden = ['programs','styles','cost-summary','compare','cross-program',
@@ -314,9 +316,9 @@ const App = (() => {
     <div class="modal-header"><h2>${p ? 'Edit' : 'New'} Program</h2><button class="btn btn-ghost btn-icon" onclick="App.closeModal()">✕</button></div>
     <form onsubmit="App.saveProgramModal(event,'${id || ''}')">
       <div class="form-group">
-        <label class="form-label">Internal Program Name *</label>
+        <label class="form-label">Brand *</label>
         <select class="form-select" id="pm-ip" onchange="App.onInternalProgramChange()" required>
-          <option value="">Select program…</option>
+          <option value="">Select brand…</option>
           ${ips.map(ip => `<option value="${ip.id}" ${p?.internalProgramId === ip.id ? 'selected' : ''}>${ip.name}</option>`).join('')}
         </select>
       </div>
@@ -345,6 +347,14 @@ const App = (() => {
           ${['Costing', 'Placed', 'Cancelled'].map(s => `<option ${(p?.status || 'Costing') === s ? 'selected' : ''}>${s}</option>`).join('')}
         </select>
       </div>
+      <div class="form-row form-row-3">
+        <div class="form-group"><label class="form-label">Start Date</label>
+          <input class="form-input" type="date" id="pm-start-date" value="${p?.startDate || ''}"></div>
+        <div class="form-group"><label class="form-label">End Date *</label>
+          <input class="form-input" type="date" id="pm-end-date" value="${p?.endDate || ''}" required></div>
+        <div class="form-group"><label class="form-label">1st CRD Needed</label>
+          <input class="form-input" type="date" id="pm-crd" value="${p?.crdDate || ''}"></div>
+      </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary" onclick="App.closeModal()">Cancel</button>
         <button type="submit" class="btn btn-primary">${p ? 'Save' : 'Create'}</button>
@@ -370,6 +380,9 @@ const App = (() => {
       retailer: v('pm-retailer'),
       market: v('pm-market'),
       status: v('pm-status'),
+      startDate: v('pm-start-date') || null,
+      endDate: v('pm-end-date') || null,
+      crdDate: v('pm-crd') || null,
     };
     if (id) DB.Programs.update(id, data); else DB.Programs.create(data);
     closeModal(); navigate('programs');
@@ -1391,6 +1404,77 @@ const App = (() => {
   }
 
   // ── Revision History Modal ─────────────────────────────────
+  // ── Repeat Style History Modal ────────────────────────────
+  function openRepeatStyleHistory(styleNum) {
+    const allStyles  = DB.Styles.all();
+    const allSubs    = DB.Submissions.all();
+    const allPlacements = JSON.parse(localStorage.getItem('vcp_placements') || '[]');
+    const allPrograms   = DB.Programs.all();
+
+    // Collect all past styles (any program) matching styleNum
+    const pastStyles = allStyles.filter(s => (s.styleNumber || '').trim() === styleNum.trim());
+
+    // Build run entries: one per program this style appeared in
+    const runs = pastStyles.map(s => {
+      const prog = allPrograms.find(p => p.id === s.programId);
+      const pl   = allPlacements.find(p => p.styleId === s.id);
+      const subs = allSubs.filter(sub => sub.styleId === s.id);
+      const tc   = pl ? DB.TradingCompanies.get(pl.tcId) : null;
+      const placedSub = pl ? subs.find(sub => sub.tcId === pl.tcId && sub.coo === pl.coo) : null;
+      const fob  = parseFloat(pl?.confirmedFob || placedSub?.fob || 0);
+      const r    = fob > 0 ? DB.calcLDP(fob, s, pl.coo, s.market || 'USA', 'NY',
+                    tc?.paymentTerms || placedSub?.paymentTerms || 'FOB', placedSub?.factoryCost) : null;
+      return {
+        season: prog ? `${prog.season || ''} ${prog.year || ''}`.trim() : '?',
+        program: prog?.name || '?',
+        placed: !!pl,
+        tcCode: tc?.code || '', tcName: tc?.name || '',
+        coo: pl?.coo || '',
+        fob, ldp: r?.ldp || null,
+        quotedCount: subs.filter(sub => sub.fob != null).length,
+        createdAt: prog?.createdAt || 0,
+      };
+    }).sort((a, b) => b.createdAt - a.createdAt);
+
+    if (!runs.length) { showModal(`<div class="modal-header"><h2>🔁 No History Found</h2><button class="btn btn-ghost btn-icon" onclick="App.closeModal()">✕</button></div><div class="modal-body"><p class="text-muted">No prior costing runs for style <strong>${styleNum}</strong>.</p></div>`); return; }
+
+    const rows = runs.map(run => {
+      const placedBadge = run.placed
+        ? `<span class="tag tag-success">Placed</span>`
+        : `<span class="tag">Costed</span>`;
+      const tcCell = run.placed ? `${run.tcCode} <span class="text-muted text-sm">(${run.coo})</span>` : `<span class="text-muted">—</span>`;
+      return `<tr>
+        <td class="font-bold">${run.season}</td>
+        <td class="text-sm text-muted">${run.program}</td>
+        <td>${placedBadge}</td>
+        <td>${tcCell}</td>
+        <td class="${run.fob > 0 ? 'font-bold' : 'text-muted'}">${run.fob > 0 ? '$' + run.fob.toFixed(2) : '—'}</td>
+        <td class="${run.ldp > 0 ? 'text-success font-bold' : 'text-muted'}">${run.ldp > 0 ? '$' + run.ldp.toFixed(2) : '—'}</td>
+        <td class="text-sm text-muted">${run.quotedCount} TC${run.quotedCount !== 1 ? 's' : ''}</td>
+      </tr>`;
+    }).join('');
+
+    showModal(`
+      <div class="modal-header">
+        <h2>🔁 Repeat Style History — ${styleNum}</h2>
+        <button class="btn btn-ghost btn-icon" onclick="App.closeModal()">✕</button>
+      </div>
+      <div class="modal-body">
+        <p class="text-muted text-sm mb-3">${runs.length} program run${runs.length !== 1 ? 's' : ''} found across all seasons</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr>
+              <th>Season</th><th>Program</th><th>Status</th><th>Placed TC</th><th>FOB</th><th>LDP</th><th>Quotes</th>
+            </tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="App.closeModal()">Close</button>
+      </div>`, 'modal-lg');
+  }
+
   function openRevisionHistory(subId, field) {
     if (!subId) return;
     const label = field === 'fob' ? 'FOB Cost' : 'Factory Cost';
@@ -1603,7 +1687,7 @@ const App = (() => {
     openAssignTCs, saveAssignments,
     openUploadModal, handleFileUpload, handleDrop, confirmUpload, downloadTemplate,
     openFlagMenu, openFlagNoteModal, saveCellFlag, clearCellFlag,
-    openRevisionHistory,
+    openRevisionHistory, openRepeatStyleHistory,
     toggleTCCols: (colKey, programId) => AdminViews.toggleTCCols(colKey, programId),
     expandAllTCs: (programId) => AdminViews.expandAllTCs(programId),
     collapseAllTCs: (programId) => AdminViews.collapseAllTCs(programId),
@@ -1618,9 +1702,17 @@ const App = (() => {
     setProgramsView, filterPrograms,
     toggleConsidering, saveStyleNote,
     openCellHighlightMenu, setCellHighlight, closeCellMenu,
+    // Settings modals (previously missing)
+    openInternalProgramModal, saveInternalProgram, deleteInternalProgram,
+    openTCModal, saveCoo, deleteCoo, openCooModal,
+    approvePendingChange, rejectPendingChange, proposeSetting,
+    openStaffModal, saveStaff,
+    // Formatting helpers used by inline inputs
+    fmtFocusRaw, fmtFocusDuty, fmtBlurQty, fmtBlurCurrency, fmtBlurDuty,
+    // unplaceStyle alias
+    unplaceStyle: (styleId) => { DB.Placements.unplace(styleId); navigate(state.route, state.routeParam); },
     closeModal, closeModalOutside,
   };
-
 
 
 

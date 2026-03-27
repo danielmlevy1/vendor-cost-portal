@@ -18,6 +18,142 @@ const AdminViews = (() => {
     return `<span class="badge badge-${cls[s] || 'pending'}">${s}</span>`;
   }
 
+  // ── Dashboard ──────────────────────────────────────────────
+  function renderDashboard(role) {
+    const isAdmin   = role === 'admin';
+    const isFinance = role === 'admin';
+
+    const programs  = DB.Programs.all();
+    const allStyles = DB.Styles.all();
+    const allSubs   = DB.Submissions.all();
+    const allRevs   = JSON.parse(localStorage.getItem('vcp_revisions') || '[]');
+    const allFlags  = JSON.parse(localStorage.getItem('vcp_cell_flags') || '[]');
+    const allPlacements = JSON.parse(localStorage.getItem('vcp_placements') || '[]');
+    const today     = new Date(); today.setHours(0,0,0,0);
+    const in30      = new Date(today); in30.setDate(in30.getDate() + 30);
+
+    // Program Health
+    const progActive    = programs.filter(p => p.status === 'Costing').length;
+    const progPlaced    = programs.filter(p => p.status === 'Placed').length;
+    const progPastEnd   = programs.filter(p => p.endDate && new Date(p.endDate + 'T00:00:00') < today && p.status === 'Costing').length;
+
+    // Style Progress (active programs only)
+    const activeProgIds = new Set(programs.filter(p => p.status === 'Costing').map(p => p.id));
+    const activeStyles  = allStyles.filter(s => activeProgIds.has(s.programId) && s.status !== 'cancelled');
+    const totalStyles   = activeStyles.length;
+    const costedStyles  = activeStyles.filter(s => allSubs.some(sub => sub.styleId === s.id && sub.fob != null)).length;
+    const placedStyles  = activeStyles.filter(s => allPlacements.some(pl => pl.styleId === s.id)).length;
+    const projQtyTotal  = activeStyles.reduce((sum, s) => sum + (parseFloat(s.projQty) || 0), 0);
+    const placedQtyTotal = activeStyles.filter(s => allPlacements.some(pl => pl.styleId === s.id))
+                             .reduce((sum, s) => sum + (parseFloat(s.projQty) || 0), 0);
+
+    // Action Items
+    const flagCount     = allFlags.length;
+    const pendingCount  = isAdmin ? DB.PendingChanges.pending().length : 0;
+    const unreviewedCount = (() => {
+      const seen = {};
+      let count = 0;
+      allRevs.forEach(r => {
+        const k = `${r.subId}_${r.field}`;
+        if (!seen[k]) { seen[k] = { ts: r.submittedAt || 0 }; }
+        else if ((r.submittedAt || 0) > seen[k].ts) seen[k].ts = r.submittedAt || 0;
+      });
+      Object.entries(seen).forEach(([k, v]) => {
+        const seenTs = parseInt(localStorage.getItem(`vcp_rev_seen_${k.replace('_', '_')}`) || '0');
+        if (v.ts > seenTs) count++;
+      });
+      return count;
+    })();
+    const upcomingCRDs  = programs.filter(p => p.crdDate && (() => { const d = new Date(p.crdDate + 'T00:00:00'); return d >= today && d <= in30; })()).length;
+
+    // Financials (admin/PC only)
+    const placedSubs = allPlacements.map(pl => {
+      const style = allStyles.find(s => s.id === pl.styleId);
+      const sub = allSubs.find(s => s.styleId === pl.styleId && s.tcId === pl.tcId && s.coo === pl.coo);
+      return { fob: parseFloat(sub?.fob || pl.confirmedFob || 0), qty: parseFloat(style?.projQty || 0) };
+    }).filter(x => x.fob > 0);
+    const avgFOB     = placedSubs.length ? placedSubs.reduce((s, x) => s + x.fob, 0) / placedSubs.length : 0;
+    const totalSpend = placedSubs.reduce((s, x) => s + x.fob * x.qty, 0);
+
+    const bar = (val, total, color = '#6366f1') => {
+      const pct = total > 0 ? Math.round((val / total) * 100) : 0;
+      return `<div style="margin-top:8px">
+        <div style="display:flex;justify-content:space-between;font-size:0.72rem;color:#94a3b8;margin-bottom:4px">
+          <span>${val} / ${total}</span><span>${pct}%</span>
+        </div>
+        <div style="height:6px;border-radius:3px;background:rgba(255,255,255,0.08)">
+          <div style="height:6px;border-radius:3px;background:${color};width:${pct}%;transition:width .4s"></div>
+        </div>
+      </div>`;
+    };
+
+    const kpi = (icon, label, value, sub = '', color = '#6366f1', clickRoute = '') => `
+      <div class="kpi-card" ${clickRoute ? `style="cursor:pointer" onclick="App.navigate('${clickRoute}')"` : ''}>
+        <div class="kpi-icon" style="background:${color}22;color:${color}">${icon}</div>
+        <div class="kpi-body">
+          <div class="kpi-value">${value}</div>
+          <div class="kpi-label">${label}</div>
+          ${sub ? `<div class="kpi-sub">${sub}</div>` : ''}
+        </div>
+      </div>`;
+
+    const alert = (icon, label, value, color, route) => `
+      <div class="kpi-alert ${value > 0 ? 'kpi-alert-active' : ''}" ${route ? `style="cursor:pointer" onclick="App.navigate('${route}')"` : ''}>
+        <span class="kpi-alert-icon" style="color:${color}">${icon}</span>
+        <span class="kpi-alert-value" style="color:${value > 0 ? color : '#64748b'}">${value}</span>
+        <span class="kpi-alert-label">${label}</span>
+        ${route && value > 0 ? '<span class="kpi-alert-arrow">→</span>' : ''}
+      </div>`;
+
+    return `
+    <div class="page-header">
+      <div><h1 class="page-title">Dashboard</h1>
+        <p class="page-subtitle">${today.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'})}</p>
+      </div>
+    </div>
+
+    <div class="kpi-section-label">Program Health</div>
+    <div class="kpi-grid">
+      ${kpi('🟢','Active Programs', progActive, 'Currently in costing', '#22c55e', 'programs')}
+      ${kpi('📦','Programs Placed', progPlaced, 'Fully placed', '#6366f1', 'programs')}
+      ${kpi('⚠️','Past End Date', progPastEnd, 'Still in costing', '#ef4444', 'programs')}
+    </div>
+
+    <div class="kpi-section-label" style="margin-top:28px">Style Progress — Active Programs</div>
+    <div class="kpi-grid" style="grid-template-columns:repeat(auto-fill,minmax(280px,1fr))">
+      <div class="kpi-card-wide">
+        <div class="kpi-wide-title">Styles Quoted</div>
+        <div class="kpi-wide-big">${costedStyles} <span class="kpi-wide-of">/ ${totalStyles}</span></div>
+        ${bar(costedStyles, totalStyles, '#6366f1')}
+      </div>
+      <div class="kpi-card-wide">
+        <div class="kpi-wide-title">Styles Placed</div>
+        <div class="kpi-wide-big">${placedStyles} <span class="kpi-wide-of">/ ${totalStyles}</span></div>
+        ${bar(placedStyles, totalStyles, '#22c55e')}
+      </div>
+      <div class="kpi-card-wide">
+        <div class="kpi-wide-title">Projected QTY Placed</div>
+        <div class="kpi-wide-big">${placedQtyTotal.toLocaleString()} <span class="kpi-wide-of">/ ${projQtyTotal.toLocaleString()}</span></div>
+        ${bar(placedQtyTotal, projQtyTotal, '#f59e0b')}
+      </div>
+    </div>
+
+    <div class="kpi-section-label" style="margin-top:28px">Action Items</div>
+    <div class="kpi-alerts">
+      ${alert('🚩', 'Flagged Prices', flagCount, '#ef4444', '')}
+      ${alert('🔔', 'Unreviewed Price Changes', unreviewedCount, '#f59e0b', '')}
+      ${alert('📅', 'CRDs Within 30 Days', upcomingCRDs, '#6366f1', 'programs')}
+      ${isAdmin ? alert('⏳', 'Pending Approvals', pendingCount, '#a855f7', 'pending-changes') : ''}
+    </div>
+
+    ${isFinance ? `
+    <div class="kpi-section-label" style="margin-top:28px">Financials — Placed Styles Only</div>
+    <div class="kpi-grid">
+      ${kpi('💵','Avg FOB (Placed)', avgFOB > 0 ? '$' + avgFOB.toFixed(2) : '—', `${placedSubs.length} style${placedSubs.length !== 1 ? 's' : ''} placed`, '#22c55e')}
+      ${kpi('💰','Est. Total Placed Spend', totalSpend > 0 ? '$' + totalSpend.toLocaleString(undefined,{minimumFractionDigits:0,maximumFractionDigits:0}) : '—', 'FOB × Proj QTY', '#6366f1')}
+    </div>` : ''}`;
+  }
+
   // ── Programs ───────────────────────────────────────────────
   function renderPrograms() {
     const programs = DB.Programs.all();
@@ -44,28 +180,43 @@ const AdminViews = (() => {
     if (search) rows = rows.filter(p => `${p.name} ${p.season || ''} ${p.year || ''}`.toLowerCase().includes(search.toLowerCase()));
     if (statusFilter) rows = rows.filter(p => p.status === statusFilter);
     if (!rows.length) return `<div class="empty-state"><div class="icon">📋</div><h3>No programs match</h3></div>`;
+    const fmtDate = (d) => d ? new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' }) : '—';
     const thead = `<thead><tr>
       <th>Season</th><th>Year</th><th>Program</th><th>Status</th>
-      <th style="text-align:center">Total # Styles</th>
+      <th style="text-align:center">Styles</th>
+      <th style="text-align:center">Costed</th>
+      <th style="text-align:center">Placed</th>
       <th style="text-align:center">TTL Proj Qty</th>
-      <th style="text-align:center">Total # Trade Cos.</th>
-      <th style="text-align:center">Total Quoted</th>
+      <th style="text-align:center">TTL Actual Qty</th>
+      <th style="text-align:center">TCs</th>
+      <th>Start Date</th><th>End Date</th><th>1st CRD</th>
       <th>Actions</th>
     </tr></thead>`;
     const tbody = rows.map(p => {
-      const styleCount  = DB.Programs.styleCount(p.id);
-      const tcCount     = DB.Programs.tcCount(p.id);
-      const quotedCount = DB.Programs.quotedCount(p.id);
-      const projQtyTotal = DB.Styles.byProgram(p.id).reduce((sum, s) => sum + (parseFloat(s.projQty) || 0), 0);
+      const styles       = DB.Styles.byProgram(p.id);
+      const styleCount   = styles.length;
+      const tcCount      = DB.Programs.tcCount(p.id);
+      const placements   = DB.Placements;
+      const placedCount  = styles.filter(s => placements.get(s.id) != null).length;
+      // Costed = styles that have at least one FOB submission
+      const allSubs      = DB.Submissions.all();
+      const costedCount  = styles.filter(s => allSubs.some(sub => sub.styleId === s.id && sub.fob != null)).length;
+      const projQtyTotal = styles.reduce((sum, s) => sum + (parseFloat(s.projQty)    || 0), 0);
+      const actlQtyTotal = styles.reduce((sum, s) => sum + (parseFloat(s.actualQty)  || 0), 0);
       return `<tr style="cursor:pointer" onclick="App.openProgram('${p.id}')">
         <td>${p.season || '—'}</td>
         <td>${p.year || '—'}</td>
         <td class="primary font-bold">${p.name}</td>
         <td>${statusBadge(p.status)}</td>
         <td style="text-align:center"><span class="tag">${styleCount}</span></td>
+        <td style="text-align:center"><span class="tag">${costedCount}</span></td>
+        <td style="text-align:center"><span class="tag ${placedCount > 0 ? 'tag-success' : ''}">${placedCount}</span></td>
         <td style="text-align:center"><span class="tag">${projQtyTotal > 0 ? projQtyTotal.toLocaleString() : '—'}</span></td>
+        <td style="text-align:center"><span class="tag">${actlQtyTotal > 0 ? actlQtyTotal.toLocaleString() : '—'}</span></td>
         <td style="text-align:center"><span class="tag">${tcCount}</span></td>
-        <td style="text-align:center"><span class="tag">${quotedCount}</span></td>
+        <td class="text-sm">${fmtDate(p.startDate)}</td>
+        <td class="text-sm">${fmtDate(p.endDate)}</td>
+        <td class="text-sm">${fmtDate(p.crdDate)}</td>
         <td onclick="event.stopPropagation()" style="white-space:nowrap">
           <div style="display:flex;gap:6px">
             <button class="btn btn-primary btn-sm" onclick="App.openProgram('${p.id}')">📋 Costs</button>
@@ -280,6 +431,7 @@ const AdminViews = (() => {
       </th>`;
     });
     hdr1 += `<th rowspan="2" data-col="actions" class="mat-hdr"></th>`;
+    hdr1 += `<th rowspan="2" data-col="repeat" class="mat-hdr" style="min-width:160px;white-space:nowrap" title="Prior costing history for this style number">🔁 Repeat Style</th>`;
 
     // Header row 2: sub-column labels
     let hdr2 = '';
@@ -309,6 +461,36 @@ const AdminViews = (() => {
     } else if (sortBy === 'fabrication') {
       activeStyles = [...activeStyles].sort((a, b) => (a.fabrication || '').localeCompare(b.fabrication || ''));
     }
+
+    // ── Precompute repeat-style lookup ─────────────────────────
+    const _allStylesGlobal   = DB.Styles.all();
+    const _allSubsGlobal     = DB.Submissions.all();
+    const _allPlacements     = JSON.parse(localStorage.getItem('vcp_placements') || '[]');
+    const _allPrograms       = DB.Programs.all();
+    // repeatHistory[styleNumber] = sorted array of {prog, tc, coo, fob, ldp}
+    const repeatHistory = {};
+    _allPlacements.forEach(pl => {
+      const pastStyle = _allStylesGlobal.find(s => s.id === pl.styleId);
+      if (!pastStyle || pastStyle.programId === programId) return; // skip current program
+      const sn = (pastStyle.styleNumber || '').trim();
+      if (!sn) return;
+      const prog = _allPrograms.find(p => p.id === pastStyle.programId);
+      const tc   = DB.TradingCompanies.get(pl.tcId);
+      const sub  = _allSubsGlobal.find(s => s.styleId === pl.styleId && s.tcId === pl.tcId && s.coo === pl.coo);
+      const fob  = parseFloat(pl.confirmedFob || sub?.fob || 0);
+      const r    = fob > 0 ? DB.calcLDP(fob, pastStyle, pl.coo, pastStyle.market || 'USA', 'NY',
+                    tc?.paymentTerms || sub?.paymentTerms || 'FOB', sub?.factoryCost) : null;
+      const entry = {
+        season: prog ? `${prog.season || ''} ${prog.year || ''}`.trim() : '?',
+        tcCode: tc?.code || pl.tcId, tcName: tc?.name || '',
+        coo: pl.coo, fob, ldp: r?.ldp || null,
+        progCreatedAt: prog?.createdAt || 0
+      };
+      if (!repeatHistory[sn]) repeatHistory[sn] = [];
+      repeatHistory[sn].push(entry);
+    });
+    // sort each list by most recent program first
+    Object.values(repeatHistory).forEach(arr => arr.sort((a, b) => b.progCreatedAt - a.progCreatedAt));
 
     // Build data rows
     function buildRows(styleList, isCancelled) {
@@ -438,6 +620,25 @@ const AdminViews = (() => {
           rowHtml += `<td data-col="actions"><button class="btn-cancel-style" onclick="App.cancelStyle('${s.id}','${pid}')">🚫 Cancel</button></td>`;
         }
 
+        // Repeat Style column
+        const sn = (s.styleNumber || '').trim();
+        const history = sn ? (repeatHistory[sn] || []) : [];
+        if (history.length === 0) {
+          rowHtml += `<td data-col="repeat" class="text-muted text-sm" style="text-align:center">—</td>`;
+        } else {
+          const last = history[0]; // most recent
+          const fobStr = last.fob > 0 ? '$' + last.fob.toFixed(2) : '—';
+          const ldpStr = last.ldp > 0 ? '$' + last.ldp.toFixed(2) : '—';
+          const histBtn = history.length > 1
+            ? ` <span class="revision-badge revision-badge-new" title="${history.length} past runs — click for full history"
+                  style="cursor:pointer" onclick="App.openRepeatStyleHistory('${sn.replace(/'/g,'\\!')}')">🕐 ${history.length}</span>` : '';
+          rowHtml += `<td data-col="repeat" style="font-size:0.78rem;white-space:nowrap;padding:6px 10px">
+            <div style="font-weight:600;color:var(--accent)">${last.tcCode} · ${last.coo}</div>
+            <div style="color:var(--text-secondary)">${last.season} &nbsp; FOB ${fobStr} &nbsp; LDP ${ldpStr}</div>
+            ${histBtn}
+          </td>`;
+        }
+
         const rowClass = isCancelled ? 'row-cancelled' : '';
         return `<tr class="${rowClass}">${rowHtml}</tr>`;
       }).join('');
@@ -445,7 +646,7 @@ const AdminViews = (() => {
 
     // Build active rows — optionally grouped
     let activeRows = '';
-    const totalFixedCols = 10 + colGroups.length * 6 + 1;
+    const totalFixedCols = 10 + colGroups.length * 6 + 2; // +2 for actions + repeat
     if (groupBy === 'fabrication') {
       const groups = {};
       const groupOrder = [];
@@ -466,7 +667,7 @@ const AdminViews = (() => {
     let cancelledSection = '';
     if (cancelledStyles.length > 0) {
       const cancelledRows = buildRows(cancelledStyles, true);
-      const totalCols = 10 + colGroups.length * 6 + 1; // fixed (9) + best (1) + vendor sub-cols (6 each) + actions (1)
+      const totalCols = 10 + colGroups.length * 6 + 2; // fixed + TC cols + actions + repeat
       cancelledSection = `
       <tr class="cancelled-toggle-row" id="cancelled-toggle" onclick="App.toggleCancelledRows()">
         <td colspan="${totalCols}">
@@ -938,6 +1139,7 @@ const AdminViews = (() => {
   }
 
   const api = {
+    renderDashboard,
     renderPrograms, renderStyleManager, renderCostSummary, buildCostMatrix,
     renderCostComparison, renderCrossProgram,
     renderTradingCompanies, renderInternalPrograms, renderCOO,
