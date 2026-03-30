@@ -1957,7 +1957,7 @@ const App = (() => {
     openCellHighlightMenu, setCellHighlight, closeCellMenu,
     // Settings modals (previously missing)
     openInternalProgramModal, saveInternalProgram, deleteInternalProgram,
-    openTCModal, saveCoo, deleteCoo, openCooModal,
+    openTCModal, saveTC, deleteTC, saveCoo, deleteCoo, openCooModal,
     approvePendingChange, rejectPendingChange, proposeSetting,
     openStaffModal, saveStaff,
     // Formatting helpers used by inline inputs
