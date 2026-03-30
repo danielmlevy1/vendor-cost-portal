@@ -179,7 +179,7 @@ const App = (() => {
       // Settings — Admin gets full CRUD; PC gets propose-mode
       else if (route === 'trading-companies') mc.innerHTML = isAdmin ? AdminViews.renderTradingCompanies() : AdminViews.renderTradingCompaniesPC();
       else if (route === 'customers')         mc.innerHTML = isAdmin ? AdminViews.renderCustomers() : mc.innerHTML;
-      else if (route === 'internal')          mc.innerHTML = isAdmin ? AdminViews.renderInternalPrograms()  : AdminViews.renderInternalProgramsPC();
+      else if (route === 'internal' && isAdmin)  mc.innerHTML = AdminViews.renderInternalPrograms();
       else if (route === 'coo')               mc.innerHTML = isAdmin ? AdminViews.renderCOO()               : AdminViews.renderCOOPC();
       // Admin-only routes
       else if (route === 'pending-changes' && isAdmin) mc.innerHTML = AdminViews.renderPendingChanges();
@@ -802,6 +802,35 @@ const App = (() => {
       canadaMult: isNaN(canMult) ? 0 : canMult,
     });
     closeModal(); navigate('coo');
+  }
+
+  // ── Buy Summary keyboard navigation ─────────────────────────
+  function buyMoveDown(e, inp) {
+    if (e.key !== 'Enter' && e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+    e.preventDefault();
+
+    // Save current cell first
+    inp.blur();
+
+    // Find this input's column index within its row
+    const td    = inp.closest('td');
+    const tr    = td.closest('tr');
+    const tbody = tr.closest('tbody');
+    if (!tbody) return;
+
+    const tdIdx  = Array.from(tr.cells).indexOf(td);
+    const rows   = Array.from(tbody.rows);
+    const rowIdx = rows.indexOf(tr);
+    const dir    = (e.key === 'ArrowUp' || e.shiftKey) ? -1 : 1;
+    const target = rows[rowIdx + dir];
+    if (!target) return;
+
+    const nextTd    = target.cells[tdIdx];
+    const nextInput = nextTd?.querySelector('input');
+    if (nextInput) {
+      nextInput.focus();
+      nextInput.select();
+    }
   }
 
   // ── Buy Summary ─────────────────────────────────────────────
@@ -1935,7 +1964,7 @@ const App = (() => {
     openStyleModal, previewTargetLDP, saveStyle, deleteStyle,
     openAssignTCs, saveAssignments,
     openAssignCustomers, saveCustomerAssignments,
-    saveBuyInline,
+    saveBuyInline, buyMoveDown,
     downloadBuyTemplate, openBuyUploadModal, handleBuyDrop, handleBuyFileUpload, confirmBuyUpload,
     openCustomerModal, saveCustomer, deleteCustomer,
     openUploadModal, handleFileUpload, handleDrop, confirmUpload, downloadTemplate,

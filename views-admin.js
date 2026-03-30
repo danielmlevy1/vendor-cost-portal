@@ -1015,14 +1015,14 @@ const AdminViews = (() => {
             <input class="cell-input cell-input-sm" type="text" inputmode="numeric"
               placeholder="Qty" value="${b?.qty || ''}"
               onblur="App.saveBuyInline('${s.id}','${c.id}','${programId}','qty',this)"
-              onkeydown="if(event.key==='Enter')this.blur()">
+              onkeydown="App.buyMoveDown(event,this)">
           </td>
           <td class="${cls}" style="padding:4px 6px">
             <input class="cell-input cell-input-sm" type="text" inputmode="decimal"
               placeholder="$0.00" value="${sellVal}"
               onfocus="this.value=this.value.replace(/[^0-9.]/g,'')"
               onblur="App.saveBuyInline('${s.id}','${c.id}','${programId}','sellPrice',this);if(this.value&&!isNaN(parseFloat(this.value)))this.value='$'+parseFloat(this.value).toFixed(2);"
-              onkeydown="if(event.key==='Enter')this.blur()">
+              onkeydown="App.buyMoveDown(event,this)">
           </td>`;
         } else {
           cells += `<td class="${cls} text-sm text-center">${qtyVal || '—'}</td>
