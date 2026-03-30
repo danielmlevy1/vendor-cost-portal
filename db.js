@@ -76,24 +76,52 @@ const DB = (() => {
         { id: 'ES', code: 'ES', country: 'Eswatini',    addlDuty: 0.100, usaMult: 2.0000, canadaMult: 2.0000 },
     ];
 
-    // Trading Companies — one login per TC, quotes from multiple COOs
+    // Trading Companies — grouped by company; coos = countries they can quote from
     const SEED_TRADING_COMPANIES = [
-        { id: 'tc1', code: 'SHK', name: 'Shinwon Korea', email: 'shk@vendor.com', password: 'vendor123', coos: ['KH', 'VN'] },
-        { id: 'tc2', code: 'TF', name: 'TopForm', email: 'tf@vendor.com', password: 'vendor123', coos: ['TH', 'ID'] },
-        { id: 'tc3', code: 'TL', name: 'Talent', email: 'tl@vendor.com', password: 'vendor123', coos: ['CN', 'PK'] },
+        { id: 'tc_az',   code: 'AZ',   name: 'Amazing Space',      email: 'az@vendor.com',   password: 'vendor123', paymentTerms: 'FOB', coos: ['CN','KH'] },
+        { id: 'tc_cs',   code: 'CS',   name: 'Consummate',          email: 'cs@vendor.com',   password: 'vendor123', paymentTerms: 'FOB', coos: [] },
+        { id: 'tc_eg',   code: 'EG',   name: 'Eastern Garment',     email: 'eg@vendor.com',   password: 'vendor123', paymentTerms: 'FOB', coos: ['PK'] },
+        { id: 'tc_fhd',  code: 'FHD',  name: 'Federal Home Depot',  email: 'fhd@vendor.com',  password: 'vendor123', paymentTerms: 'FOB', coos: ['KH'] },
+        { id: 'tc_gm',   code: 'GM',   name: 'Guomao',              email: 'gm@vendor.com',   password: 'vendor123', paymentTerms: 'FOB', coos: ['ID','KH','VN'] },
+        { id: 'tc_gu',   code: 'GU',   name: 'Great Union',         email: 'gu@vendor.com',   password: 'vendor123', paymentTerms: 'FOB', coos: ['KH','KY'] },
+        { id: 'tc_hnm',  code: 'HNM',  name: 'HNM',                 email: 'hnm@vendor.com',  password: 'vendor123', paymentTerms: 'FOB', coos: ['PK'] },
+        { id: 'tc_hr',   code: 'HR',   name: 'Hongren',             email: 'hr@vendor.com',   password: 'vendor123', paymentTerms: 'FOB', coos: ['CN','KH'] },
+        { id: 'tc_hs',   code: 'HS',   name: 'Hansae',              email: 'hs@vendor.com',   password: 'vendor123', paymentTerms: 'FOB', coos: ['ID','KH','VN'] },
+        { id: 'tc_kt',   code: 'KT',   name: 'KT Group',            email: 'kt@vendor.com',   password: 'vendor123', paymentTerms: 'FOB', coos: [] },
+        { id: 'tc_ly',   code: 'LY',   name: 'Liyang',              email: 'ly@vendor.com',   password: 'vendor123', paymentTerms: 'FOB', coos: ['KH'] },
+        { id: 'tc_mk',   code: 'MK',   name: 'Makalot',             email: 'mk@vendor.com',   password: 'vendor123', paymentTerms: 'FOB', coos: ['ID','KH','VN'] },
+        { id: 'tc_ml',   code: 'ML',   name: 'Morelands',           email: 'ml@vendor.com',   password: 'vendor123', paymentTerms: 'FOB', coos: ['JD','KH'] },
+        { id: 'tc_rl',   code: 'RL',   name: 'Reliance',            email: 'rl@vendor.com',   password: 'vendor123', paymentTerms: 'FOB', coos: ['KH'] },
+        { id: 'tc_semi', code: 'SEMI', name: 'Semisphere',          email: 'semi@vendor.com', password: 'vendor123', paymentTerms: 'FOB', coos: [] },
+        { id: 'tc_shk',  code: 'SHK',  name: 'SHK',                 email: 'shk@vendor.com',  password: 'vendor123', paymentTerms: 'FOB', coos: ['ID','KH','VN'] },
+        { id: 'tc_sw',   code: 'SW',   name: 'Shinwon',             email: 'sw@vendor.com',   password: 'vendor123', paymentTerms: 'FOB', coos: ['ID','KH','VN'] },
+        { id: 'tc_tb',   code: 'TB',   name: 'Twobees',             email: 'tb@vendor.com',   password: 'vendor123', paymentTerms: 'FOB', coos: ['ID','KH'] },
+        { id: 'tc_tf',   code: 'TF',   name: 'TopForm',             email: 'tf@vendor.com',   password: 'vendor123', paymentTerms: 'FOB', coos: ['TH'] },
+        { id: 'tc_tl',   code: 'TL',   name: 'Talent',              email: 'tl@vendor.com',   password: 'vendor123', paymentTerms: 'FOB', coos: ['CN','KH'] },
+        { id: 'tc_tx',   code: 'TX',   name: 'Texray',              email: 'tx@vendor.com',   password: 'vendor123', paymentTerms: 'FOB', coos: ['ES'] },
+        { id: 'tc_ty',   code: 'TY',   name: 'Taieasy',             email: 'ty@vendor.com',   password: 'vendor123', paymentTerms: 'FOB', coos: ['KH'] },
+        { id: 'tc_uni',  code: 'UNI',  name: 'Universal',           email: 'uni@vendor.com',  password: 'vendor123', paymentTerms: 'FOB', coos: ['TH'] },
+        { id: 'tc_wb',   code: 'WB',   name: 'Willbes',             email: 'wb@vendor.com',   password: 'vendor123', paymentTerms: 'FOB', coos: ['HT','ID'] },
+        { id: 'tc_wbg',  code: 'WBG',  name: 'WorldBest',           email: 'wbg@vendor.com',  password: 'vendor123', paymentTerms: 'FOB', coos: [] },
+        { id: 'tc_wd',   code: 'WD',   name: 'Windeson',            email: 'wd@vendor.com',   password: 'vendor123', paymentTerms: 'FOB', coos: ['CN','KH','LS'] },
+        { id: 'tc_yt',   code: 'YT',   name: 'Yuenthai',            email: 'yt@vendor.com',   password: 'vendor123', paymentTerms: 'FOB', coos: ['KH','TH'] },
     ];
 
     // ── Init with schema migration ─────────────────────────────
     function init() {
         const ver = localStorage.getItem('vcp_schema_ver');
-        if (ver !== '3' && ver !== '4' && ver !== '5' && ver !== '6' && ver !== '7' && ver !== '8' && ver !== '9') {
+        if (ver !== '3' && ver !== '4' && ver !== '5' && ver !== '6' && ver !== '7' && ver !== '8' && ver !== '9' && ver !== '10') {
             localStorage.removeItem(KEYS.assignments);
             localStorage.removeItem(KEYS.submissions);
             localStorage.removeItem('vcp_vendors');
             localStorage.removeItem(KEYS.tradingCompanies);
         }
-        if (ver !== '5' && ver !== '6' && ver !== '7' && ver !== '8' && ver !== '9') {
+        if (ver !== '5' && ver !== '6' && ver !== '7' && ver !== '8' && ver !== '9' && ver !== '10') {
             localStorage.removeItem(KEYS.cooRates);
+        }
+        // v10: replace all TCs with the full real company list
+        if (ver !== '10') {
+            localStorage.removeItem(KEYS.tradingCompanies);
         }
 
         // ── Seed defaults (safe — only runs if key is absent) ──────
@@ -146,7 +174,7 @@ const DB = (() => {
         }
 
         // ── Stamp schema version ────────────────────────────────────
-        localStorage.setItem('vcp_schema_ver', '9');
+        localStorage.setItem('vcp_schema_ver', '10');
     }
 
 
