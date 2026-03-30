@@ -652,7 +652,11 @@ const AdminViews = (() => {
           </td>`;
         }
 
-        const rowClass = isCancelled ? 'row-cancelled' : '';
+        const rowClass = isCancelled ? 'row-cancelled' : (
+          bestLDP !== null && targetLDP ? (
+            bestLDP <= targetLDP ? 'row-on-target' : 'row-over-target'
+          ) : ''
+        );
         return `<tr class="${rowClass}">${rowHtml}</tr>`;
       }).join('');
     }

@@ -2463,3 +2463,110 @@ td.tc-skipped-cell   { opacity: 0.4; }
   font-weight: 600;
   background: transparent;
 }
+
+/* ── Cost Summary Column Zone Colors ───────────────────────── */
+
+/* Style identifier zone */
+th[data-col="styleNum"], th[data-col="styleName"],
+th[data-col="cat"], th[data-col="fab"] {
+  background: #1c2a3a !important;
+}
+td[data-col="styleNum"], td[data-col="styleName"],
+td[data-col="cat"], td[data-col="fab"] {
+  background: #19263a !important;
+}
+
+/* Projected zone — blue tint */
+th[data-col="qty"], th[data-col="sell"] {
+  background: #17294d !important;
+  color: #93c5fd !important;
+}
+td[data-col="qty"], td[data-col="sell"] {
+  background: rgba(59, 130, 246, 0.05) !important;
+}
+
+/* Actuals zone — green tint */
+th[data-col="actualQty"], th[data-col="wtdSell"] {
+  background: #0f2a1f !important;
+  color: #6ee7b7 !important;
+  border-left: 2px solid #059669 !important;
+}
+td[data-col="actualQty"] {
+  background: rgba(16, 185, 129, 0.08) !important;
+  border-left: 2px solid #059669 !important;
+  color: #6ee7b7 !important;
+  font-weight: 600;
+}
+td[data-col="wtdSell"] {
+  background: rgba(16, 185, 129, 0.04) !important;
+  color: #a7f3d0 !important;
+}
+
+/* Calculations zone — subtle purple tint */
+th[data-col="tldp"], th[data-col="dutyRate"],
+th[data-col="estFreight"], th[data-col="best"] {
+  background: #1e1533 !important;
+  color: #c4b5fd !important;
+}
+td[data-col="tldp"] {
+  background: rgba(139, 92, 246, 0.10) !important;
+  color: #c4b5fd !important;
+  font-weight: 700;
+}
+td[data-col="dutyRate"], td[data-col="estFreight"] {
+  background: rgba(139, 92, 246, 0.03) !important;
+  color: var(--text-secondary) !important;
+}
+td[data-col="best"] {
+  background: rgba(139, 92, 246, 0.05) !important;
+}
+
+/* Best TC tag — tighten success/danger contrast */
+td[data-col="best"] .tag-success {
+  background: rgba(16, 185, 129, 0.18);
+  color: #6ee7b7;
+  border: 1px solid rgba(16, 185, 129, 0.35);
+}
+td[data-col="best"] .tag-danger {
+  background: rgba(239, 68, 68, 0.18);
+  color: #fca5a5;
+  border: 1px solid rgba(239, 68, 68, 0.35);
+}
+
+/* Per-row status — left border for over/under Target LDP */
+#cost-summary-table tr:not(.hdr-row1):not(.hdr-row2):not(.cs-group-row):not(.cancelled-toggle-row) {
+  border-left: 3px solid transparent;
+  transition: border-color .15s;
+}
+
+/* Vendor group headers — richer band */
+.vendor-group-hdr {
+  font-size: 0.78rem;
+  letter-spacing: 0.02em;
+}
+.tc-col-even { background: #141e2e !important; }
+.tc-col-odd  { background: #101825 !important; }
+
+/* Placed FOB cell — strong highlight */
+.cell-placed-fob { background: rgba(16,185,129,0.15) !important; }
+.cell-placed-ldp { background: rgba(16,185,129,0.20) !important; font-weight: 700; }
+.cell-considering-fob { background: rgba(251,191,36,0.08) !important; }
+
+/* Sticky col right shadow */
+td.sticky-col, th.sticky-col {
+  box-shadow: 3px 0 8px rgba(0,0,0,0.4);
+}
+
+/* Row-level status signals */
+#cost-summary-table tr.row-on-target td:first-child {
+  border-left: 3px solid #10b981;
+}
+#cost-summary-table tr.row-over-target td:first-child {
+  border-left: 3px solid #f59e0b;
+}
+#cost-summary-table tr.row-on-target {
+  background: rgba(16, 185, 129, 0.02);
+}
+#cost-summary-table tr.row-over-target {
+  background: rgba(245, 158, 11, 0.02);
+}
