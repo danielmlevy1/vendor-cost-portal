@@ -976,13 +976,15 @@ const AdminViews = (() => {
       ${canEdit ? `<button class="btn btn-primary" onclick="App.openAssignCustomers('${programId}')">＋ Assign Customers</button>` : ''}</div>` : '';
 
     const assignBtn = canEdit ? `<button class="btn btn-secondary btn-sm" onclick="App.openAssignCustomers('${programId}')">👥 Assign Customers</button>` : '';
+    const dlBtn     = custs.length > 0 && canEdit ? `<button class="btn btn-secondary btn-sm" onclick="App.downloadBuyTemplate('${programId}')">⬇ Template</button>` : '';
+    const upBtn     = custs.length > 0 && canEdit ? `<button class="btn btn-primary btn-sm" onclick="App.openBuyUploadModal('${programId}')">📤 Upload</button>` : '';
 
     return `
     ${programTabBar(programId, 'buys', prog)}
     <div class="page-header" style="margin-top:12px">
       <div><h1 class="page-title">${prog.name} — Buy Summary</h1>
         <p class="page-subtitle">${prog.season || ''} ${prog.year || ''}</p></div>
-      <div style="display:flex;gap:8px">${assignBtn}</div>
+      <div style="display:flex;gap:8px">${assignBtn}${dlBtn}${upBtn}</div>
     </div>
     ${noCusts}
     ${custs.length > 0 ? `<div class="card" style="padding:0"><div class="table-wrap">

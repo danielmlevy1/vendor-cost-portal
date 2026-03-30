@@ -882,6 +882,146 @@ const App = (() => {
     closeModal(); navigate('buy-summary', programId);
   }
 
+  // ── Buy Template Download ─────────────────────────────────
+  function downloadBuyTemplate(programId) {
+    const prog    = DB.Programs.get(programId);
+    const styles  = DB.Styles.byProgram(programId).filter(s => s.status !== 'cancelled');
+    const custIds = DB.CustomerAssignments.byProgram(programId);
+    const custs   = custIds.map(id => DB.Customers.get(id)).filter(Boolean);
+    if (!custs.length) { alert('Assign customers to this program before downloading the template.'); return; }
+
+    // Header row: fixed cols + per-customer pair
+    const fixedHdrs = ['Style #', 'Style Name', 'Category', 'Fabrication'];
+    const custHdrs  = custs.flatMap(c => [`${c.code} - Units`, `${c.code} - Sell Price`]);
+    const header    = [...fixedHdrs, ...custHdrs].join(',');
+
+    // Existing buy data to pre-fill
+    const allBuys = DB.CustomerBuys.byProgram(programId);
+
+    const rows = styles.map(s => {
+      const fixed = [
+        `"${(s.styleNumber || '').replace(/"/g, '""')}"`,
+        `"${(s.styleName   || '').replace(/"/g, '""')}"`,
+        `"${(s.category    || '').replace(/"/g, '""')}"`,
+        `"${(s.fabrication || '').replace(/"/g, '""')}"`,
+      ];
+      const custCols = custs.flatMap(c => {
+        const b = allBuys.find(b => b.styleId === s.id && b.customerId === c.id);
+        return [b?.qty ?? '', b?.sellPrice ?? ''];
+      });
+      return [...fixed, ...custCols].join(',');
+    });
+
+    const csv  = [header, ...rows].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `buy_template_${(prog?.name || 'program').replace(/\s+/g, '_')}.csv`;
+    a.click();
+  }
+
+  // ── Buy Upload Modal ──────────────────────────────────────
+  function openBuyUploadModal(programId) {
+    showModal(`
+    <div class="modal-header"><h2>📤 Upload Buy Summary</h2><button class="btn btn-ghost btn-icon" onclick="App.closeModal()">✕</button></div>
+    <div class="upload-zone" id="buy-upload-zone"
+      ondragover="event.preventDefault();this.classList.add('dragover')"
+      ondragleave="this.classList.remove('dragover')"
+      ondrop="App.handleBuyDrop(event,'${programId}')">
+      <input type="file" accept=".csv" onchange="App.handleBuyFileUpload(event,'${programId}')">
+      <div class="upload-icon">📄</div>
+      <p class="font-bold" style="color:var(--text-primary)">Drop completed CSV here or click to browse</p>
+      <p class="text-sm text-muted">Use the downloaded template — do not change column headers</p>
+    </div>
+    <div id="buy-upload-preview" class="mt-3"></div>`, 'modal-lg');
+  }
+
+  function handleBuyDrop(e, programId) {
+    e.preventDefault(); document.getElementById('buy-upload-zone')?.classList.remove('dragover');
+    const file = e.dataTransfer.files[0]; if (file) processBuyUpload(file, programId);
+  }
+  function handleBuyFileUpload(e, programId) { const file = e.target.files[0]; if (file) processBuyUpload(file, programId); }
+
+  let _pendingBuyRows = null;
+  function processBuyUpload(file, programId) {
+    const custIds = DB.CustomerAssignments.byProgram(programId);
+    const custs   = custIds.map(id => DB.Customers.get(id)).filter(Boolean);
+    const styles  = DB.Styles.byProgram(programId);
+
+    const reader = new FileReader();
+    reader.onload = ev => {
+      const lines = ev.target.result.trim().split('\n');
+      if (lines.length < 2) { document.getElementById('buy-upload-preview').innerHTML = '<div class="alert alert-danger">No data rows found.</div>'; return; }
+
+      // Parse header to find customer columns
+      const hdrs = lines[0].split(',').map(h => h.replace(/^"|"$/g, '').trim());
+      // Build map: customer code → { unitsIdx, sellIdx }
+      const custColMap = {};
+      custs.forEach(c => {
+        const unitsKey = `${c.code} - Units`;
+        const sellKey  = `${c.code} - Sell Price`;
+        const ui = hdrs.indexOf(unitsKey);
+        const si = hdrs.indexOf(sellKey);
+        if (ui >= 0 || si >= 0) custColMap[c.id] = { ui, si, code: c.code };
+      });
+
+      const rows = lines.slice(1).map(line => {
+        const cols = line.split(',').map(c => c.replace(/^"|"$/g, '').trim());
+        const styleNum = cols[0];
+        const style = styles.find(s => (s.styleNumber || '').trim() === styleNum);
+        if (!style) return null;
+        const buys = Object.entries(custColMap).map(([custId, {ui, si, code}]) => ({
+          customerId: custId, code,
+          qty:       ui >= 0 && cols[ui] !== '' ? parseFloat(cols[ui]) : null,
+          sellPrice: si >= 0 && cols[si] !== '' ? parseFloat(cols[si]) : null,
+        })).filter(b => b.qty != null || b.sellPrice != null);
+        return buys.length ? { style, buys } : null;
+      }).filter(Boolean);
+
+      _pendingBuyRows = { programId, rows };
+      const el = document.getElementById('buy-upload-preview'); if (!el) return;
+      if (!rows.length) { el.innerHTML = '<div class="alert alert-danger">No matching styles found. Check Style # column matches exactly.</div>'; return; }
+
+      // Preview table
+      const previewHtml = rows.slice(0, 6).map(r =>
+        r.buys.map((b, i) => `<tr>
+          ${i === 0 ? `<td rowspan="${r.buys.length}" class="primary font-bold">${r.style.styleNumber}</td>` : ''}
+          <td class="text-sm">${b.code}</td>
+          <td>${b.qty != null ? b.qty.toLocaleString() : '—'}</td>
+          <td>${b.sellPrice != null ? '$' + b.sellPrice.toFixed(2) : '—'}</td>
+        </tr>`).join('')
+      ).join('');
+
+      el.innerHTML = `<div class="alert alert-info">✓ ${rows.length} style${rows.length !== 1 ? 's' : ''} with buy data found</div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Style #</th><th>Customer</th><th>Units</th><th>Sell Price</th></tr></thead>
+        <tbody>${previewHtml}</tbody>
+      </table></div>
+      ${rows.length > 6 ? `<p class="text-sm text-muted mt-1">…and ${rows.length - 6} more styles</p>` : ''}
+      <div class="modal-footer">
+        <button class="btn btn-primary" onclick="App.confirmBuyUpload()">Import ${rows.length} Style${rows.length !== 1 ? 's' : ''}</button>
+      </div>`;
+    };
+    reader.readAsText(file);
+  }
+
+  function confirmBuyUpload() {
+    if (!_pendingBuyRows) return;
+    const { programId, rows } = _pendingBuyRows;
+    rows.forEach(({ style, buys }) => {
+      buys.forEach(b => {
+        const existing = DB.CustomerBuys.get(programId, style.id, b.customerId) || {};
+        DB.CustomerBuys.upsert({
+          programId, styleId: style.id, customerId: b.customerId,
+          qty:       b.qty       != null ? b.qty       : existing.qty,
+          sellPrice: b.sellPrice != null ? b.sellPrice : existing.sellPrice,
+        });
+      });
+    });
+    _pendingBuyRows = null;
+    closeModal(); navigate('buy-summary', programId);
+  }
+
   function deleteCoo(id) { if (confirm('Delete COO rate?')) { DB.CooRates.delete(id); navigate('coo'); } }
 
   // ── Flagging ───────────────────────────────────────────────
@@ -1787,6 +1927,7 @@ const App = (() => {
     openAssignTCs, saveAssignments,
     openAssignCustomers, saveCustomerAssignments,
     saveBuyInline,
+    downloadBuyTemplate, openBuyUploadModal, handleBuyDrop, handleBuyFileUpload, confirmBuyUpload,
     openCustomerModal, saveCustomer, deleteCustomer,
     openUploadModal, handleFileUpload, handleDrop, confirmUpload, downloadTemplate,
     openFlagMenu, openFlagNoteModal, saveCellFlag, clearCellFlag,
