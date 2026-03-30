@@ -661,6 +661,12 @@ const AdminViews = (() => {
       }).join('');
     }
 
+    // ── Aggregation helpers ───────────────────────────────────
+    const styleActualQty = s => {
+      const buys = DB.CustomerBuys.byStyle(s.id).filter(b => b.programId === programId);
+      return buys.reduce((sum, b) => sum + (parseFloat(b.qty) || 0), 0);
+    };
+
     // Build active rows — optionally grouped
     let activeRows = '';
     const totalFixedCols = 12 + colGroups.length * 6 + 2; // +2 actual/wtd, +2 actions+repeat
@@ -673,12 +679,53 @@ const AdminViews = (() => {
         groups[key].push(s);
       });
       groupOrder.forEach(fab => {
-        activeRows += `<tr class="cs-group-row"><td colspan="${totalFixedCols}">📁 ${fab} <span class="cs-group-count">(${groups[fab].length})</span></td></tr>`;
+        const grpStyles   = groups[fab];
+        const grpProjQty  = grpStyles.reduce((sum, s) => sum + (parseFloat(s.projQty) || 0), 0);
+        const grpActualQty = grpStyles.reduce((sum, s) => sum + styleActualQty(s), 0);
+        activeRows += `<tr class="cs-group-row">
+          <td colspan="${totalFixedCols}">
+            <span style="font-weight:600">📁 ${fab}</span>
+            <span class="cs-group-count">${grpStyles.length} style${grpStyles.length !== 1 ? 's' : ''}</span>
+            <span class="cs-subtotal">Proj QTY: <strong>${grpProjQty > 0 ? grpProjQty.toLocaleString() : '—'}</strong></span>
+            <span class="cs-subtotal">Actual QTY: <strong style="color:var(--accent)">${grpActualQty > 0 ? grpActualQty.toLocaleString() : '—'}</strong></span>
+          </td>
+        </tr>`;
         activeRows += buildRows(groups[fab], false);
       });
     } else {
       activeRows = buildRows(activeStyles, false);
     }
+
+    // ── Grand Totals ──────────────────────────────────────────
+    const totalStyles    = activeStyles.length;
+    const totalFabrics   = new Set(activeStyles.map(s => (s.fabrication || '').trim()).filter(Boolean)).size;
+    const totalProjQty   = activeStyles.reduce((sum, s) => sum + (parseFloat(s.projQty) || 0), 0);
+    const totalActualQty = activeStyles.reduce((sum, s) => sum + styleActualQty(s), 0);
+
+    const grandTotalRow = `
+    <tfoot>
+      <tr class="cs-grand-total-row">
+        <td data-col="styleNum" class="sticky-col" colspan="4">
+          <span style="font-weight:700;letter-spacing:0.02em">PROGRAM TOTALS</span>
+        </td>
+        <td data-col="qty" class="text-center font-bold" title="Total Projected QTY">
+          ${totalProjQty > 0 ? totalProjQty.toLocaleString() : '—'}
+        </td>
+        <td data-col="sell"></td>
+        <td data-col="actualQty" class="text-center font-bold" style="color:var(--accent)" title="Total Actual QTY">
+          ${totalActualQty > 0 ? totalActualQty.toLocaleString() : '—'}
+        </td>
+        <td data-col="wtdSell"></td>
+        <td data-col="tldp"></td>
+        <td data-col="dutyRate"></td>
+        <td data-col="estFreight"></td>
+        <td data-col="best" class="text-sm" style="white-space:nowrap;color:var(--text-secondary)">
+          ${totalStyles} style${totalStyles !== 1 ? 's' : ''} · ${totalFabrics} fabric${totalFabrics !== 1 ? 's' : ''}
+        </td>
+        ${colGroups.map(() => `<td></td><td></td><td></td><td></td><td></td><td></td>`).join('')}
+        <td></td><td></td>
+      </tr>
+    </tfoot>`;
 
     // Build cancelled section (collapsed by default)
     let cancelledSection = '';
@@ -703,6 +750,7 @@ const AdminViews = (() => {
         <tr class="hdr-row2">${hdr2}</tr>
       </thead>
       <tbody>${activeRows}</tbody>
+      ${grandTotalRow}
       ${cancelledSection}
     </table>`;
   }

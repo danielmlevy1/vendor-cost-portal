@@ -2624,3 +2624,39 @@ th[data-col="best"] {
 .date-picker-wrap:hover .date-picker-icon {
   background: rgba(255,255,255,0.05);
 }
+
+/* ── Cost Summary Subtotals & Grand Total ───────────────────── */
+.cs-subtotal {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 16px;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  background: rgba(255,255,255,0.04);
+  padding: 2px 10px;
+  border-radius: 20px;
+  border: 1px solid var(--border);
+}
+.cs-subtotal strong {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+/* Grand total footer row */
+.cs-grand-total-row td {
+  background: #1a2540 !important;
+  border-top: 2px solid var(--accent) !important;
+  padding: 10px 12px;
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+}
+.cs-grand-total-row td[data-col="styleNum"] {
+  color: var(--text-primary) !important;
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+}
+.cs-grand-total-row td[data-col="qty"],
+.cs-grand-total-row td[data-col="actualQty"] {
+  font-size: 0.9rem;
+}
