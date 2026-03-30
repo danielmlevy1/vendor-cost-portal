@@ -266,8 +266,7 @@ const AdminViews = (() => {
     const styles = DB.Styles.byProgram(programId);
     const tcs = DB.Assignments.byProgram(programId);
     return `
-    ${programTabBar(programId, 'cost', prog)}
-    <div class="page-header" style="margin-top:12px">
+    <div class="page-header">
       <div>
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
           <button class="btn btn-ghost btn-sm" onclick="App.navigate('programs')">← Programs</button>
@@ -351,7 +350,8 @@ const AdminViews = (() => {
     const colGroups = tcs.flatMap(tc => tc.coos.map(coo => ({ tc, coo })));
 
     return `
-    <div class="page-header">
+    ${programTabBar(programId, 'cost', prog)}
+    <div class="page-header" style="margin-top:12px">
       <div>
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
           <button class="btn btn-ghost btn-sm" onclick="App.navigate('programs')">← Programs</button>
