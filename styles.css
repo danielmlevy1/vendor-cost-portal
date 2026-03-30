@@ -2504,7 +2504,7 @@ td[data-col="wtdSell"] {
 
 /* Calculations zone — subtle purple tint */
 th[data-col="tldp"], th[data-col="dutyRate"],
-th[data-col="estFreight"], th[data-col="best"] {
+th[data-col="estFreight"] {
   background: #1e1533 !important;
   color: #c4b5fd !important;
 }
@@ -2517,8 +2517,9 @@ td[data-col="dutyRate"], td[data-col="estFreight"] {
   background: rgba(139, 92, 246, 0.03) !important;
   color: var(--text-secondary) !important;
 }
+/* Best TC — neutral dark, no purple */
 td[data-col="best"] {
-  background: rgba(139, 92, 246, 0.05) !important;
+  background: #141e2e !important;
 }
 
 /* Best TC tag — tighten success/danger contrast */
@@ -2569,4 +2570,10 @@ td.sticky-col, th.sticky-col {
 }
 #cost-summary-table tr.row-over-target {
   background: rgba(245, 158, 11, 0.02);
+}
+
+/* Best TC header — neutral dark, not purple */
+th[data-col="best"] {
+  background: #131d2e !important;
+  color: var(--text-secondary) !important;
 }

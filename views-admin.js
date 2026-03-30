@@ -584,7 +584,7 @@ const AdminViews = (() => {
           const fobRevs = sub ? DB.Revisions.byField(sub.id, 'fob').length : 0;
           const fcRevs  = sub ? DB.Revisions.byField(sub.id, 'factoryCost').length : 0;
           const cellWrap = (inputHtml, flag, revCount, subId, field) => {
-            const dot  = flag ? `<span class="flag-dot flag-${flag.color}" title="${(flag.note||flag.color).replace(/"/g,'&quot;')}" onclick="App.openFlagMenu(event,'${subId}','${field}')"></span>` : '';
+            const dot  = flag ? `<span class="flag-dot flag-${flag.color}" title="${(flag.note||flag.color).replace(/"/g,'&quot;')} (right-click to edit)" oncontextmenu="App.openFlagMenu(event,'${subId}','${field}');return false;"></span>` : '';
             const lastSeen = subId ? parseInt(localStorage.getItem(`vcp_rev_seen_${subId}_${field}`) || '0') : 0;
             const allRevs = subId ? JSON.parse(localStorage.getItem('vcp_revisions') || localStorage.getItem('vcp_revisions_') || '[]').filter(r => r.subId === subId && r.field === field) : [];
             const latestRevTs = allRevs.length ? Math.max(...allRevs.map(r => r.submittedAt || 0)) : 0;
@@ -616,7 +616,7 @@ const AdminViews = (() => {
           const collapsed = _collapsedTCs.has(k);
           const hideStyle = collapsed ? ' style="display:none"' : '';
           rowHtml += `
-          <td data-col="${k}_fob"      class="col-vendor-sub ${tcColorClass} cell-flaggable${fobCellClass}"${fobMinWidth}>${cellWrap(fobInput, fobFlag, fobRevs, sub?.id||"", "fob")}</td>
+          <td data-col="${k}_fob" class="col-vendor-sub ${tcColorClass} cell-flaggable${fobCellClass}"${fobMinWidth} title="Right-click to flag">${cellWrap(fobInput, fobFlag, fobRevs, sub?.id||"", "fob")}</td>
           <td data-col="${k}_fc"       class="col-vendor-sub tc-detail-col ${tcColorClass} cell-flaggable" data-tckey="${k}"${hideStyle}>${cellWrap(fcInput, fcFlag, fcRevs, sub?.id||"", "factoryCost")}</td>
           <td data-col="${k}_duty_pct"  class="col-vendor-sub tc-detail-col text-sm ${tcColorClass}" data-tckey="${k}"${hideStyle}>${dutyPct}</td>
           <td data-col="${k}_duty_amt"  class="col-vendor-sub tc-detail-col ${tcColorClass}" data-tckey="${k}"${hideStyle}>${dutyAmt}</td>
