@@ -361,11 +361,20 @@ const App = (() => {
       </div>
       <div class="form-row form-row-3">
         <div class="form-group"><label class="form-label">Start Date</label>
-          <input class="form-input" type="date" id="pm-start-date" value="${p?.startDate || ''}"></div>
+          <div class="date-picker-wrap">
+            <input class="form-input" type="date" id="pm-start-date" value="${p?.startDate || ''}" onclick="this.showPicker&&this.showPicker()">
+            <button type="button" class="date-picker-icon" onclick="document.getElementById('pm-start-date').showPicker&&document.getElementById('pm-start-date').showPicker()" tabindex="-1">📅</button>
+          </div></div>
         <div class="form-group"><label class="form-label">End Date *</label>
-          <input class="form-input" type="date" id="pm-end-date" value="${p?.endDate || ''}" required></div>
+          <div class="date-picker-wrap">
+            <input class="form-input" type="date" id="pm-end-date" value="${p?.endDate || ''}" required onclick="this.showPicker&&this.showPicker()">
+            <button type="button" class="date-picker-icon" onclick="document.getElementById('pm-end-date').showPicker&&document.getElementById('pm-end-date').showPicker()" tabindex="-1">📅</button>
+          </div></div>
         <div class="form-group"><label class="form-label">1st CRD Needed</label>
-          <input class="form-input" type="date" id="pm-crd" value="${p?.crdDate || ''}"></div>
+          <div class="date-picker-wrap">
+            <input class="form-input" type="date" id="pm-crd" value="${p?.crdDate || ''}" onclick="this.showPicker&&this.showPicker()">
+            <button type="button" class="date-picker-icon" onclick="document.getElementById('pm-crd').showPicker&&document.getElementById('pm-crd').showPicker()" tabindex="-1">📅</button>
+          </div></div>
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary" onclick="App.closeModal()">Cancel</button>

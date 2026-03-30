@@ -2577,3 +2577,50 @@ th[data-col="best"] {
   background: #131d2e !important;
   color: var(--text-secondary) !important;
 }
+
+/* ── Date Picker Wrap ───────────────────────────────────────── */
+.date-picker-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.date-picker-wrap .form-input[type="date"] {
+  padding-right: 36px;
+  cursor: pointer;
+  /* Remove native calendar icon on webkit so we control it */
+  -webkit-appearance: none;
+  appearance: none;
+}
+/* Keep the text/value visible but hide native icon */
+.date-picker-wrap .form-input[type="date"]::-webkit-calendar-picker-indicator {
+  opacity: 0;
+  position: absolute;
+  right: 0;
+  top: 0;
+  width: 36px;
+  height: 100%;
+  cursor: pointer;
+}
+.date-picker-icon {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 34px;
+  height: 34px;
+  background: transparent;
+  border: none;
+  border-left: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  cursor: pointer;
+  border-radius: 0 8px 8px 0;
+  transition: background .15s;
+  pointer-events: none; /* Let the native picker-indicator handle clicks */
+}
+/* Re-enable pointer events so clicking the icon region triggers picker */
+.date-picker-wrap:hover .date-picker-icon {
+  background: rgba(255,255,255,0.05);
+}
