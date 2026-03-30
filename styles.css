@@ -2431,3 +2431,35 @@ td.tc-skipped-cell   { opacity: 0.4; }
 .kpi-alert-value { font-size: 1.4rem; font-weight: 700; flex-shrink: 0; }
 .kpi-alert-label { font-size: 0.78rem; color: var(--text-secondary); flex: 1; }
 .kpi-alert-arrow { font-size: 0.85rem; color: var(--text-muted); margin-left: auto; }
+
+/* ── Program Tab Bar ────────────────────────────────────────── */
+.program-tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 4px;
+  padding-bottom: 0;
+}
+.program-tab {
+  padding: 8px 20px;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  border-radius: 6px 6px 0 0;
+  transition: color .15s, border-color .15s, background .15s;
+  margin-bottom: -1px;
+}
+.program-tab:hover {
+  color: var(--text-primary);
+  background: var(--surface-2);
+}
+.program-tab.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+  font-weight: 600;
+  background: transparent;
+}

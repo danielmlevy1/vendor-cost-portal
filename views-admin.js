@@ -266,7 +266,8 @@ const AdminViews = (() => {
     const styles = DB.Styles.byProgram(programId);
     const tcs = DB.Assignments.byProgram(programId);
     return `
-    <div class="page-header">
+    ${programTabBar(programId, 'cost', prog)}
+    <div class="page-header" style="margin-top:12px">
       <div>
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
           <button class="btn btn-ghost btn-sm" onclick="App.navigate('programs')">← Programs</button>
@@ -890,6 +891,133 @@ const AdminViews = (() => {
     return html + '</tbody></table>';
   }
 
+  // ── Program Tab Bar ────────────────────────────────────────
+  function programTabBar(programId, activeTab, prog) {
+    return `<div class="program-tabs">
+      <button class="program-tab ${activeTab === 'cost' ? 'active' : ''}" onclick="App.navigate('cost-summary','${programId}')">📊 Cost Summary</button>
+      <button class="program-tab ${activeTab === 'buys' ? 'active' : ''}" onclick="App.navigate('buy-summary','${programId}')">🛒 Buy Summary</button>
+    </div>`;
+  }
+
+  // ── Buy Summary ────────────────────────────────────────────
+  function renderBuySummary(programId, role) {
+    const prog     = DB.Programs.get(programId);
+    const styles   = DB.Styles.byProgram(programId).filter(s => s.status !== 'cancelled');
+    const custIds  = DB.CustomerAssignments.byProgram(programId);
+    const allCusts = DB.Customers.all();
+    const custs    = custIds.map(id => allCusts.find(c => c.id === id)).filter(Boolean);
+    const allBuys  = DB.CustomerBuys.byProgram(programId);
+    const canEdit  = role === 'admin' || role === 'pc' || role === 'planning';
+
+    if (!prog) return `<div class="empty-state"><div class="icon">⚠️</div><h3>Program not found</h3></div>`;
+
+    // Header
+    let hdr = `<th class="sticky-col mat-hdr" style="min-width:70px">Style #</th>
+      <th class="mat-hdr" style="min-width:110px">Style Name</th>
+      <th class="mat-hdr">Category</th>
+      <th class="mat-hdr">Fabrication</th>`;
+    custs.forEach((c, i) => {
+      const cls = i % 2 === 0 ? 'tc-col-even' : 'tc-col-odd';
+      hdr += `<th colspan="2" class="vendor-group-hdr mat-hdr ${cls}">${c.code} — ${c.name}</th>`;
+    });
+    hdr += `<th class="mat-hdr col-target" style="min-width:90px">Total Actual QTY</th>
+            <th class="mat-hdr" style="min-width:100px">Wtd Avg Sell</th>`;
+
+    let hdr2 = `<th class="sticky-col mat-hdr"></th><th class="mat-hdr"></th><th class="mat-hdr"></th><th class="mat-hdr"></th>`;
+    custs.forEach((_, i) => {
+      const cls = i % 2 === 0 ? 'tc-col-even' : 'tc-col-odd';
+      hdr2 += `<th class="mat-hdr ${cls}" style="min-width:80px">QTY</th><th class="mat-hdr ${cls}" style="min-width:90px">Sell Price</th>`;
+    });
+    hdr2 += `<th class="col-target mat-hdr"></th><th class="mat-hdr"></th>`;
+
+    const rows = styles.map(s => {
+      const buys = custs.map(c => allBuys.find(b => b.styleId === s.id && b.customerId === c.id));
+      const totalQty = buys.reduce((sum, b) => sum + (parseFloat(b?.qty) || 0), 0);
+      const revenue  = buys.reduce((sum, b) => sum + ((parseFloat(b?.qty) || 0) * (parseFloat(b?.sellPrice) || 0)), 0);
+      const wtdSell  = totalQty > 0 ? revenue / totalQty : null;
+
+      let cells = `<td class="sticky-col mat-cell-white primary">${s.styleNumber}</td>
+        <td class="mat-cell-white">${s.styleName || '—'}</td>
+        <td class="mat-cell-white text-sm">${s.category || '—'}</td>
+        <td class="mat-cell-white text-sm">${(s.fabrication || '—').substring(0, 30)}</td>`;
+
+      custs.forEach((c, i) => {
+        const b = buys[i];
+        const cls = i % 2 === 0 ? 'tc-col-even' : 'tc-col-odd';
+        const qtyVal   = b?.qty   ? Number(b.qty).toLocaleString() : '';
+        const sellVal  = b?.sellPrice ? '$' + parseFloat(b.sellPrice).toFixed(2) : '';
+        if (canEdit) {
+          cells += `<td class="${cls}" style="padding:4px 6px">
+            <input class="cell-input cell-input-sm" type="text" inputmode="numeric"
+              placeholder="Qty" value="${b?.qty || ''}"
+              onblur="App.saveBuyInline('${s.id}','${c.id}','${programId}','qty',this)"
+              onkeydown="if(event.key==='Enter')this.blur()">
+          </td>
+          <td class="${cls}" style="padding:4px 6px">
+            <input class="cell-input cell-input-sm" type="text" inputmode="decimal"
+              placeholder="$0.00" value="${sellVal}"
+              onfocus="this.value=this.value.replace(/[^0-9.]/g,'')"
+              onblur="App.saveBuyInline('${s.id}','${c.id}','${programId}','sellPrice',this);if(this.value&&!isNaN(parseFloat(this.value)))this.value='$'+parseFloat(this.value).toFixed(2);"
+              onkeydown="if(event.key==='Enter')this.blur()">
+          </td>`;
+        } else {
+          cells += `<td class="${cls} text-sm text-center">${qtyVal || '—'}</td>
+                    <td class="${cls} text-sm text-center">${sellVal || '—'}</td>`;
+        }
+      });
+
+      cells += `<td class="col-target font-bold text-accent text-center">${totalQty > 0 ? totalQty.toLocaleString() : '—'}</td>
+                <td class="text-sm text-center">${wtdSell ? '$' + wtdSell.toFixed(2) : '—'}</td>`;
+      return `<tr>${cells}</tr>`;
+    }).join('');
+
+    const noCusts = custs.length === 0 ? `<div class="empty-state" style="margin:24px 0"><div class="icon">👥</div><h3>No customers assigned</h3>
+      <p class="text-muted">Assign customers to this program to start tracking buys.</p>
+      ${canEdit ? `<button class="btn btn-primary" onclick="App.openAssignCustomers('${programId}')">＋ Assign Customers</button>` : ''}</div>` : '';
+
+    const assignBtn = canEdit ? `<button class="btn btn-secondary btn-sm" onclick="App.openAssignCustomers('${programId}')">👥 Assign Customers</button>` : '';
+
+    return `
+    ${programTabBar(programId, 'buys', prog)}
+    <div class="page-header" style="margin-top:12px">
+      <div><h1 class="page-title">${prog.name} — Buy Summary</h1>
+        <p class="page-subtitle">${prog.season || ''} ${prog.year || ''}</p></div>
+      <div style="display:flex;gap:8px">${assignBtn}</div>
+    </div>
+    ${noCusts}
+    ${custs.length > 0 ? `<div class="card" style="padding:0"><div class="table-wrap">
+      <table id="buy-summary-table">
+        <thead>
+          <tr class="hdr-row1">${hdr}</tr>
+          <tr class="hdr-row2">${hdr2}</tr>
+        </thead>
+        <tbody>${rows || '<tr><td colspan="20" class="text-muted text-center" style="padding:40px">No styles in this program.</td></tr>'}</tbody>
+      </table>
+    </div></div>` : ''}`;
+  }
+
+  // ── Customer Manager (Admin Settings) ─────────────────────
+  function renderCustomers() {
+    const custs = DB.Customers.all();
+    return `
+    <div class="page-header">
+      <div><h1 class="page-title">Customers</h1><p class="page-subtitle">Global customer list</p></div>
+      <button class="btn btn-primary" onclick="App.openCustomerModal()">＋ Add Customer</button>
+    </div>
+    <div class="card" style="padding:0"><div class="table-wrap"><table>
+      <thead><tr><th>Code</th><th>Name</th><th>Actions</th></tr></thead>
+      <tbody>${custs.length ? custs.map(c => `<tr>
+        <td class="font-bold">${c.code}</td>
+        <td>${c.name}</td>
+        <td><div style="display:flex;gap:6px">
+          <button class="btn btn-secondary btn-sm" onclick="App.openCustomerModal('${c.id}')">✏</button>
+          <button class="btn btn-danger btn-sm" onclick="App.deleteCustomer('${c.id}')">🗑</button>
+        </div></td>
+      </tr>`).join('') : `<tr><td colspan="3" class="text-muted text-center" style="padding:40px">No customers yet.</td></tr>`}
+      </tbody>
+    </table></div></div>`;
+  }
+
   // ── Trading Company Manager ────────────────────────────────
   function renderTradingCompanies() {
     const tcs = DB.TradingCompanies.all();
@@ -1140,6 +1268,7 @@ const AdminViews = (() => {
 
   const api = {
     renderDashboard,
+    renderBuySummary, renderCustomers,
     renderPrograms, renderStyleManager, renderCostSummary, buildCostMatrix,
     renderCostComparison, renderCrossProgram,
     renderTradingCompanies, renderInternalPrograms, renderCOO,

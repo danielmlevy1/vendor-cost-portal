@@ -116,10 +116,11 @@ const App = (() => {
     const isAdmin = state.user.role === 'admin';
     const isPC    = state.user.role === 'pc';
 
-    const navEl = document.getElementById('sidebar-nav');
-    const userEl = document.getElementById('sidebar-user');
-    const pendingCount = (isAdmin) ? DB.PendingChanges.pending().length : 0;
-    const badgeHtml = pendingCount > 0 ? `<span class="pending-badge">${pendingCount}</span>` : '';
+    const navEl      = document.getElementById('sidebar-nav');
+    const userEl     = document.getElementById('sidebar-user');
+    const isPlanning = state.user.role === 'planning';
+    const pendingCount = isAdmin ? DB.PendingChanges.pending().length : 0;
+    const badgeHtml  = pendingCount > 0 ? `<span class="pending-badge">${pendingCount}</span>` : '';
 
     if (navEl) navEl.innerHTML = `
       <div class="sidebar-section"><div class="sidebar-section-label">Navigation</div></div>
@@ -130,6 +131,7 @@ const App = (() => {
         <button class="nav-item ${state.route === 'cross-program' ? 'active' : ''}" onclick="App.navigate('cross-program')"><span class="icon">🌐</span> All Open Programs</button>
         <div class="sidebar-section"><div class="sidebar-section-label">Settings</div></div>
         <button class="nav-item ${state.route === 'trading-companies' ? 'active' : ''}" onclick="App.navigate('trading-companies')"><span class="icon">🏣</span> Trading Companies</button>
+        <button class="nav-item ${state.route === 'customers' ? 'active' : ''}" onclick="App.navigate('customers')"><span class="icon">👥</span> Customers</button>
         <button class="nav-item ${state.route === 'internal' ? 'active' : ''}" onclick="App.navigate('internal')"><span class="icon">📊</span> Internal Programs</button>
         <button class="nav-item ${state.route === 'coo' ? 'active' : ''}" onclick="App.navigate('coo')"><span class="icon">🌍</span> COO Rates</button>
         ${isAdmin ? `
@@ -138,6 +140,8 @@ const App = (() => {
           </button>
           <button class="nav-item ${state.route === 'staff' ? 'active' : ''}" onclick="App.navigate('staff')"><span class="icon">👤</span> Staff</button>
         ` : ''}
+      ` : isPlanning ? `
+        <button class="nav-item ${state.route === 'programs' || state.route === 'buy-summary' ? 'active' : ''}" onclick="App.navigate('programs')"><span class="icon">📋</span> Programs</button>
       ` : `
         <button class="nav-item ${
           state.route === '' || state.route === 'vendor-home' || state.route === 'vendor-program' ? 'active' : ''
@@ -151,7 +155,7 @@ const App = (() => {
     if (userEl) userEl.innerHTML = `
       <div class="user-info" onclick="App.logout()" title="Sign out">
         <div class="user-avatar">${state.user.name.charAt(0).toUpperCase()}</div>
-        <div><div class="user-name">${state.user.name}</div><div class="user-role">${isAdmin ? 'Admin' : isPC ? 'Production Coordinator' : 'Trading Co.'}</div></div>
+        <div><div class="user-name">${state.user.name}</div><div class="user-role">${isAdmin ? 'Admin' : isPC ? 'Production Coordinator' : isPlanning ? 'Planning & Sales' : 'Trading Co.'}</div></div>
       </div>`;
 
     renderRoute();
@@ -160,28 +164,36 @@ const App = (() => {
   function renderRoute() {
     const mc = document.getElementById('content'); if (!mc) return;
     const { route, routeParam, user } = state;
-    const isAdmin = user.role === 'admin';
-    const isPC    = user.role === 'pc';
+    const isAdmin    = user.role === 'admin';
+    const isPC       = user.role === 'pc';
+    const isPlanning = user.role === 'planning';
     if (isAdmin || isPC) {
       // Shared program & cost views — both roles
       if (route === 'dashboard')     mc.innerHTML = AdminViews.renderDashboard(user.role);
       else if (route === 'programs')      mc.innerHTML = AdminViews.renderPrograms();
       else if (route === 'styles')        mc.innerHTML = AdminViews.renderStyleManager(routeParam);
       else if (route === 'cost-summary')  mc.innerHTML = AdminViews.renderCostSummary(routeParam);
+      else if (route === 'buy-summary')   mc.innerHTML = AdminViews.renderBuySummary(routeParam, user.role);
       else if (route === 'compare')       mc.innerHTML = AdminViews.renderCostComparison(routeParam);
       else if (route === 'cross-program') mc.innerHTML = AdminViews.renderCrossProgram();
       // Settings — Admin gets full CRUD; PC gets propose-mode
       else if (route === 'trading-companies') mc.innerHTML = isAdmin ? AdminViews.renderTradingCompanies() : AdminViews.renderTradingCompaniesPC();
+      else if (route === 'customers')         mc.innerHTML = isAdmin ? AdminViews.renderCustomers() : mc.innerHTML;
       else if (route === 'internal')          mc.innerHTML = isAdmin ? AdminViews.renderInternalPrograms()  : AdminViews.renderInternalProgramsPC();
       else if (route === 'coo')               mc.innerHTML = isAdmin ? AdminViews.renderCOO()               : AdminViews.renderCOOPC();
       // Admin-only routes
       else if (route === 'pending-changes' && isAdmin) mc.innerHTML = AdminViews.renderPendingChanges();
       else if (route === 'staff'           && isAdmin) mc.innerHTML = AdminViews.renderStaff();
       else mc.innerHTML = AdminViews.renderDashboard(user.role);
+    } else if (isPlanning) {
+      // Planning/Sales — can view programs + buy summaries only
+      if (route === 'programs')    mc.innerHTML = AdminViews.renderPrograms();
+      else if (route === 'buy-summary') mc.innerHTML = AdminViews.renderBuySummary(routeParam, user.role);
+      else mc.innerHTML = AdminViews.renderPrograms();
     } else {
       // TC / Vendor routes — guard against admin route access
       const tcForbidden = ['programs','styles','cost-summary','compare','cross-program',
-        'trading-companies','internal','coo','pending-changes','staff'];
+        'trading-companies','internal','coo','pending-changes','staff','buy-summary','customers'];
       if (tcForbidden.includes(route)) { navigate(''); return; }
 
       if      (route === 'vendor-program')   mc.innerHTML = VendorViews.renderProgramStyles(user.tcId, routeParam);
@@ -782,6 +794,94 @@ const App = (() => {
     });
     closeModal(); navigate('coo');
   }
+
+  // ── Buy Summary ─────────────────────────────────────────────
+  function saveBuyInline(styleId, customerId, programId, field, el) {
+    const raw = parseFloat(el.value.replace(/[^0-9.]/g, ''));
+    const val = isNaN(raw) ? null : raw;
+    if (val === null && !el.value.trim()) {
+      DB.CustomerBuys.delete(programId, styleId, customerId);
+    } else if (val !== null) {
+      DB.CustomerBuys.upsert({ programId, styleId, customerId, [field]: val });
+    }
+    // refresh totals without full re-render
+    const row = el.closest('tr');
+    if (row) {
+      const inputs = [...row.querySelectorAll('input')];
+      const qtyInputs  = inputs.filter((_, i) => i % 2 === 0);
+      const sellInputs = inputs.filter((_, i) => i % 2 === 1);
+      let totalQty = 0, revenue = 0;
+      qtyInputs.forEach((qi, i) => {
+        const q = parseFloat(qi.value.replace(/[^0-9.]/g, '')) || 0;
+        const s = parseFloat(sellInputs[i]?.value.replace(/[^0-9.]/g, '')) || 0;
+        totalQty += q; revenue += q * s;
+      });
+      const totalTd = row.querySelector('td[data-col="total-qty"]');
+      const avgTd   = row.querySelector('td[data-col="avg-sell"]');
+      if (totalTd) totalTd.textContent = totalQty > 0 ? totalQty.toLocaleString() : '—';
+      if (avgTd)   avgTd.textContent   = totalQty > 0 ? '$' + (revenue / totalQty).toFixed(2) : '—';
+    }
+  }
+
+  // ── Customer CRUD ────────────────────────────────────────────
+  function openCustomerModal(id) {
+    const c = id ? DB.Customers.get(id) : null;
+    showModal(`
+      <div class="modal-header"><h2>${c ? 'Edit' : 'New'} Customer</h2><button class="btn btn-ghost btn-icon" onclick="App.closeModal()">✕</button></div>
+      <form onsubmit="App.saveCustomer(event,'${id || ''}')">
+        <div class="form-row form-row-2">
+          <div class="form-group"><label class="form-label">Code *</label>
+            <input class="form-input" id="cust-code" value="${c?.code || ''}" placeholder="e.g. WMT" required></div>
+          <div class="form-group"><label class="form-label">Name *</label>
+            <input class="form-input" id="cust-name" value="${c?.name || ''}" placeholder="e.g. Walmart" required></div>
+        </div>
+        <div class="modal-footer">
+          ${id ? `<button type="button" class="btn btn-danger" onclick="App.deleteCustomer('${id}')">Delete</button>` : ''}
+          <button type="button" class="btn btn-secondary" onclick="App.closeModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary">${c ? 'Save' : 'Create'}</button>
+        </div>
+      </form>`);
+  }
+
+  function saveCustomer(e, id) {
+    e.preventDefault();
+    const data = { code: v('cust-code').trim().toUpperCase(), name: v('cust-name').trim() };
+    if (id) DB.Customers.update(id, data); else DB.Customers.create(data);
+    closeModal(); navigate('customers');
+  }
+
+  function deleteCustomer(id) {
+    if (confirm('Delete this customer?')) { DB.Customers.delete(id); closeModal(); navigate('customers'); }
+  }
+
+  // ── Assign Customers to Program ──────────────────────────────
+  function openAssignCustomers(programId) {
+    const all     = DB.Customers.all();
+    const current = new Set(DB.CustomerAssignments.byProgram(programId));
+    showModal(`
+      <div class="modal-header"><h2>Assign Customers</h2><button class="btn btn-ghost btn-icon" onclick="App.closeModal()">✕</button></div>
+      <div class="modal-body">
+        <p class="text-muted text-sm mb-3">Select which customers are buying in this program.</p>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          ${all.map(c => `<label style="display:flex;align-items:center;gap:10px;cursor:pointer;padding:8px;border-radius:8px;background:var(--surface-2)">
+            <input type="checkbox" id="cca-${c.id}" ${current.has(c.id) ? 'checked' : ''}>
+            <span class="font-bold">${c.code}</span> — ${c.name}
+          </label>`).join('')}
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="App.closeModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="App.saveCustomerAssignments('${programId}')">Save</button>
+      </div>`);
+  }
+
+  function saveCustomerAssignments(programId) {
+    const all = DB.Customers.all();
+    const selected = all.filter(c => document.getElementById(`cca-${c.id}`)?.checked).map(c => c.id);
+    DB.CustomerAssignments.assign(programId, selected);
+    closeModal(); navigate('buy-summary', programId);
+  }
+
   function deleteCoo(id) { if (confirm('Delete COO rate?')) { DB.CooRates.delete(id); navigate('coo'); } }
 
   // ── Flagging ───────────────────────────────────────────────
@@ -1685,6 +1785,9 @@ const App = (() => {
     openProgramModal, onInternalProgramChange, saveProgramModal, updateProgramStatus, deleteProgram,
     openStyleModal, previewTargetLDP, saveStyle, deleteStyle,
     openAssignTCs, saveAssignments,
+    openAssignCustomers, saveCustomerAssignments,
+    saveBuyInline,
+    openCustomerModal, saveCustomer, deleteCustomer,
     openUploadModal, handleFileUpload, handleDrop, confirmUpload, downloadTemplate,
     openFlagMenu, openFlagNoteModal, saveCellFlag, clearCellFlag,
     openRevisionHistory, openRepeatStyleHistory,

@@ -18,6 +18,9 @@ const DB = (() => {
         pendingChanges: 'vcp_pending_changes',
         cellFlags: 'vcp_cell_flags',
         revisions: 'vcp_revisions',
+        customers: 'vcp_customers',
+        customerBuys: 'vcp_customer_buys',
+        customerAssignments: 'vcp_customer_assignments',
         session: 'vcp_session',
     };
 
@@ -29,8 +32,15 @@ const DB = (() => {
 
     // ── Seed ───────────────────────────────────────────────────
     const SEED_USERS = [
-        { id: 'admin', name: 'Admin Team',       email: 'admin@company.com', password: 'admin123', role: 'admin' },
-        { id: 'pc1',   name: 'Production Team',  email: 'pc@company.com',    password: 'pc123',    role: 'pc'    },
+        { id: 'admin',    name: 'Admin Team',        email: 'admin@company.com',   password: 'admin123',  role: 'admin'    },
+        { id: 'pc1',      name: 'Production Team',   email: 'pc@company.com',       password: 'pc123',     role: 'pc'       },
+        { id: 'planning1',name: 'Planning & Sales',  email: 'planning@company.com', password: 'plan123',   role: 'planning' },
+    ];
+
+    const SEED_CUSTOMERS = [
+        { id: 'cust1', code: 'WMT', name: 'Walmart' },
+        { id: 'cust2', code: 'TGT', name: 'Target' },
+        { id: 'cust3', code: 'COST', name: 'Costco' },
     ];
 
     const SEED_INTERNAL_PROGRAMS = [
@@ -99,6 +109,9 @@ const DB = (() => {
         if (!localStorage.getItem(KEYS.pendingChanges)) set(KEYS.pendingChanges, []);
         if (!localStorage.getItem(KEYS.cellFlags))  set(KEYS.cellFlags, []);
         if (!localStorage.getItem(KEYS.revisions))  set(KEYS.revisions, []);
+        if (!localStorage.getItem(KEYS.customers))  set(KEYS.customers, SEED_CUSTOMERS);
+        if (!localStorage.getItem(KEYS.customerBuys)) set(KEYS.customerBuys, []);
+        if (!localStorage.getItem(KEYS.customerAssignments)) set(KEYS.customerAssignments, []);
 
         // ── Always ensure required users exist (repair broken sessions) ──
         {
@@ -110,6 +123,10 @@ const DB = (() => {
             }
             if (!users.find(u => u.role === 'pc')) {
                 users.push({ id: 'pc1', name: 'Production Team', email: 'pc@company.com', password: 'pc123', role: 'pc' });
+                dirty = true;
+            }
+            if (!users.find(u => u.role === 'planning')) {
+                users.push({ id: 'planning1', name: 'Planning & Sales', email: 'planning@company.com', password: 'plan123', role: 'planning' });
                 dirty = true;
             }
             if (dirty) set(KEYS.users, users);
@@ -495,6 +512,47 @@ const DB = (() => {
         log(entry) { const list = get(KEYS.revisions); list.push({ id: uid(), submittedAt: now(), ...entry }); set(KEYS.revisions, list); },
     };
 
+    // ── Customers ───────────────────────────────────────────────
+    const Customers = {
+        all()            { return get(KEYS.customers); },
+        get(id)          { return get(KEYS.customers).find(c => c.id === id); },
+        create(data)     { const list = get(KEYS.customers); const c = { id: uid(), ...data }; list.push(c); set(KEYS.customers, list); return c; },
+        update(id, data) { set(KEYS.customers, get(KEYS.customers).map(c => c.id === id ? { ...c, ...data } : c)); },
+        delete(id)       { set(KEYS.customers, get(KEYS.customers).filter(c => c.id !== id)); },
+    };
+
+    // ── Customer Program Assignments ────────────────────────────
+    // Tracks which customers are active for a given program
+    const CustomerAssignments = {
+        byProgram(pid)         { return get(KEYS.customerAssignments).filter(a => a.programId === pid).map(a => a.customerId); },
+        assign(programId, customerIds) {
+            const rest = get(KEYS.customerAssignments).filter(a => a.programId !== programId);
+            const next = customerIds.map(customerId => ({ id: uid(), programId, customerId }));
+            set(KEYS.customerAssignments, [...rest, ...next]);
+        },
+    };
+
+    // ── Customer Buys ───────────────────────────────────────────
+    // One record per (programId, styleId, customerId)
+    const CustomerBuys = {
+        all()                       { return get(KEYS.customerBuys); },
+        byProgram(pid)              { return get(KEYS.customerBuys).filter(b => b.programId === pid); },
+        byStyle(styleId)            { return get(KEYS.customerBuys).filter(b => b.styleId === styleId); },
+        get(programId, styleId, customerId) {
+            return get(KEYS.customerBuys).find(b => b.programId === programId && b.styleId === styleId && b.customerId === customerId);
+        },
+        upsert(data) {
+            const list = get(KEYS.customerBuys);
+            const idx  = list.findIndex(b => b.programId === data.programId && b.styleId === data.styleId && b.customerId === data.customerId);
+            if (idx >= 0) list[idx] = { ...list[idx], ...data, updatedAt: now() };
+            else list.push({ id: uid(), createdAt: now(), ...data });
+            set(KEYS.customerBuys, list);
+        },
+        delete(programId, styleId, customerId) {
+            set(KEYS.customerBuys, get(KEYS.customerBuys).filter(b => !(b.programId === programId && b.styleId === styleId && b.customerId === customerId)));
+        },
+    };
+
     return {
         Auth, Programs, InternalPrograms, Styles,
         TradingCompanies,
@@ -502,6 +560,7 @@ const DB = (() => {
         Assignments, Submissions, Placements, CooRates,
         PendingChanges, PCUsers,
         CellFlags, Revisions,
+        Customers, CustomerAssignments, CustomerBuys,
         calcLDP, computeTargetLDP, parseCSV, csvRowToStyle,
         init,
     };
