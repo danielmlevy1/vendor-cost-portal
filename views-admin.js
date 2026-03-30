@@ -410,6 +410,8 @@ const AdminViews = (() => {
       <th rowspan="2" data-col="fab" class="mat-hdr" style="width:72px;min-width:60px">Fabrication</th>
       <th rowspan="2" data-col="qty" class="mat-hdr" style="width:60px;min-width:60px">Proj Qty</th>
       <th rowspan="2" data-col="sell" class="mat-hdr" style="width:64px;min-width:60px">Proj Sell</th>
+      <th rowspan="2" data-col="actualQty" class="mat-hdr" style="width:72px;min-width:60px;border-left:2px solid var(--accent)" title="Sum of all customer buy QTYs from Buy Summary">Actual QTY</th>
+      <th rowspan="2" data-col="wtdSell" class="mat-hdr" style="width:76px;min-width:60px" title="Revenue-weighted average sell price from Buy Summary">Wtd Avg Sell</th>
       <th rowspan="2" data-col="tldp" class="col-target mat-hdr" style="width:64px;min-width:60px">Target LDP</th>
       <th rowspan="2" data-col="dutyRate" class="col-duty-rate mat-hdr" style="width:60px;min-width:60px">Duty Rate</th>
       <th rowspan="2" data-col="estFreight" class="col-est-freight mat-hdr" style="width:64px;min-width:60px">Est Freight</th>
@@ -523,6 +525,14 @@ const AdminViews = (() => {
         const dutyInput = `<input class="cell-input cell-input-sm fmt-duty" data-sid="${s.id}" data-field="dutyRate" data-raw="${s.dutyRate || ''}" value="${dutyFmt}" placeholder="e.g. 28.2%" onfocus="App.fmtFocusDuty(this)" onblur="App.fmtBlurDuty(this,'${s.id}')" onkeydown="if(event.key==='Enter')this.blur()" title="Enter duty rate as % (e.g. 28.2) or decimal (e.g. 0.282)">`;
         const freightInput = `<input class="cell-input cell-input-sm fmt-freight" data-sid="${s.id}" data-field="estFreight" data-raw="${s.estFreight || ''}" value="${frtFmt}" placeholder="$0.00" onfocus="App.fmtFocusRaw(this)" onblur="App.fmtBlurCurrency(this,'${s.id}','estFreight')" onkeydown="if(event.key==='Enter')this.blur()" title="Est base freight per unit">`;
 
+        // Actual QTY + Wtd Avg Sell from Buy Summary
+        const styleBuys   = DB.CustomerBuys.byStyle(s.id).filter(b => b.programId === programId);
+        const actualQty   = styleBuys.reduce((sum, b) => sum + (parseFloat(b.qty) || 0), 0);
+        const buyRevenue  = styleBuys.reduce((sum, b) => sum + ((parseFloat(b.qty) || 0) * (parseFloat(b.sellPrice) || 0)), 0);
+        const wtdSell     = actualQty > 0 ? buyRevenue / actualQty : null;
+        const actualQtyStr = actualQty > 0 ? actualQty.toLocaleString() : '<span class="text-muted">—</span>';
+        const wtdSellStr   = wtdSell   ? '$' + wtdSell.toFixed(2)      : '<span class="text-muted">—</span>';
+
         const bestGroup = colGroups.find(g => `${g.tc.id}_${g.coo}` === bestKey);
         let rowHtml = `
           <td data-col="styleNum" class="sticky-col mat-cell-white">${s.styleNumber}</td>
@@ -531,6 +541,8 @@ const AdminViews = (() => {
           <td data-col="fab" class="mat-cell-white mat-cell-normal">${fabInput}</td>
           <td data-col="qty" class="mat-cell-white">${qtyInput}</td>
           <td data-col="sell" class="mat-cell-white">${sellInput}</td>
+          <td data-col="actualQty" class="text-center font-bold" style="border-left:2px solid var(--accent);color:var(--accent);font-size:0.82rem">${actualQtyStr}</td>
+          <td data-col="wtdSell" class="text-center text-sm" style="color:var(--text-secondary)">${wtdSellStr}</td>
           <td data-col="tldp" class="col-target font-bold text-accent">${fmt(targetLDP)}</td>
           <td data-col="dutyRate" class="col-duty-rate mat-cell-white">${dutyInput}</td>
           <td data-col="estFreight" class="col-est-freight mat-cell-white">${freightInput}</td>
@@ -647,7 +659,7 @@ const AdminViews = (() => {
 
     // Build active rows — optionally grouped
     let activeRows = '';
-    const totalFixedCols = 10 + colGroups.length * 6 + 2; // +2 for actions + repeat
+    const totalFixedCols = 12 + colGroups.length * 6 + 2; // +2 actual/wtd, +2 actions+repeat
     if (groupBy === 'fabrication') {
       const groups = {};
       const groupOrder = [];
@@ -668,7 +680,7 @@ const AdminViews = (() => {
     let cancelledSection = '';
     if (cancelledStyles.length > 0) {
       const cancelledRows = buildRows(cancelledStyles, true);
-      const totalCols = 10 + colGroups.length * 6 + 2; // fixed + TC cols + actions + repeat
+      const totalCols = 12 + colGroups.length * 6 + 2; // fixed + TC cols + actions + repeat
       cancelledSection = `
       <tr class="cancelled-toggle-row" id="cancelled-toggle" onclick="App.toggleCancelledRows()">
         <td colspan="${totalCols}">
