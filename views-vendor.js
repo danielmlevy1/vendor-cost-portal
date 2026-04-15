@@ -17,7 +17,7 @@ const VendorViews = (() => {
     const allStyles = DB.Assignments.stylesByTc(tcId);
     const subs = DB.Submissions.all().filter(s => s.tcId === tcId);
     const flaggedCount = subs.filter(s => s.status === 'flagged').length;
-    const programs = assignments.map(a => DB.Programs.get(a.programId)).filter(Boolean);
+    const programs = assignments.map(a => DB.Programs.get(a.programId)).filter(p => p && p.status !== 'Draft');
 
     const progStats = programs.map(prog => {
       const styles   = allStyles.filter(s => s.programId === prog.id);
@@ -153,8 +153,12 @@ const VendorViews = (() => {
           const allSkipped    = coos.length > 0 && coos.every(coo => styleSubs.some(sub => sub.coo === coo && sub.status === 'skipped'));
 
           // Main style row — one row per style, one FOB+FC input per COO column
-          bodyRows += `<tr class="${hasRevised ? 'flagged-row' : allSkipped ? 'tc-skipped-row' : ''}">
-            <td class="primary font-bold" style="white-space:nowrap">${s.styleNumber}</td>
+          const isOutdatedQuote = coos.some(coo => {
+            const sub = styleSubs.find(s2 => s2.coo === coo);
+            return sub?.isOutdated;
+          });
+          bodyRows += `<tr class="${hasRevised ? 'flagged-row' : allSkipped ? 'tc-skipped-row' : isOutdatedQuote ? 'outdated-quote-row' : ''}">
+            <td class="primary font-bold" style="white-space:nowrap">${s.styleNumber}${isOutdatedQuote ? ' <span class="tag" style="background:rgba(245,158,11,0.15);color:#f59e0b;font-size:0.65rem;vertical-align:middle">⚠ Re-cost</span>' : ''}</td>
             <td style="min-width:120px">${s.styleName}</td>
             <td class="text-sm text-muted" style="max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${(s.fabrication||'').replace(/"/g,'&quot;')}">${(s.fabrication||'').substring(0,25)}${(s.fabrication||'').length>25?'…':''}</td>
             ${coos.map(coo => {

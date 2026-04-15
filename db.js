@@ -1,7 +1,8 @@
 // =============================================================
 // VENDOR COST PORTAL — Data Layer (db.js)
 // localStorage-backed data store with seed data
-// Schema v8: Bug fix — admin user repair migration
+// Schema v11: Pre-costing workflow (Design Handoff, Sales Request,
+//             Fabric Library, Design Changes)
 // =============================================================
 
 const DB = (() => {
@@ -9,6 +10,7 @@ const DB = (() => {
         users: 'vcp_users',
         programs: 'vcp_programs',
         internalPrograms: 'vcp_internal_programs',
+        brandTierMargins: 'vcp_brand_tier_margins',
         styles: 'vcp_styles',
         tradingCompanies: 'vcp_trading_companies',
         assignments: 'vcp_assignments',
@@ -22,6 +24,15 @@ const DB = (() => {
         customerBuys: 'vcp_customer_buys',
         customerAssignments: 'vcp_customer_assignments',
         session: 'vcp_session',
+        // Pre-costing workflow (v11)
+        designHandoffs:  'vcp_design_handoffs',
+        fabricLibrary:   'vcp_fabric_library',
+        salesRequests:   'vcp_sales_requests',
+        designChanges:   'vcp_design_changes',
+        departments:     'vcp_departments',
+        styleLinks:      'vcp_style_links',
+        recostReqs:      'vcp_recostreqs',
+        costHistory:     'vcp_cost_history',
     };
 
     const get = k => JSON.parse(localStorage.getItem(k) || '[]');
@@ -32,9 +43,12 @@ const DB = (() => {
 
     // ── Seed ───────────────────────────────────────────────────
     const SEED_USERS = [
-        { id: 'admin',    name: 'Admin Team',        email: 'admin@company.com',   password: 'admin123',  role: 'admin'    },
-        { id: 'pc1',      name: 'Production Team',   email: 'pc@company.com',       password: 'pc123',     role: 'pc'       },
-        { id: 'planning1',name: 'Planning & Sales',  email: 'planning@company.com', password: 'plan123',   role: 'planning' },
+        { id: 'admin',    name: 'Admin Team',        email: 'admin@company.com',    password: 'admin123',  role: 'admin',    internalProgramId: null },
+        { id: 'pc1',      name: 'Production Team',   email: 'pc@company.com',        password: 'pc123',     role: 'pc',       internalProgramId: null },
+        { id: 'planning1',name: 'Planning & Sales',  email: 'planning@company.com',  password: 'plan123',   role: 'planning', internalProgramId: 'ip1' },
+        { id: 'sales1',   name: 'Sales',             email: 'sales@company.com',     password: 'sales123',  role: 'planning', internalProgramId: 'ip1' },
+        { id: 'design1',  name: 'Design Team',       email: 'design@company.com',    password: 'design123', role: 'design',   internalProgramId: 'ip1' },
+        { id: 'techdes1', name: 'Tech Design',       email: 'techdesign@company.com',password: 'tech123',   role: 'design',   internalProgramId: 'ip1' },
     ];
 
     const SEED_CUSTOMERS = [
@@ -44,15 +58,45 @@ const DB = (() => {
     ];
 
     const SEED_INTERNAL_PROGRAMS = [
-        { id: 'ip1', name: 'Reebok WM', targetMargin: 0.55 },
-        { id: 'ip2', name: 'Reebok Canada', targetMargin: 0.55 },
-        { id: 'ip3', name: 'Champion WM', targetMargin: 0.45 },
-        { id: 'ip4', name: 'Nike WM', targetMargin: 0.50 },
-        { id: 'ip5', name: 'Ross', targetMargin: 0.40 },
-        { id: 'ip6', name: 'TJX', targetMargin: 0.42 },
-        { id: 'ip7', name: 'Marshalls', targetMargin: 0.42 },
-        { id: 'ip8', name: 'BCF', targetMargin: 0.44 },
-        { id: 'ip9', name: 'Winners', targetMargin: 0.44 },
+        { id: 'ip1', name: 'Reebok WM',      brand: 'Reebok',   tier: 'Mass',     gender: 'Mens',   targetMargin: 0.55 },
+        { id: 'ip2', name: 'Reebok Canada',  brand: 'Reebok',   tier: 'Mass',     gender: 'Ladies', targetMargin: 0.55 },
+        { id: 'ip3', name: 'Champion WM',    brand: 'Champion', tier: 'Mass',     gender: 'Mens',   targetMargin: 0.45 },
+        { id: 'ip4', name: 'And1 WM',        brand: 'And1',     tier: 'Mass',     gender: 'Mens',   targetMargin: 0.48 },
+        { id: 'ip5', name: 'Gaiam WM',       brand: 'Gaiam',    tier: 'Mass',     gender: 'Ladies', targetMargin: 0.50 },
+        { id: 'ip6', name: 'Head Specialty', brand: 'Head',     tier: 'Specialty',gender: 'Mens',   targetMargin: 0.52 },
+    ];
+
+    const SEED_BRAND_TIER_MARGINS = [
+        // Reebok
+        { id: 'btm_rb_ms',  brand: 'Reebok',   tier: 'Mass',      targetMargin: 0.55 },
+        { id: 'btm_rb_mt',  brand: 'Reebok',   tier: 'Mid Tier',  targetMargin: 0.52 },
+        { id: 'btm_rb_op',  brand: 'Reebok',   tier: 'Off Price', targetMargin: 0.48 },
+        { id: 'btm_rb_cl',  brand: 'Reebok',   tier: 'Clubs',     targetMargin: 0.50 },
+        { id: 'btm_rb_sp',  brand: 'Reebok',   tier: 'Specialty', targetMargin: 0.53 },
+        // Champion
+        { id: 'btm_ch_ms',  brand: 'Champion', tier: 'Mass',      targetMargin: 0.45 },
+        { id: 'btm_ch_mt',  brand: 'Champion', tier: 'Mid Tier',  targetMargin: 0.43 },
+        { id: 'btm_ch_op',  brand: 'Champion', tier: 'Off Price', targetMargin: 0.40 },
+        { id: 'btm_ch_cl',  brand: 'Champion', tier: 'Clubs',     targetMargin: 0.42 },
+        { id: 'btm_ch_sp',  brand: 'Champion', tier: 'Specialty', targetMargin: 0.45 },
+        // And1
+        { id: 'btm_a1_ms',  brand: 'And1',     tier: 'Mass',      targetMargin: 0.48 },
+        { id: 'btm_a1_mt',  brand: 'And1',     tier: 'Mid Tier',  targetMargin: 0.46 },
+        { id: 'btm_a1_op',  brand: 'And1',     tier: 'Off Price', targetMargin: 0.42 },
+        { id: 'btm_a1_cl',  brand: 'And1',     tier: 'Clubs',     targetMargin: 0.44 },
+        { id: 'btm_a1_sp',  brand: 'And1',     tier: 'Specialty', targetMargin: 0.48 },
+        // Gaiam
+        { id: 'btm_ga_ms',  brand: 'Gaiam',    tier: 'Mass',      targetMargin: 0.50 },
+        { id: 'btm_ga_mt',  brand: 'Gaiam',    tier: 'Mid Tier',  targetMargin: 0.48 },
+        { id: 'btm_ga_op',  brand: 'Gaiam',    tier: 'Off Price', targetMargin: 0.44 },
+        { id: 'btm_ga_cl',  brand: 'Gaiam',    tier: 'Clubs',     targetMargin: 0.46 },
+        { id: 'btm_ga_sp',  brand: 'Gaiam',    tier: 'Specialty', targetMargin: 0.50 },
+        // Head
+        { id: 'btm_hd_ms',  brand: 'Head',     tier: 'Mass',      targetMargin: 0.48 },
+        { id: 'btm_hd_mt',  brand: 'Head',     tier: 'Mid Tier',  targetMargin: 0.50 },
+        { id: 'btm_hd_op',  brand: 'Head',     tier: 'Off Price', targetMargin: 0.44 },
+        { id: 'btm_hd_cl',  brand: 'Head',     tier: 'Clubs',     targetMargin: 0.46 },
+        { id: 'btm_hd_sp',  brand: 'Head',     tier: 'Specialty', targetMargin: 0.52 },
     ];
 
     // Freight multipliers (usaMult / canadaMult) sourced from PreCostingTemplate Internal sheet.
@@ -107,20 +151,29 @@ const DB = (() => {
         { id: 'tc_yt',   code: 'YT',   name: 'Yuenthai',            email: 'yt@vendor.com',   password: 'vendor123', paymentTerms: 'FOB', coos: ['KH','TH'] },
     ];
 
+    // Departments — define access rules for internal user groups
+    const SEED_DEPARTMENTS = [
+        { id: 'dept-management',  name: 'Management',             canViewFOB: true,  canViewSellPrice: true,  canEdit: false, canEditTechPack: true,  canEditSellStatus: true,  brandFilter: [], tierFilter: [], description: 'Full view of everything in the system' },
+        { id: 'dept-production',  name: 'Production',             canViewFOB: true,  canViewSellPrice: true,  canEdit: true,  canEditTechPack: true,  canEditSellStatus: true,  brandFilter: [], tierFilter: [], description: 'Full view and edit access with optional brand/tier filter' },
+        { id: 'dept-sales-price', name: 'Sales Management',       canViewFOB: true,  canViewSellPrice: true,  canEdit: false, canEditTechPack: false, canEditSellStatus: true,  brandFilter: [], tierFilter: [], description: 'Full pricing visibility (FOB/LDP) + Sell Status edit access' },
+        { id: 'dept-sales-noprc', name: 'Sales',                   canViewFOB: false, canViewSellPrice: true,  canEdit: false, canEditTechPack: false, canEditSellStatus: true,  brandFilter: [], tierFilter: [], description: 'Can see sell-in pricing but NOT vendor FOB/LDP' },
+        { id: 'dept-design',      name: 'Design / Tech Design',   canViewFOB: false, canViewSellPrice: false, canEdit: false, canEditTechPack: true,  canEditSellStatus: false, brandFilter: [], tierFilter: [], description: 'No pricing visibility of any kind' },
+    ];
+
     // ── Init with schema migration ─────────────────────────────
     function init() {
         const ver = localStorage.getItem('vcp_schema_ver');
-        if (ver !== '3' && ver !== '4' && ver !== '5' && ver !== '6' && ver !== '7' && ver !== '8' && ver !== '9' && ver !== '10') {
+        if (ver !== '3' && ver !== '4' && ver !== '5' && ver !== '6' && ver !== '7' && ver !== '8' && ver !== '9' && ver !== '10' && ver !== '11' && ver !== '12' && ver !== '13' && ver !== '14') {
             localStorage.removeItem(KEYS.assignments);
             localStorage.removeItem(KEYS.submissions);
             localStorage.removeItem('vcp_vendors');
             localStorage.removeItem(KEYS.tradingCompanies);
         }
-        if (ver !== '5' && ver !== '6' && ver !== '7' && ver !== '8' && ver !== '9' && ver !== '10') {
+        if (ver !== '5' && ver !== '6' && ver !== '7' && ver !== '8' && ver !== '9' && ver !== '10' && ver !== '11' && ver !== '12' && ver !== '13' && ver !== '14') {
             localStorage.removeItem(KEYS.cooRates);
         }
         // v10: replace all TCs with the full real company list
-        if (ver !== '10') {
+        if (ver !== '10' && ver !== '11' && ver !== '12' && ver !== '13' && ver !== '14') {
             localStorage.removeItem(KEYS.tradingCompanies);
         }
 
@@ -128,6 +181,7 @@ const DB = (() => {
         if (!localStorage.getItem(KEYS.users)) set(KEYS.users, SEED_USERS);
         if (!localStorage.getItem(KEYS.cooRates)) set(KEYS.cooRates, SEED_COO_RATES);
         if (!localStorage.getItem(KEYS.internalPrograms)) set(KEYS.internalPrograms, SEED_INTERNAL_PROGRAMS);
+        if (!localStorage.getItem(KEYS.brandTierMargins)) set(KEYS.brandTierMargins, SEED_BRAND_TIER_MARGINS);
         if (!localStorage.getItem(KEYS.tradingCompanies)) set(KEYS.tradingCompanies, SEED_TRADING_COMPANIES);
         if (!localStorage.getItem(KEYS.programs)) set(KEYS.programs, []);
         if (!localStorage.getItem(KEYS.styles)) set(KEYS.styles, []);
@@ -140,41 +194,89 @@ const DB = (() => {
         if (!localStorage.getItem(KEYS.customers))  set(KEYS.customers, SEED_CUSTOMERS);
         if (!localStorage.getItem(KEYS.customerBuys)) set(KEYS.customerBuys, []);
         if (!localStorage.getItem(KEYS.customerAssignments)) set(KEYS.customerAssignments, []);
+        // v11: pre-costing workflow
+        if (!localStorage.getItem(KEYS.designHandoffs)) set(KEYS.designHandoffs, []);
+        if (!localStorage.getItem(KEYS.fabricLibrary))  set(KEYS.fabricLibrary, []);
+        if (!localStorage.getItem(KEYS.salesRequests))  set(KEYS.salesRequests, []);
+        if (!localStorage.getItem(KEYS.designChanges))  set(KEYS.designChanges, []);
+        if (!localStorage.getItem(KEYS.departments))    set(KEYS.departments, SEED_DEPARTMENTS);
+        if (!localStorage.getItem(KEYS.styleLinks))      set(KEYS.styleLinks, []);
+        if (!localStorage.getItem(KEYS.recostReqs))      set(KEYS.recostReqs, []);
+        if (!localStorage.getItem(KEYS.costHistory))      set(KEYS.costHistory, []);
 
-        // ── Always ensure required users exist (repair broken sessions) ──
+        // ── Always ensure required users exist + correct passwords (repair broken sessions) ──
         {
             const users = get(KEYS.users);
             let dirty = false;
-            if (!users.find(u => u.role === 'admin')) {
-                users.push(...SEED_USERS.filter(u => u.role === 'admin'));
-                dirty = true;
-            }
-            if (!users.find(u => u.role === 'pc')) {
-                users.push({ id: 'pc1', name: 'Production Team', email: 'pc@company.com', password: 'pc123', role: 'pc' });
-                dirty = true;
-            }
-            if (!users.find(u => u.role === 'planning')) {
-                users.push({ id: 'planning1', name: 'Planning & Sales', email: 'planning@company.com', password: 'plan123', role: 'planning' });
-                dirty = true;
-            }
+            SEED_USERS.forEach(seed => {
+                const idx = users.findIndex(u => u.email === seed.email);
+                if (idx < 0) {
+                    users.push(seed);
+                    dirty = true;
+                } else if (users[idx].password !== seed.password || users[idx].role !== seed.role) {
+                    // Always keep seed password + role in sync so login page credentials always work
+                    users[idx] = { ...users[idx], password: seed.password, role: seed.role };
+                    dirty = true;
+                }
+            });
             if (dirty) set(KEYS.users, users);
         }
 
-        // ── Always ensure seed TC accounts exist (repair broken sessions) ──
+        // ── Always ensure seed TC accounts exist + correct passwords (repair broken sessions) ──
         {
             const tcs = get(KEYS.tradingCompanies);
             let dirty = false;
             SEED_TRADING_COMPANIES.forEach(seed => {
-                if (!tcs.find(t => t.email === seed.email)) {
+                const idx = tcs.findIndex(t => t.email === seed.email);
+                if (idx < 0) {
                     tcs.push(seed);
+                    dirty = true;
+                } else if (tcs[idx].password !== seed.password) {
+                    // Always keep seed password in sync
+                    tcs[idx] = { ...tcs[idx], password: seed.password };
                     dirty = true;
                 }
             });
             if (dirty) set(KEYS.tradingCompanies, tcs);
         }
 
+        // ── Patch Sales department names if using old labels ────────────
+        {
+            const NAME_MAP = {
+                'Sales (with pricing)': 'Sales Management',
+                'Sales (no pricing)':   'Sales',
+            };
+            const depts = get(KEYS.departments);
+            let dirty = false;
+            depts.forEach(d => {
+                if (NAME_MAP[d.name]) { d.name = NAME_MAP[d.name]; dirty = true; }
+            });
+            if (dirty) set(KEYS.departments, depts);
+        }
+
+        // v14: Force FOB off for sales departments + fix description + add canEditTechPack/canEditSellStatus ──
+        {
+            const DEPT_PATCH = {
+                'dept-management':  { canViewFOB: true,  canEditTechPack: true,  canEditSellStatus: true  },
+                'dept-production':  { canViewFOB: true,  canEditTechPack: true,  canEditSellStatus: true  },
+                'dept-sales-price': { canViewFOB: true,  canEditTechPack: false, canEditSellStatus: true,  description: 'Full pricing visibility (FOB/LDP) + Sell Status edit access' },
+                'dept-sales-noprc': { canViewFOB: false, canEditTechPack: false, canEditSellStatus: true,  description: 'Can see sell-in pricing but NOT vendor FOB/LDP' },
+                'dept-design':      { canViewFOB: false, canEditTechPack: true,  canEditSellStatus: false },
+            };
+            const depts = get(KEYS.departments);
+            let dirty = false;
+            depts.forEach(d => {
+                const patch = DEPT_PATCH[d.id];
+                if (!patch) return;
+                Object.entries(patch).forEach(([k, v]) => {
+                    if (d[k] !== v) { d[k] = v; dirty = true; }
+                });
+            });
+            if (dirty) set(KEYS.departments, depts);
+        }
+
         // ── Stamp schema version ────────────────────────────────────
-        localStorage.setItem('vcp_schema_ver', '10');
+        localStorage.setItem('vcp_schema_ver', '14');
     }
 
 
@@ -210,6 +312,11 @@ const DB = (() => {
             set(KEYS.programs, get(KEYS.programs).filter(p => p.id !== id));
             set(KEYS.styles, get(KEYS.styles).filter(s => s.programId !== id));
             set(KEYS.assignments, get(KEYS.assignments).filter(a => a.programId !== id));
+            // Cascade: remove style link groups for this program
+            set(KEYS.styleLinks, get(KEYS.styleLinks).filter(l => l.programId !== id));
+            // Cascade: remove re-cost requests for this program
+            set(KEYS.recostReqs, get(KEYS.recostReqs).filter(r => r.programId !== id));
+            set(KEYS.costHistory, get(KEYS.costHistory).filter(h => h.programId !== id));
         },
         styleCount(id) { return get(KEYS.styles).filter(s => s.programId === id).length; },
         tcCount(id) { return get(KEYS.assignments).filter(a => a.programId === id).length; },
@@ -234,6 +341,28 @@ const DB = (() => {
         get(id) { return get(KEYS.internalPrograms).find(p => p.id === id); },
         upsert(data) { const list = get(KEYS.internalPrograms); const idx = list.findIndex(p => p.id === data.id); if (idx >= 0) list[idx] = { ...list[idx], ...data }; else list.push({ id: uid(), ...data }); set(KEYS.internalPrograms, list); },
         delete(id) { set(KEYS.internalPrograms, get(KEYS.internalPrograms).filter(p => p.id !== id)); },
+    };
+
+    // ── Brand-Tier Margins ──────────────────────────────────────
+    // Reference table: Brand + Tier → Target Margin %
+    const BrandTierMargins = {
+        all()   { return get(KEYS.brandTierMargins); },
+        get(id) { return get(KEYS.brandTierMargins).find(m => m.id === id); },
+        lookup(brand, tier) {
+            const m = get(KEYS.brandTierMargins).find(m => m.brand === brand && m.tier === tier);
+            return m ? m.targetMargin : null;
+        },
+        upsert(data) {
+            const list = get(KEYS.brandTierMargins);
+            // Unique by brand+tier
+            const idx = data.id
+                ? list.findIndex(m => m.id === data.id)
+                : list.findIndex(m => m.brand === data.brand && m.tier === data.tier);
+            if (idx >= 0) list[idx] = { ...list[idx], ...data };
+            else list.push({ id: uid(), ...data });
+            set(KEYS.brandTierMargins, list);
+        },
+        delete(id) { set(KEYS.brandTierMargins, get(KEYS.brandTierMargins).filter(m => m.id !== id)); },
     };
 
     // ── Styles ─────────────────────────────────────────────────
@@ -495,13 +624,283 @@ const DB = (() => {
         };
     }
 
+    // ── Departments ─────────────────────────────────────────────────────────
+    const Departments = {
+        all()    { return get(KEYS.departments); },
+        get(id)  { return get(KEYS.departments).find(d => d.id === id); },
+        create(data) {
+            const list = get(KEYS.departments);
+            list.push({ id: 'dept-' + uid(), ...data });
+            set(KEYS.departments, list);
+        },
+        update(id, data) {
+            set(KEYS.departments, get(KEYS.departments).map(d => d.id === id ? { ...d, ...data } : d));
+        },
+        delete(id) {
+            set(KEYS.departments, get(KEYS.departments).filter(d => d.id !== id));
+            // Clear departmentId from users that had this dept
+            set(KEYS.users, get(KEYS.users).map(u => u.departmentId === id ? { ...u, departmentId: null } : u));
+        },
+        memberCount(id) { return get(KEYS.users).filter(u => u.departmentId === id).length; },
+    };
+
+    // ── Style Links ──────────────────────────────────────────────────────────
+    // Placement preference groups: styles that should be placed together.
+    // One group per style (a style belongs to at most one link group per program).
+    const LINK_COLORS = [
+        '#6366f1','#f59e0b','#10b981','#ef4444',
+        '#a855f7','#3b82f6','#ec4899','#14b8a6',
+    ];
+    const StyleLinks = {
+        all()            { return get(KEYS.styleLinks); },
+        byProgram(pid)   { return get(KEYS.styleLinks).filter(l => l.programId === pid); },
+        get(id)          { return get(KEYS.styleLinks).find(l => l.id === id); },
+        // Returns the link group a given style belongs to (null if none)
+        byStyle(styleId) { return get(KEYS.styleLinks).find(l => Array.isArray(l.styleIds) && l.styleIds.includes(styleId)) || null; },
+        // Check which styles in an array are already linked
+        linkedStyleIds(programId) {
+            return get(KEYS.styleLinks)
+                .filter(l => l.programId === programId)
+                .flatMap(l => l.styleIds);
+        },
+        create(data) {
+            const list = get(KEYS.styleLinks);
+            // Auto-assign color: count existing groups in this program and cycle palette
+            const progGroups = list.filter(l => l.programId === data.programId);
+            const color = LINK_COLORS[progGroups.length % LINK_COLORS.length];
+            const entry = { id: 'sl_' + uid(), createdAt: now(), color, ...data };
+            list.push(entry);
+            set(KEYS.styleLinks, list);
+            return entry;
+        },
+        update(id, data) {
+            set(KEYS.styleLinks, get(KEYS.styleLinks).map(l => l.id === id ? { ...l, ...data } : l));
+        },
+        delete(id) {
+            set(KEYS.styleLinks, get(KEYS.styleLinks).filter(l => l.id !== id));
+        },
+        deleteByProgram(programId) {
+            set(KEYS.styleLinks, get(KEYS.styleLinks).filter(l => l.programId !== programId));
+        },
+    // ── close Departments and open StyleLinks done — close StyleLinks below
+    // dummy close (Departments' closing brace was consumed above, add it back):
+    };
+
     // ── PCUsers convenience (reads from vcp_users filtered by role) ───
     const PCUsers = {
         all()         { return get(KEYS.users).filter(u => u.role === 'pc'); },
         allStaff()    { return get(KEYS.users).filter(u => u.role === 'admin' || u.role === 'pc'); },
+        allInternal() { return get(KEYS.users).filter(u => ['admin','pc','planning','design'].includes(u.role)); },
         create(data)  { const list = get(KEYS.users); list.push({ id: uid(), role: 'pc', ...data }); set(KEYS.users, list); },
         update(id, d) { set(KEYS.users, get(KEYS.users).map(u => u.id === id ? { ...u, ...d } : u)); },
         delete(id)    { set(KEYS.users, get(KEYS.users).filter(u => u.id !== id)); },
+    };
+
+    // ── Re-cost Requests ──────────────────────────────────────────────────────────
+    // Design/Sales can request re-costing of a style with a note.
+    // Production must review and release before vendors are re-notified.
+    const RecostRequests = {
+        all()             { return get(KEYS.recostReqs); },
+        byProgram(pid)    { return get(KEYS.recostReqs).filter(r => r.programId === pid); },
+        byStyle(sid)      { return get(KEYS.recostReqs).filter(r => r.styleId === sid); },
+        // Active (non-dismissed) request for a style — any open stage
+        active(sid)       { return get(KEYS.recostReqs).find(r => r.styleId === sid && !['dismissed','rejected','released'].includes(r.status)); },
+        // All open requests (any non-terminal status)
+        pending()         { return get(KEYS.recostReqs).filter(r => !['dismissed','rejected','released'].includes(r.status)); },
+        // Stage-specific filters
+        pendingSales()    { return get(KEYS.recostReqs).filter(r => r.status === 'pending_sales' || r.status === 'pending'); },
+        pendingProduction(){ return get(KEYS.recostReqs).filter(r => r.status === 'pending_production'); },
+        get(id)           { return get(KEYS.recostReqs).find(r => r.id === id); },
+        create(data) {
+            const list = get(KEYS.recostReqs);
+            const entry = { id: 'rcr_' + uid(), createdAt: now(), status: 'pending', ...data };
+            list.push(entry);
+            set(KEYS.recostReqs, list);
+            return entry;
+        },
+        // Production releases style for re-costing
+        release(id, releasedBy, releasedByName) {
+            set(KEYS.recostReqs, get(KEYS.recostReqs).map(r =>
+                r.id === id ? { ...r, status: 'released', releasedBy, releasedByName, releasedAt: now() } : r
+            ));
+            // Mark all existing submissions for this style as 'outdated'
+            const req = get(KEYS.recostReqs).find(r => r.id === id);
+            if (req?.styleId) {
+                set(KEYS.submissions, get(KEYS.submissions).map(s =>
+                    s.styleId === req.styleId ? { ...s, isOutdated: true } : s
+                ));
+                // Write a cost history entry so all roles can see the re-cost event
+                const histList = get(KEYS.costHistory);
+                histList.push({
+                    id: uid(),
+                    styleId:         req.styleId,
+                    programId:       req.programId,
+                    type:            'recosted',
+                    category:        req.category || 'Other',
+                    note:            req.note || '',
+                    requestedBy:     req.requestedBy,
+                    requestedByName: req.requestedByName,
+                    releasedBy,
+                    releasedByName,
+                    timestamp:       now(),
+                });
+                set(KEYS.costHistory, histList);
+            }
+        },
+        reject(id, rejectionNote, rejectedStage) {
+            set(KEYS.recostReqs, get(KEYS.recostReqs).map(r =>
+                r.id === id ? { ...r, status: 'rejected', rejectionNote, rejectedStage: rejectedStage || 'production', rejectedAt: now() } : r
+            ));
+        },
+        // Sales approves — advances to Production review
+        salesApprove(id, approvedBy, approvedByName) {
+            set(KEYS.recostReqs, get(KEYS.recostReqs).map(r =>
+                r.id === id ? { ...r, status: 'pending_production', salesApprovedBy: approvedBy, salesApprovedByName: approvedByName, salesApprovedAt: now() } : r
+            ));
+        },
+        dismiss(id) {
+            set(KEYS.recostReqs, get(KEYS.recostReqs).map(r =>
+                r.id === id ? { ...r, status: 'dismissed' } : r
+            ));
+        },
+        deleteByProgram(programId) {
+            set(KEYS.recostReqs, get(KEYS.recostReqs).filter(r => r.programId !== programId));
+        },
+    };
+
+    // ── Cost History ──────────────────────────────────────────
+    // Records significant costing events per style (re-costs, placements, notes)
+    const CostHistory = {
+        all()              { return get(KEYS.costHistory); },
+        byStyle(sid)       { return get(KEYS.costHistory).filter(h => h.styleId === sid); },
+        byProgram(pid)     { return get(KEYS.costHistory).filter(h => h.programId === pid); },
+        create(data) {
+            const list = get(KEYS.costHistory);
+            const entry = { id: uid(), timestamp: now(), ...data };
+            list.push(entry);
+            set(KEYS.costHistory, list);
+            return entry;
+        },
+        deleteByProgram(programId) {
+            set(KEYS.costHistory, get(KEYS.costHistory).filter(h => h.programId !== programId));
+        },
+    };
+
+    // ── Design Handoffs ────────────────────────────────────────
+    // Two separate lists: stylesList + fabricsList (uncorrelated)
+    const DesignHandoffs = {
+        all()   { return get(KEYS.designHandoffs); },
+        get(id) { return get(KEYS.designHandoffs).find(h => h.id === id); },
+        create(data) {
+            const list = get(KEYS.designHandoffs);
+            const h = {
+                id: uid(), createdAt: now(),
+                stylesUploaded:  Array.isArray(data.stylesList)  && data.stylesList.length  > 0,
+                fabricsUploaded: Array.isArray(data.fabricsList) && data.fabricsList.length > 0,
+                ...data,
+            };
+            list.push(h);
+            set(KEYS.designHandoffs, list);
+            // Upsert fabrics into FabricLibrary
+            if (Array.isArray(data.fabricsList) && data.fabricsList.length) {
+                const lib = get(KEYS.fabricLibrary);
+                data.fabricsList.forEach(f => {
+                    const idx = lib.findIndex(x => x.fabricCode === f.fabricCode);
+                    const entry = { ...f, source: 'design-handoff', handoffId: h.id, updatedAt: now() };
+                    if (idx >= 0) lib[idx] = { ...lib[idx], ...entry };
+                    else lib.push({ id: uid(), createdAt: now(), ...entry });
+                });
+                set(KEYS.fabricLibrary, lib);
+            }
+            return h;
+        },
+        // Attach a fabric list to an existing handoff (can be done after initial upload)
+        addFabricList(id, fabricsList) {
+            if (!Array.isArray(fabricsList) || !fabricsList.length) return;
+            const list = get(KEYS.designHandoffs);
+            const idx  = list.findIndex(h => h.id === id);
+            if (idx < 0) return;
+            list[idx] = { ...list[idx], fabricsList, fabricsUploaded: true, fabricsUploadedAt: now() };
+            set(KEYS.designHandoffs, list);
+            // Upsert into FabricLibrary
+            const lib = get(KEYS.fabricLibrary);
+            fabricsList.forEach(f => {
+                const li = lib.findIndex(x => x.fabricCode === f.fabricCode);
+                const entry = { ...f, source: 'design-handoff', handoffId: id, updatedAt: now() };
+                if (li >= 0) lib[li] = { ...lib[li], ...entry };
+                else lib.push({ id: uid(), createdAt: now(), ...entry });
+            });
+            set(KEYS.fabricLibrary, lib);
+        },
+        update(id, data) {
+            set(KEYS.designHandoffs, get(KEYS.designHandoffs).map(h => h.id === id ? { ...h, ...data } : h));
+        },
+        delete(id) {
+            set(KEYS.designHandoffs, get(KEYS.designHandoffs).filter(h => h.id !== id));
+        },
+    };
+
+    // ── Fabric Library ─────────────────────────────────────────
+    // Master fabric records: Code, Name, Content
+    const FabricLibrary = {
+        all()   { return get(KEYS.fabricLibrary); },
+        get(id) { return get(KEYS.fabricLibrary).find(f => f.id === id); },
+        getByCode(code) { return get(KEYS.fabricLibrary).find(f => f.fabricCode === code); },
+        create(data) {
+            const list = get(KEYS.fabricLibrary);
+            // Dedup by fabricCode
+            const idx = list.findIndex(f => f.fabricCode === data.fabricCode);
+            if (idx >= 0) { list[idx] = { ...list[idx], ...data, updatedAt: now() }; set(KEYS.fabricLibrary, list); return list[idx]; }
+            const f = { id: uid(), createdAt: now(), source: 'manual', ...data };
+            list.push(f); set(KEYS.fabricLibrary, list); return f;
+        },
+        update(id, data) { set(KEYS.fabricLibrary, get(KEYS.fabricLibrary).map(f => f.id === id ? { ...f, ...data, updatedAt: now() } : f)); },
+        delete(id) { set(KEYS.fabricLibrary, get(KEYS.fabricLibrary).filter(f => f.id !== id)); },
+    };
+
+    // ── Sales Requests ─────────────────────────────────────────
+    // Costing request from planning/sales with styles + qty + fabric
+    const SalesRequests = {
+        all()   { return get(KEYS.salesRequests); },
+        get(id) { return get(KEYS.salesRequests).find(r => r.id === id); },
+        create(data) {
+            const list = get(KEYS.salesRequests);
+            const r = { id: uid(), createdAt: now(), status: 'submitted', ...data };
+            list.push(r); set(KEYS.salesRequests, list); return r;
+        },
+        update(id, data) { set(KEYS.salesRequests, get(KEYS.salesRequests).map(r => r.id === id ? { ...r, ...data } : r)); },
+        delete(id) { set(KEYS.salesRequests, get(KEYS.salesRequests).filter(r => r.id !== id)); },
+        // Convert to a Program — creates Program + bulk-creates Styles
+        convertToProgram(requestId, programData) {
+            const req = this.get(requestId);
+            if (!req) return null;
+            const prog = Programs.create(programData);
+            if (Array.isArray(req.styles) && req.styles.length) {
+                Styles.bulkCreate(prog.id, req.styles);
+            }
+            this.update(requestId, { linkedProgramId: prog.id, status: 'converted' });
+            return prog;
+        },
+    };
+
+    // ── Design Changes ─────────────────────────────────────────
+    // Append-only log of design changes per style
+    const DesignChanges = {
+        all()              { return get(KEYS.designChanges); },
+        byStyle(styleId)   { return get(KEYS.designChanges).filter(c => c.styleId === styleId).sort((a, b) => b.changedAt.localeCompare(a.changedAt)); },
+        byProgram(pid)     { return get(KEYS.designChanges).filter(c => c.programId === pid).sort((a, b) => b.changedAt.localeCompare(a.changedAt)); },
+        log(data) {
+            const list = get(KEYS.designChanges);
+            const entry = { id: uid(), changedAt: now(), ...data };
+            list.push(entry);
+            set(KEYS.designChanges, list);
+            return entry;
+        },
+        countByStyle(styleId) { return get(KEYS.designChanges).filter(c => c.styleId === styleId).length; },
+        recentByStyle(styleId, days = 7) {
+            const cutoff = new Date(Date.now() - days * 86400000).toISOString();
+            return get(KEYS.designChanges).filter(c => c.styleId === styleId && c.changedAt >= cutoff);
+        },
     };
 
     // ── Cell Flags (admin/PC flags a cell for TC to see) ───────
@@ -581,14 +980,37 @@ const DB = (() => {
         },
     };
 
+    // ── Internal Staff Users ─────────────────────────────────────────
+    const Users = {
+        all()    { return get(KEYS.users); },
+        get(id)  { return get(KEYS.users).find(u => u.id === id); },
+        update(id, data) {
+            const list = get(KEYS.users);
+            const idx  = list.findIndex(u => u.id === id);
+            if (idx >= 0) {
+                list[idx] = { ...list[idx], ...data };
+                set(KEYS.users, list);
+                // Also update session if this is the logged-in user
+                const cur = getObj(KEYS.session);
+                if (cur && cur.id === id) set(KEYS.session, { ...cur, ...data });
+            }
+        },
+    };
+
     return {
-        Auth, Programs, InternalPrograms, Styles,
+        Auth, Programs, InternalPrograms, BrandTierMargins, Styles, Users,
         TradingCompanies,
         Vendors: null,
         Assignments, Submissions, Placements, CooRates,
-        PendingChanges, PCUsers,
+        PendingChanges, Departments, PCUsers,
         CellFlags, Revisions,
         Customers, CustomerAssignments, CustomerBuys,
+        // Pre-costing workflow (v11)
+        DesignHandoffs, FabricLibrary, SalesRequests, DesignChanges,
+        // Style linking (v12)
+        StyleLinks,
+        // Re-costing requests (v13)
+        RecostRequests, CostHistory,
         calcLDP, computeTargetLDP, parseCSV, csvRowToStyle,
         init,
     };

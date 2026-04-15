@@ -10,6 +10,7 @@
   --bg-elevated: #1a2235;
   --bg-card: rgba(26, 34, 53, 0.8);
   --border: rgba(255, 255, 255, 0.07);
+  --border-light: rgba(255, 255, 255, 0.04);
   --border-hover: rgba(99, 179, 237, 0.35);
 
   --accent: #3b82f6;
@@ -31,7 +32,237 @@
   --shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
   --shadow-lg: 0 8px 48px rgba(0, 0, 0, 0.6);
   --transition: 0.2s ease;
+
+  /* Theme-aware utility tokens */
+  --hover-overlay: rgba(255, 255, 255, 0.05);
+  --active-overlay: rgba(255, 255, 255, 0.08);
+  --input-bg: var(--bg-elevated);
 }
+
+/* ═══════════════════════════════════════════════════════
+   LIGHT MODE THEME
+   Applied via: document.body.setAttribute('data-theme','light')
+   ═══════════════════════════════════════════════════════ */
+body[data-theme="light"] {
+  --bg-base:     #eef2f7;
+  --bg-surface:  #ffffff;
+  --bg-elevated: #f4f7fb;
+  --bg-card:     rgba(255, 255, 255, 0.95);
+  --border:      rgba(15, 23, 42, 0.09);
+  --border-light: rgba(15, 23, 42, 0.05);
+  --border-hover: rgba(59, 130, 246, 0.5);
+
+  --accent-glow: rgba(59, 130, 246, 0.15);
+
+  --text-primary:   #0f172a;
+  --text-secondary: #334155;
+  --text-muted:     #64748b;
+
+  --shadow:    0 4px 24px rgba(15, 23, 42, 0.07);
+  --shadow-lg: 0 8px 48px rgba(15, 23, 42, 0.12);
+
+  --hover-overlay: rgba(15, 23, 42, 0.04);
+  --active-overlay: rgba(15, 23, 42, 0.07);
+  --input-bg: #ffffff;
+
+  color-scheme: light;
+}
+
+/* ── Light mode: smooth global transition ── */
+body {
+  transition: background-color 0.25s ease, color 0.25s ease;
+}
+
+/* ── Light mode: sidebar ── */
+body[data-theme="light"] #sidebar {
+  background: linear-gradient(180deg, #ffffff 0%, #f4f7fb 100%);
+  border-right-color: rgba(15,23,42,0.09);
+}
+body[data-theme="light"] .sidebar-logo { border-bottom-color: rgba(15,23,42,0.06); }
+body[data-theme="light"] .sidebar-section-label { color: #94a3b8; }
+body[data-theme="light"] .nav-item { color: var(--text-secondary); }
+body[data-theme="light"] .nav-item:hover { background: var(--hover-overlay); color: var(--text-primary); }
+body[data-theme="light"] .nav-item.active {
+  background: rgba(59,130,246,0.1);
+  color: var(--accent);
+}
+body[data-theme="light"] .nav-item.active .icon { filter: none; }
+
+/* ── Light mode: user info ── */
+body[data-theme="light"] .user-info { border-top-color: rgba(15,23,42,0.07); }
+body[data-theme="light"] .user-avatar { background: rgba(59,130,246,0.15); color: var(--accent); }
+
+/* ── Light mode: inputs & selects ── */
+body[data-theme="light"] .form-input,
+body[data-theme="light"] .form-select,
+body[data-theme="light"] .form-textarea {
+  background: #ffffff;
+  border-color: rgba(15,23,42,0.15);
+  color: var(--text-primary);
+}
+body[data-theme="light"] .form-input:focus,
+body[data-theme="light"] .form-select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(59,130,246,0.15);
+}
+body[data-theme="light"] .form-input::placeholder { color: #94a3b8; }
+
+/* ── Light mode: table ── */
+body[data-theme="light"] table thead th {
+  background: #f1f5f9;
+  color: var(--text-secondary);
+  border-bottom-color: rgba(15,23,42,0.1);
+}
+body[data-theme="light"] table tbody tr:hover { background: rgba(59,130,246,0.04); }
+body[data-theme="light"] table tbody td { border-bottom-color: rgba(15,23,42,0.06); }
+
+/* ── Light mode: modal ── */
+body[data-theme="light"] .modal-overlay { background: rgba(15,23,42,0.45); }
+body[data-theme="light"] .modal-box {
+  background: #ffffff;
+  border-color: rgba(15,23,42,0.1);
+}
+
+/* ── Light mode: badges & tags ── */
+body[data-theme="light"] .tag {
+  background: rgba(15,23,42,0.08);
+  color: var(--text-secondary);
+}
+body[data-theme="light"] .tag-success { background: rgba(16,185,129,0.12); color: #059669; }
+
+/* ── Light mode: hover overlays (hardcoded in CSS) ── */
+body[data-theme="light"] .rs-item:hover { background: var(--hover-overlay); }
+body[data-theme="light"] .cm-item:hover { background: var(--hover-overlay); }
+body[data-theme="light"] .has-flag { background: rgba(15,23,42,0.03); }
+
+/* ── Light mode: role switcher ── */
+body[data-theme="light"] #rs-toggle-btn {
+  background: rgba(255,255,255,0.95);
+  border-color: rgba(15,23,42,0.15);
+  color: var(--text-primary);
+}
+body[data-theme="light"] #rs-menu {
+  background: rgba(255,255,255,0.98);
+  border-color: rgba(15,23,42,0.1);
+}
+body[data-theme="light"] .rs-item.rs-active { background: rgba(59,130,246,0.1); }
+
+/* ── Light mode: KPI cards ── */
+body[data-theme="light"] .kpi-card,
+body[data-theme="light"] .kpi-card-wide { background: #ffffff; }
+body[data-theme="light"] .kpi-alert { background: #ffffff; border-color: rgba(15,23,42,0.08); }
+body[data-theme="light"] .kpi-alert.kpi-alert-active { border-color: rgba(15,23,42,0.12); }
+body[data-theme="light"] .kpi-section-label { color: #64748b; }
+
+/* ── Light mode: filter bar & search ── */
+body[data-theme="light"] .filter-bar { border-bottom-color: rgba(15,23,42,0.07); }
+body[data-theme="light"] .search-icon { color: #94a3b8; }
+
+/* ── Light mode: alerts / banners ── */
+body[data-theme="light"] .alert-warning { background: rgba(245,158,11,0.1); }
+body[data-theme="light"] .alert-info { background: rgba(59,130,246,0.08); }
+
+/* ── Light mode: program cards ── */
+body[data-theme="light"] .program-card {
+  background: #ffffff;
+  border-color: rgba(15,23,42,0.09);
+}
+body[data-theme="light"] .program-card:hover { border-color: rgba(59,130,246,0.3); }
+
+/* ── Light mode: column zone colors (cost summary + all-programs tables) ── */
+/* Style identifier zone */
+body[data-theme="light"] th[data-col="styleNum"],
+body[data-theme="light"] th[data-col="styleName"],
+body[data-theme="light"] th[data-col="cat"],
+body[data-theme="light"] th[data-col="fab"] {
+  background: #e2e8f0 !important;
+  color: #1e293b !important;
+}
+body[data-theme="light"] td[data-col="styleNum"],
+body[data-theme="light"] td[data-col="styleName"],
+body[data-theme="light"] td[data-col="cat"],
+body[data-theme="light"] td[data-col="fab"] {
+  background: #f1f5f9 !important;
+  color: #1e293b !important;
+}
+/* Projected zone — light blue */
+body[data-theme="light"] th[data-col="qty"],
+body[data-theme="light"] th[data-col="sell"] {
+  background: #dbeafe !important;
+  color: #1d4ed8 !important;
+}
+body[data-theme="light"] td[data-col="qty"],
+body[data-theme="light"] td[data-col="sell"] {
+  background: rgba(59,130,246,0.06) !important;
+  color: #1e293b !important;
+}
+/* Actuals zone — light green */
+body[data-theme="light"] th[data-col="actualQty"],
+body[data-theme="light"] th[data-col="wtdSell"] {
+  background: #d1fae5 !important;
+  color: #065f46 !important;
+}
+body[data-theme="light"] td[data-col="actualQty"] {
+  background: rgba(16,185,129,0.08) !important;
+  color: #065f46 !important;
+}
+body[data-theme="light"] td[data-col="wtdSell"] {
+  background: rgba(16,185,129,0.05) !important;
+  color: #059669 !important;
+}
+/* Calculations zone — light purple */
+body[data-theme="light"] th[data-col="tldp"],
+body[data-theme="light"] th[data-col="dutyRate"],
+body[data-theme="light"] th[data-col="estFreight"] {
+  background: #ede9fe !important;
+  color: #5b21b6 !important;
+}
+body[data-theme="light"] td[data-col="tldp"] {
+  background: rgba(139,92,246,0.08) !important;
+  color: #5b21b6 !important;
+}
+body[data-theme="light"] td[data-col="dutyRate"],
+body[data-theme="light"] td[data-col="estFreight"] {
+  background: rgba(139,92,246,0.03) !important;
+  color: #475569 !important;
+}
+/* Best TC zone — light neutral */
+body[data-theme="light"] td[data-col="best"] { background: #f8fafc !important; color: #1e293b !important; }
+body[data-theme="light"] th[data-col="best"] { background: #e2e8f0 !important; color: #475569 !important; }
+/* TC/Customer alternating column bands */
+body[data-theme="light"] .tc-col-even { background: rgba(59,130,246,0.05) !important; }
+body[data-theme="light"] .tc-col-odd  { background: rgba(15,23,42,0.03) !important; }
+body[data-theme="light"] .vendor-group-hdr.tc-col-even { background: rgba(59,130,246,0.08) !important; }
+body[data-theme="light"] .vendor-group-hdr.tc-col-odd  { background: rgba(59,130,246,0.04) !important; }
+body[data-theme="light"] .hdr-row2 .col-vendor-sub.tc-col-even { background: rgba(59,130,246,0.06) !important; }
+body[data-theme="light"] .hdr-row2 .col-vendor-sub.tc-col-odd  { background: rgba(15,23,42,0.02) !important; }
+
+/* ── Light mode: stronger vendor group separators ── */
+/* Bold left border on the vendor group spanning header */
+body[data-theme="light"] .vendor-group-hdr {
+  border-left: 2.5px solid rgba(99,102,241,0.35) !important;
+}
+/* Sub-column dividers — replace the near-invisible dark-mode rgba with a real line */
+body[data-theme="light"] .col-vendor-sub {
+  border-left: 1px solid rgba(15,23,42,0.08) !important;
+}
+/* First sub-column of each vendor (FOB) — bold separator matching the header */
+body[data-theme="light"] th[data-col$="_fob"],
+body[data-theme="light"] td[data-col$="_fob"] {
+  border-left: 2.5px solid rgba(99,102,241,0.35) !important;
+}
+
+
+/* ── Theme toggle button in sidebar ── */
+.theme-toggle-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+.theme-toggle-btn:hover { color: var(--text-secondary) !important; }
 
 /* ── Reset & Base ── */
 *,
@@ -937,6 +1168,40 @@ tbody td.primary {
   max-width: 740px;
 }
 
+.modal-xl {
+  max-width: 960px;
+}
+
+/* Compact upload zone for side-by-side layout */
+.upload-zone-sm {
+  padding: 18px 12px;
+}
+
+.upload-zone-sm .upload-icon {
+  font-size: 1.4rem;
+  margin-bottom: 6px;
+}
+
+/* Button size: extra small */
+.btn-xs {
+  padding: 3px 8px;
+  font-size: 0.72rem;
+  border-radius: var(--radius-sm);
+}
+
+/* Status indicator dots */
+.status-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.dot-green { background: var(--success); }
+.dot-amber { background: var(--warning); }
+.dot-red   { background: var(--danger); }
+
 .modal-header {
   display: flex;
   justify-content: space-between;
@@ -1760,6 +2025,7 @@ th {
 .cell-input[type="number"],
 .form-input[type="number"] {
   -moz-appearance: textfield;
+  appearance: textfield;
 }
 
 
@@ -2300,9 +2566,29 @@ td.tc-skipped-cell   { opacity: 0.4; }
   border: 1px solid var(--border-light);
   border-radius: 12px;
   padding: 6px;
-  min-width: 200px;
+  min-width: 220px;
+  max-width: 280px;
   box-shadow: 0 8px 32px rgba(0,0,0,0.5);
   backdrop-filter: blur(12px);
+}
+.rs-menu-scroll {
+  max-height: 420px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(99,102,241,0.4) transparent;
+}
+.rs-menu-scroll::-webkit-scrollbar { width: 4px; }
+.rs-menu-scroll::-webkit-scrollbar-track { background: transparent; }
+.rs-menu-scroll::-webkit-scrollbar-thumb { background: rgba(99,102,241,0.4); border-radius: 2px; }
+.rs-group-label {
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+  padding: 8px 10px 3px;
+  opacity: 0.8;
 }
 .rs-menu-title {
   font-size: 0.68rem;
@@ -2549,9 +2835,6 @@ td[data-col="best"] .tag-danger {
 .tc-col-odd  { background: #101825 !important; }
 
 /* Placed FOB cell — strong highlight */
-.cell-placed-fob { background: rgba(16,185,129,0.15) !important; }
-.cell-placed-ldp { background: rgba(16,185,129,0.20) !important; font-weight: 700; }
-.cell-considering-fob { background: rgba(251,191,36,0.08) !important; }
 
 /* Sticky col right shadow */
 td.sticky-col, th.sticky-col {
@@ -2633,7 +2916,7 @@ th[data-col="best"] {
   margin-left: 16px;
   font-size: 0.78rem;
   color: var(--text-secondary);
-  background: rgba(255,255,255,0.04);
+  background: var(--bg-elevated);
   padding: 2px 10px;
   border-radius: 20px;
   border: 1px solid var(--border);
@@ -2645,7 +2928,7 @@ th[data-col="best"] {
 
 /* Grand total footer row */
 .cs-grand-total-row td {
-  background: #1a2540 !important;
+  background: var(--bg-elevated) !important;
   border-top: 2px solid var(--accent) !important;
   padding: 10px 12px;
   font-size: 0.82rem;
@@ -2659,4 +2942,367 @@ th[data-col="best"] {
 .cs-grand-total-row td[data-col="qty"],
 .cs-grand-total-row td[data-col="actualQty"] {
   font-size: 0.9rem;
+}
+
+/* Light mode overrides for grand total row */
+body[data-theme="light"] .cs-grand-total-row td {
+  background: #e8edf5 !important;
+  color: var(--text-secondary);
+}
+
+/* ── Light mode: cell placement highlights ─────────────────────────────────── */
+/* Must outrank tc-col-even/odd band rules (specificity 0,2,0) by adding `td`   */
+/* selector (0,2,1 > 0,2,0), and use solid-enough opacity to show on white bg.  */
+body[data-theme="light"] td.cell-placed-fob,
+body[data-theme="light"] td.cell-placed-ldp {
+  background: rgba(34, 197, 94, 0.38) !important;  /* clear green */
+}
+body[data-theme="light"] td.cell-considering-fob {
+  background: rgba(234, 179, 8, 0.38) !important;  /* clear amber */
+}
+
+/* Keep dark-mode highlights strong too with td-level specificity */
+body:not([data-theme="light"]) td.cell-placed-fob,
+body:not([data-theme="light"]) td.cell-placed-ldp {
+  background: rgba(34, 197, 94, 0.22) !important;
+}
+body:not([data-theme="light"]) td.cell-considering-fob {
+  background: rgba(234, 179, 8, 0.22) !important;
+}
+
+/* ── Style Links ─────────────────────────────────────────────── */
+/* Inline badge on style number cells */
+.style-link-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: 6px;
+  padding: 1px 7px;
+  border-radius: 99px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  border: 1px solid;
+  cursor: pointer;
+  transition: opacity 0.15s;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+.style-link-badge:hover { opacity: 0.75; }
+.style-link-anchor { font-size: 0.65rem; }
+
+/* Guest sub-row: slightly offset look */
+.style-link-guest-row td { opacity: 0.95; }
+.style-link-guest-row td:first-child {
+  font-size: 0.85rem;
+}
+
+/* Link mode: checkbox column */
+.style-link-chk {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  accent-color: var(--accent);
+}
+.style-link-chk:disabled { opacity: 0.35; cursor: not-allowed; }
+
+/* Link group card on Styles page */
+.style-link-group-card {
+  background: var(--bg-elevated);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  transition: border-color 0.15s;
+}
+.style-link-group-card:hover { border-color: var(--border-hover); }
+
+/* Floating action bar animation */
+#link-fab {
+  transition: opacity 0.2s, transform 0.2s;
+}
+#link-fab[style*="flex"] {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+/* Style link modal checklist */
+.style-link-checklist {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 280px;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+.style-link-check-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: background 0.12s;
+  font-size: 0.82rem;
+}
+.style-link-check-item:hover { background: var(--bg-elevated); }
+.style-link-check-item.is-linked { opacity: 0.45; cursor: not-allowed; }
+.style-link-check-item input[type="checkbox"] {
+  accent-color: var(--accent);
+  width: 15px; height: 15px;
+  flex-shrink: 0;
+}
+.style-link-anchor-preview {
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-glow);
+  border: 1px solid rgba(99,102,241,0.3);
+  font-size: 0.78rem;
+  color: var(--accent);
+  margin-top: 8px;
+}
+
+/* ── Design Costing View (DCV) ───────────────────────────── */
+
+/* Costing status badges */
+.dcv-placed-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: 99px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  background: rgba(34, 197, 94, 0.15);
+  color: #22c55e;
+  border: 1px solid rgba(34, 197, 94, 0.3);
+}
+
+.dcv-considering-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: 99px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  background: rgba(99, 102, 241, 0.12);
+  color: var(--accent);
+  border: 1px solid rgba(99, 102, 241, 0.25);
+}
+
+.dcv-open-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: 99px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+}
+
+/* Re-cost request button */
+.dcv-recosting-btn {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.dcv-recosting-btn:hover {
+  color: #f59e0b;
+  border-color: rgba(245,158,11,0.3);
+}
+
+/* Re-cost card in Design view pending panel */
+.dcv-recosting-card {
+  padding: 10px 14px;
+  background: var(--bg-elevated);
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(245, 158, 11, 0.25);
+}
+
+/* Dept status select inline */
+.dcv-status-select {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 3px 6px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: border-color 0.15s;
+  width: 100%;
+}
+.dcv-status-select:hover,
+.dcv-status-select:focus {
+  border-color: var(--accent);
+  outline: none;
+  color: var(--text-primary);
+}
+
+/* Fabrication group row in DCV table */
+.cs-group-count {
+  margin-left: 10px;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+.cs-subtotal {
+  margin-left: 14px;
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+}
+
+/* Vendor outdated quote row */
+.outdated-quote-row {
+  background: rgba(245, 158, 11, 0.04) !important;
+}
+.outdated-quote-row:hover {
+  background: rgba(245, 158, 11, 0.07) !important;
+}
+
+/* btn-warning */
+.btn-warning {
+  background: rgba(245,158,11,0.15);
+  color: #f59e0b;
+  border: 1px solid rgba(245,158,11,0.35);
+}
+.btn-warning:hover {
+  background: rgba(245,158,11,0.25);
+  border-color: rgba(245,158,11,0.6);
+}
+
+/* ── Cost History Timeline ─────────────────────────────────── */
+.cost-history-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+.cost-history-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+  position: relative;
+}
+.cost-history-item:last-child {
+  border-bottom: none;
+}
+.cost-history-icon {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.85rem;
+  margin-top: 2px;
+}
+.cost-history-body {
+  flex: 1;
+  min-width: 0;
+}
+.cost-history-label {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  font-size: 0.82rem;
+  margin-bottom: 3px;
+}
+.cost-history-note {
+  font-size: 0.78rem;
+  font-style: italic;
+  color: var(--text-secondary);
+  margin-bottom: 4px;
+  line-height: 1.4;
+}
+.cost-history-meta {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.cost-history-date {
+  margin-left: auto;
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+/* ── Sell Status drag-fill handle ───────────────────────────── */
+/* Read-only status badge (shown when user lacks write perm for that field) */
+.dcv-status-readonly {
+  display: inline-block;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  font-style: italic;
+  padding: 2px 0;
+}
+
+/* Sell Status / Tech Pack drag-fill handle */
+.dcv-fill-wrap {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.dcv-fill-handle {
+  flex-shrink: 0;
+  cursor: ns-resize;
+  color: var(--text-muted);
+  font-size: 0.65rem;
+  line-height: 1;
+  padding: 2px 3px;
+  border-radius: 3px;
+  opacity: 0;
+  transition: opacity 0.15s, background 0.15s;
+  user-select: none;
+}
+tr:hover .dcv-fill-handle {
+  opacity: 0.5;
+}
+.dcv-fill-handle:hover {
+  opacity: 1 !important;
+  background: var(--bg-elevated);
+  color: var(--accent);
+}
+/* Row highlight during drag preview */
+tr.dcv-drag-preview td {
+  background: rgba(99, 102, 241, 0.07) !important;
+}
+tr.dcv-drag-preview select[data-field="sellInStatus"] {
+  outline: 2px solid #6366f1;
+  outline-offset: -1px;
+  border-radius: 4px;
+}
+
+/* ── Multi-select checkbox column ──────────────────────────── */
+.sel-col {
+  width: 36px;
+  min-width: 36px;
+  max-width: 36px;
+  text-align: center;
+  padding: 0 4px !important;
+  vertical-align: middle;
+}
+.sel-col input[type="checkbox"] {
+  width: 15px;
+  height: 15px;
+  cursor: pointer;
+  accent-color: var(--accent);
+}
+/* Selected row highlight */
+tr.style-row-selected td {
+  background: rgba(99, 102, 241, 0.07) !important;
+}
+tr.style-row-selected .sel-col {
+  background: rgba(99, 102, 241, 0.12) !important;
+}
+/* FAB disabled button */
+#sel-fab button:disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
 }

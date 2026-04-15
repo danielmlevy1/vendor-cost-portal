@@ -20,7 +20,7 @@
         <p>FOB costing, comparison &amp; program placement</p>
       </div>
       <div id="login-error" class="alert alert-danger" style="display:none"></div>
-      <form id="login-form">
+      <form id="login-form" onsubmit="App._login(event)">
         <div class="form-group">
           <label class="form-label" for="login-email">Email Address</label>
           <input class="form-input" id="login-email" type="email" placeholder="you@company.com" required
@@ -74,11 +74,77 @@
     <div id="modal-box" class="modal hidden"></div>
   </div>
 
+  <!-- SheetJS: client-side Excel (.xlsx / .xls) parser -->
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+
   <!-- Scripts -->
-  <script src="db.js?v=51"></script>
-  <script src="views-admin.js?v=51"></script>
-  <script src="views-vendor.js?v=51"></script>
-  <script src="app.js?v=51"></script>
+  <script src="db.js?v=82"></script>
+  <script src="views-admin.js?v=82"></script>
+  <script src="views-vendor.js?v=82"></script>
+  <script src="app.js?v=82"></script>
+
+  <!-- ── Inline login: works even if app.js fails to init ──────── -->
+  <script>
+  (function () {
+    // Show any uncaught JS errors as a visible banner
+    window.onerror = function (msg, src, line, col, err) {
+      var banner = document.getElementById('_errbanner');
+      if (!banner) {
+        banner = document.createElement('div');
+        banner.id = '_errbanner';
+        banner.style.cssText = 'position:fixed;bottom:0;left:0;right:0;z-index:99999;background:#7f1d1d;color:#fecaca;font-family:monospace;font-size:12px;padding:10px 16px;word-break:break-all;white-space:pre-wrap';
+        document.body.appendChild(banner);
+      }
+      banner.textContent = (err && err.stack ? err.stack : msg) + ' @ ' + src + ':' + line;
+      return false;
+    };
+
+    function _inlineLogin(e) {
+      e.preventDefault();
+      var email    = (document.getElementById('login-email').value    || '').trim();
+      var password = (document.getElementById('login-password').value || '').trim();
+      var errEl    = document.getElementById('login-error');
+
+      // Safe App check — use try/catch instead of typeof (typeof throws for TDZ const)
+      var appReady = false;
+      try { appReady = !!App && typeof App._login === 'function'; } catch(e) {}
+      if (appReady) { return App._login(e); }
+
+      // Fallback: localStorage auth (mirrors DB.Auth.login exactly)
+      try {
+        var SEED_USERS = [
+          { id:'admin',    email:'admin@company.com',   password:'admin123',  role:'admin' },
+          { id:'pc1',      email:'pc@company.com',       password:'pc123',     role:'pc' },
+          { id:'planning1',email:'planning@company.com', password:'plan123',   role:'planning' },
+          { id:'sales1',   email:'sales@company.com',    password:'sales123',  role:'planning' },
+          { id:'design1',  email:'design@company.com',   password:'design123', role:'design' },
+          { id:'techdes1', email:'techdesign@company.com',password:'tech123',  role:'design' },
+        ];
+        var users = JSON.parse(localStorage.getItem('vcp_users') || 'null') || SEED_USERS;
+        var tcs   = JSON.parse(localStorage.getItem('vcp_trading_companies') || '[]');
+        var user  = users.find(function(u){ return u.email===email && u.password===password; });
+        if (!user) {
+          var tc = tcs.find(function(t){ return t.email===email && t.password===password; });
+          if (tc) user = { id:tc.id, name:tc.name, email:tc.email, role:'vendor', tcId:tc.id };
+        }
+        if (!user) {
+          if (errEl) { errEl.style.display=''; errEl.textContent='Invalid email or password'; }
+          return;
+        }
+        localStorage.setItem('vcp_session', JSON.stringify(user));
+        // Reload so App.init() picks up the session (or stays in fallback mode)
+        window.location.replace(window.location.pathname);
+      } catch(ex) {
+        if (errEl) { errEl.style.display=''; errEl.textContent='Login error: '+ex.message; }
+      }
+    }
+
+    document.addEventListener('DOMContentLoaded', function () {
+      var form = document.getElementById('login-form');
+      if (form) form.onsubmit = _inlineLogin;
+    });
+  })();
+  </script>
 </body>
 
 </html>
