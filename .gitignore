@@ -13,3 +13,6 @@ npm-debug.log*
 
 # Build artifacts
 dist/
+
+# Database (generated at runtime — do not commit)
+data/

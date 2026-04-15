@@ -1,0 +1,424 @@
+-- =============================================================
+-- VENDOR COST PORTAL — SQLite Schema
+-- =============================================================
+-- Conventions:
+--   • All IDs are TEXT (base36 strings from the existing uid() helper)
+--   • Timestamps are TEXT ISO-8601 (e.g. "2026-04-15T10:00:00.000Z")
+--   • Booleans are INTEGER 0/1
+--   • Money/rates are REAL
+--   • Complex embedded arrays are TEXT stored as JSON
+--   • No FK constraints enforced at DB level yet (added in API layer)
+-- =============================================================
+
+PRAGMA journal_mode = WAL;
+PRAGMA foreign_keys = OFF;
+
+-- ── Reference / lookup tables ─────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS coo_rates (
+  id          TEXT PRIMARY KEY,
+  code        TEXT NOT NULL UNIQUE,
+  country     TEXT NOT NULL,
+  addl_duty   REAL NOT NULL DEFAULT 0,
+  usa_mult    REAL NOT NULL DEFAULT 0,
+  canada_mult REAL NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS customers (
+  id   TEXT PRIMARY KEY,
+  code TEXT NOT NULL UNIQUE,
+  name TEXT NOT NULL
+);
+
+-- ── Users and auth ────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS departments (
+  id                   TEXT PRIMARY KEY,
+  name                 TEXT NOT NULL,
+  description          TEXT,
+  can_view_fob         INTEGER NOT NULL DEFAULT 0,
+  can_view_sell_price  INTEGER NOT NULL DEFAULT 0,
+  can_edit             INTEGER NOT NULL DEFAULT 0,
+  can_edit_tech_pack   INTEGER NOT NULL DEFAULT 0,
+  can_edit_sell_status INTEGER NOT NULL DEFAULT 0,
+  brand_filter         TEXT NOT NULL DEFAULT '[]',  -- JSON array of brand strings
+  tier_filter          TEXT NOT NULL DEFAULT '[]'   -- JSON array of tier strings
+);
+
+CREATE TABLE IF NOT EXISTS users (
+  id                  TEXT PRIMARY KEY,
+  name                TEXT NOT NULL,
+  email               TEXT NOT NULL UNIQUE,
+  password_hash       TEXT NOT NULL,        -- bcrypt hash; never store plaintext
+  role                TEXT NOT NULL,        -- admin | pc | planning | design | vendor
+  department_id       TEXT,                 -- FK → departments.id
+  internal_program_id TEXT,                 -- FK → internal_programs.id (legacy field)
+  created_at          TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+
+CREATE TABLE IF NOT EXISTS trading_companies (
+  id            TEXT PRIMARY KEY,
+  code          TEXT NOT NULL UNIQUE,
+  name          TEXT NOT NULL,
+  email         TEXT,
+  password_hash TEXT NOT NULL,
+  payment_terms TEXT NOT NULL DEFAULT 'FOB',
+  created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+
+-- Normalized COO list for each TC (replaces the coos[] array)
+CREATE TABLE IF NOT EXISTS tc_coos (
+  tc_id TEXT NOT NULL,
+  coo   TEXT NOT NULL,
+  PRIMARY KEY (tc_id, coo)
+);
+
+-- ── Internal programs and margin tables ──────────────────────
+
+CREATE TABLE IF NOT EXISTS internal_programs (
+  id            TEXT PRIMARY KEY,
+  name          TEXT NOT NULL,
+  brand         TEXT,
+  tier          TEXT,
+  gender        TEXT,
+  target_margin REAL
+);
+
+CREATE TABLE IF NOT EXISTS brand_tier_margins (
+  id            TEXT PRIMARY KEY,
+  brand         TEXT NOT NULL,
+  tier          TEXT NOT NULL,
+  target_margin REAL NOT NULL,
+  UNIQUE (brand, tier)
+);
+
+-- ── Programs ─────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS programs (
+  id                    TEXT PRIMARY KEY,
+  name                  TEXT,
+  brand                 TEXT,
+  retailer              TEXT,
+  gender                TEXT,
+  season                TEXT,
+  year                  TEXT,
+  status                TEXT NOT NULL DEFAULT 'Draft',  -- Draft | Costing | Placed | Cancelled
+  market                TEXT NOT NULL DEFAULT 'USA',
+  target_margin         REAL,
+  version               INTEGER NOT NULL DEFAULT 1,
+  internal_program_id   TEXT,
+  pending_design_handoff INTEGER NOT NULL DEFAULT 0,
+  start_date            TEXT,
+  end_date              TEXT,
+  crd_date              TEXT,
+  created_at            TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_programs_status ON programs(status);
+
+-- ── Styles ───────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS styles (
+  id                 TEXT PRIMARY KEY,
+  program_id         TEXT NOT NULL,
+  style_number       TEXT,
+  style_name         TEXT,
+  category           TEXT,
+  fabrication        TEXT,
+  status             TEXT NOT NULL DEFAULT 'open',  -- open | placed | cancelled
+  proj_qty           REAL,
+  actual_qty         REAL,
+  proj_sell_price    REAL,
+  duty_rate          REAL,
+  est_freight        REAL,
+  special_packaging  REAL,
+  -- Dept-level status fields
+  tech_pack_status   TEXT DEFAULT 'not_submitted',  -- not_submitted | submitted | changed
+  sell_status        TEXT,
+  sell_status_note   TEXT,
+  -- Linking
+  internal_program_id TEXT,
+  -- Re-cost
+  recost_request_id  TEXT,
+  created_at         TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_styles_program_id ON styles(program_id);
+
+-- Tech Pack history: extracted from the embedded array on each style
+-- (previously stored as styles.techPackHistory JSON)
+CREATE TABLE IF NOT EXISTS tech_pack_history (
+  id                TEXT PRIMARY KEY,
+  style_id          TEXT NOT NULL,
+  status            TEXT,
+  previous_status   TEXT,
+  changed_by        TEXT,
+  changed_at        TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  note              TEXT,
+  recost_request_id TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_tp_history_style_id ON tech_pack_history(style_id);
+
+-- ── Assignments (program ↔ TC) ────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS assignments (
+  id         TEXT PRIMARY KEY,
+  program_id TEXT NOT NULL,
+  tc_id      TEXT NOT NULL,
+  UNIQUE (program_id, tc_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_assignments_program_id ON assignments(program_id);
+CREATE INDEX IF NOT EXISTS idx_assignments_tc_id      ON assignments(tc_id);
+
+-- ── Submissions (TC cost quotes) ─────────────────────────────
+
+CREATE TABLE IF NOT EXISTS submissions (
+  id             TEXT PRIMARY KEY,
+  tc_id          TEXT NOT NULL,
+  style_id       TEXT NOT NULL,
+  coo            TEXT NOT NULL,
+  fob            REAL,
+  factory_cost   REAL,
+  payment_terms  TEXT DEFAULT 'FOB',
+  status         TEXT NOT NULL DEFAULT 'submitted',  -- submitted | flagged | accepted
+  flag_reason    TEXT,
+  is_outdated    INTEGER NOT NULL DEFAULT 0,
+  recost_request_id TEXT,
+  created_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_at     TEXT,
+  UNIQUE (tc_id, style_id, coo)
+);
+
+CREATE INDEX IF NOT EXISTS idx_submissions_style_id ON submissions(style_id);
+CREATE INDEX IF NOT EXISTS idx_submissions_tc_id    ON submissions(tc_id);
+
+-- ── Revisions (append-only FOB/factoryCost change log) ───────
+
+CREATE TABLE IF NOT EXISTS revisions (
+  id                TEXT PRIMARY KEY,
+  sub_id            TEXT NOT NULL,
+  field             TEXT NOT NULL,  -- fob | factoryCost
+  old_value         TEXT,
+  new_value         TEXT,
+  submitted_by      TEXT,
+  submitted_by_name TEXT,
+  submitted_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  type              TEXT           -- optional tag (e.g. 're-cost')
+);
+
+CREATE INDEX IF NOT EXISTS idx_revisions_sub_id ON revisions(sub_id);
+
+-- ── Placements ────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS placements (
+  id            TEXT PRIMARY KEY,
+  style_id      TEXT NOT NULL UNIQUE,
+  tc_id         TEXT,
+  coo           TEXT,
+  placed_at     TEXT,
+  placed_by     TEXT,
+  placed_by_name TEXT,
+  notes         TEXT
+);
+
+-- ── Cell Flags ────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS cell_flags (
+  id               TEXT PRIMARY KEY,
+  sub_id           TEXT NOT NULL,
+  field            TEXT NOT NULL,
+  color            TEXT,
+  note             TEXT,
+  flagged_by       TEXT,
+  flagged_by_name  TEXT,
+  flagged_at       TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  UNIQUE (sub_id, field)
+);
+
+-- ── Pending Changes (approval queue) ─────────────────────────
+
+CREATE TABLE IF NOT EXISTS pending_changes (
+  id               TEXT PRIMARY KEY,
+  type             TEXT NOT NULL,   -- tc | coo | internal-program | pc-user
+  action           TEXT NOT NULL,   -- create | update | delete
+  data             TEXT NOT NULL DEFAULT '{}',  -- JSON payload
+  status           TEXT NOT NULL DEFAULT 'pending',  -- pending | approved | rejected
+  proposed_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  proposed_by      TEXT,
+  proposed_by_name TEXT,
+  reviewed_by      TEXT,
+  reviewed_at      TEXT
+);
+
+-- ── Customer program assignments ──────────────────────────────
+
+CREATE TABLE IF NOT EXISTS customer_assignments (
+  id          TEXT PRIMARY KEY,
+  program_id  TEXT NOT NULL,
+  customer_id TEXT NOT NULL,
+  UNIQUE (program_id, customer_id)
+);
+
+-- ── Customer buys ─────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS customer_buys (
+  id          TEXT PRIMARY KEY,
+  program_id  TEXT NOT NULL,
+  style_id    TEXT NOT NULL,
+  customer_id TEXT NOT NULL,
+  qty         REAL,
+  sell_price  REAL,
+  notes       TEXT,
+  created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_at  TEXT,
+  UNIQUE (program_id, style_id, customer_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_customer_buys_program ON customer_buys(program_id);
+
+-- ── Style Links (placement grouping) ─────────────────────────
+
+CREATE TABLE IF NOT EXISTS style_links (
+  id         TEXT PRIMARY KEY,
+  program_id TEXT NOT NULL,
+  style_ids  TEXT NOT NULL DEFAULT '[]',  -- JSON array of style IDs
+  color      TEXT,
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_style_links_program ON style_links(program_id);
+
+-- ── Design Handoffs ───────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS design_handoffs (
+  id                      TEXT PRIMARY KEY,
+  season                  TEXT,
+  year                    TEXT,
+  brand                   TEXT,
+  gender                  TEXT,
+  styles_list             TEXT NOT NULL DEFAULT '[]',   -- JSON array of style objects
+  fabrics_list            TEXT NOT NULL DEFAULT '[]',   -- JSON array of fabric objects
+  styles_uploaded         INTEGER NOT NULL DEFAULT 0,
+  fabrics_uploaded        INTEGER NOT NULL DEFAULT 0,
+  fabrics_uploaded_at     TEXT,
+  linked_program_id       TEXT,
+  supplier_request_number TEXT,
+  submitted               INTEGER NOT NULL DEFAULT 0,
+  submitted_at            TEXT,
+  created_at              TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+
+-- ── Fabric Library ────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS fabric_library (
+  id           TEXT PRIMARY KEY,
+  fabric_code  TEXT NOT NULL UNIQUE,
+  fabric_name  TEXT,
+  content      TEXT,
+  weight       TEXT,
+  supplier     TEXT,
+  source       TEXT DEFAULT 'manual',  -- manual | design-handoff
+  handoff_id   TEXT,
+  created_at   TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_at   TEXT
+);
+
+-- ── Sales Requests ────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS sales_requests (
+  id                    TEXT PRIMARY KEY,
+  status                TEXT NOT NULL DEFAULT 'submitted',  -- submitted | converted | cancelled
+  season                TEXT,
+  year                  TEXT,
+  brand                 TEXT,
+  gender                TEXT,
+  retailer              TEXT,
+  in_warehouse_date     TEXT,
+  cost_request_due_date TEXT,
+  styles                TEXT NOT NULL DEFAULT '[]',  -- JSON array of style objects
+  handoff_id            TEXT,
+  linked_program_id     TEXT,
+  requested_by          TEXT,
+  requested_by_name     TEXT,
+  created_at            TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+
+-- ── Design Changes ────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS design_changes (
+  id              TEXT PRIMARY KEY,
+  style_id        TEXT NOT NULL,
+  program_id      TEXT,
+  style_number    TEXT,
+  description     TEXT,
+  field           TEXT,
+  previous_value  TEXT,
+  new_value       TEXT,
+  changed_by      TEXT,
+  changed_by_name TEXT,
+  changed_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_design_changes_style ON design_changes(style_id);
+
+-- ── Re-cost Requests ──────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS recost_requests (
+  id                   TEXT PRIMARY KEY,
+  program_id           TEXT NOT NULL,
+  style_id             TEXT,
+  style_ids            TEXT NOT NULL DEFAULT '[]',  -- JSON array (multi-style requests)
+  status               TEXT NOT NULL DEFAULT 'pending_sales',
+    -- pending_sales | pending_production | released | rejected | dismissed
+  category             TEXT,
+  note                 TEXT,
+  previous_value       TEXT,
+  new_value            TEXT,
+  requested_by         TEXT,
+  requested_by_name    TEXT,
+  design_change_id     TEXT,
+  sales_approved_by    TEXT,
+  sales_approved_by_name TEXT,
+  sales_approved_at    TEXT,
+  released_by          TEXT,
+  released_by_name     TEXT,
+  released_at          TEXT,
+  rejection_note       TEXT,
+  rejected_stage       TEXT,
+  rejected_at          TEXT,
+  created_at           TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_recost_program ON recost_requests(program_id);
+CREATE INDEX IF NOT EXISTS idx_recost_style   ON recost_requests(style_id);
+CREATE INDEX IF NOT EXISTS idx_recost_status  ON recost_requests(status);
+
+-- ── Cost History ──────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS cost_history (
+  id                TEXT PRIMARY KEY,
+  style_id          TEXT NOT NULL,
+  program_id        TEXT,
+  type              TEXT,      -- recosted | placed | note
+  category          TEXT,
+  note              TEXT,
+  requested_by      TEXT,
+  requested_by_name TEXT,
+  released_by       TEXT,
+  released_by_name  TEXT,
+  timestamp         TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_cost_history_style   ON cost_history(style_id);
+CREATE INDEX IF NOT EXISTS idx_cost_history_program ON cost_history(program_id);
+
+-- ── Schema version tracker ────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS schema_migrations (
+  version    INTEGER PRIMARY KEY,
+  applied_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
