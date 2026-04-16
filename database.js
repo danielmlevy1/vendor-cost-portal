@@ -314,6 +314,39 @@ function runMigrations() {
   addColumn('placements',  'confirmed_fob',    'REAL');
   // v2: tech_design_notes on styles
   addColumn('styles',      'tech_design_notes','TEXT');
+
+  // v3: flag events in revisions
+  addColumn('revisions', 'flag_color', 'TEXT');
+  addColumn('revisions', 'flag_note',  'TEXT');
+
+  // v3: design_handoffs extended fields
+  addColumn('design_handoffs', 'tier',                  'TEXT');
+  addColumn('design_handoffs', 'trims_list',            "TEXT NOT NULL DEFAULT '[]'");
+  addColumn('design_handoffs', 'trims_uploaded',        'INTEGER NOT NULL DEFAULT 0');
+  addColumn('design_handoffs', 'trims_uploaded_at',     'TEXT');
+  addColumn('design_handoffs', 'linked_request_id',     'TEXT');
+  addColumn('design_handoffs', 'assigned_tc_ids',       "TEXT NOT NULL DEFAULT '[]'");
+  addColumn('design_handoffs', 'first_crd',             'TEXT');
+  addColumn('design_handoffs', 'start_date',            'TEXT');
+  addColumn('design_handoffs', 'end_date',              'TEXT');
+  addColumn('design_handoffs', 'vendors_assigned_at',   'TEXT');
+  addColumn('design_handoffs', 'submitted_for_costing', 'INTEGER NOT NULL DEFAULT 0');
+
+  // v3: sales_requests extended fields
+  addColumn('sales_requests', 'cancelled_styles',    "TEXT NOT NULL DEFAULT '[]'");
+  addColumn('sales_requests', 'source_handoff_id',   'TEXT');
+  addColumn('sales_requests', 'sales_submitted_at',  'TEXT');
+  addColumn('sales_requests', 'assigned_tc_ids',     "TEXT NOT NULL DEFAULT '[]'");
+  addColumn('sales_requests', 'first_crd',           'TEXT');
+  addColumn('sales_requests', 'start_date',          'TEXT');
+  addColumn('sales_requests', 'end_date',            'TEXT');
+  addColumn('sales_requests', 'vendors_assigned_at', 'TEXT');
+
+  // v3: style_links preferred_tc_id
+  addColumn('style_links', 'preferred_tc_id', 'TEXT');
+
+  // v3: pending_changes current_data (snapshot before the proposed change)
+  addColumn('pending_changes', 'current_data', 'TEXT');
 }
 
 // ── Run all seeders ────────────────────────────────────────────

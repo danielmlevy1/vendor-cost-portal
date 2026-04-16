@@ -215,7 +215,9 @@ CREATE TABLE IF NOT EXISTS revisions (
   submitted_by      TEXT,
   submitted_by_name TEXT,
   submitted_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
-  type              TEXT           -- optional tag (e.g. 're-cost')
+  type              TEXT,           -- flag | flag-clear | (null for price revisions)
+  flag_color        TEXT,
+  flag_note         TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_revisions_sub_id ON revisions(sub_id);
@@ -308,16 +310,27 @@ CREATE TABLE IF NOT EXISTS design_handoffs (
   season                  TEXT,
   year                    TEXT,
   brand                   TEXT,
+  tier                    TEXT,
   gender                  TEXT,
   styles_list             TEXT NOT NULL DEFAULT '[]',   -- JSON array of style objects
   fabrics_list            TEXT NOT NULL DEFAULT '[]',   -- JSON array of fabric objects
+  trims_list              TEXT NOT NULL DEFAULT '[]',   -- JSON array of trim objects
   styles_uploaded         INTEGER NOT NULL DEFAULT 0,
   fabrics_uploaded        INTEGER NOT NULL DEFAULT 0,
   fabrics_uploaded_at     TEXT,
+  trims_uploaded          INTEGER NOT NULL DEFAULT 0,
+  trims_uploaded_at       TEXT,
   linked_program_id       TEXT,
+  linked_request_id       TEXT,
   supplier_request_number TEXT,
+  assigned_tc_ids         TEXT NOT NULL DEFAULT '[]',
+  first_crd               TEXT,
+  start_date              TEXT,
+  end_date                TEXT,
+  vendors_assigned_at     TEXT,
   submitted               INTEGER NOT NULL DEFAULT 0,
   submitted_at            TEXT,
+  submitted_for_costing   INTEGER NOT NULL DEFAULT 0,
   created_at              TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
 
@@ -349,10 +362,18 @@ CREATE TABLE IF NOT EXISTS sales_requests (
   in_warehouse_date     TEXT,
   cost_request_due_date TEXT,
   styles                TEXT NOT NULL DEFAULT '[]',  -- JSON array of style objects
+  cancelled_styles      TEXT NOT NULL DEFAULT '[]',
+  source_handoff_id     TEXT,
   handoff_id            TEXT,
   linked_program_id     TEXT,
   requested_by          TEXT,
   requested_by_name     TEXT,
+  sales_submitted_at    TEXT,
+  assigned_tc_ids       TEXT NOT NULL DEFAULT '[]',
+  first_crd             TEXT,
+  start_date            TEXT,
+  end_date              TEXT,
+  vendors_assigned_at   TEXT,
   created_at            TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
 

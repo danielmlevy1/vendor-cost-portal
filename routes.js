@@ -15,8 +15,11 @@
 
 const express = require('express');
 const router  = express.Router();
+const bcrypt  = require('bcrypt');
 const db      = require('./database');
 const { requireAuth, requireRole } = require('./auth');
+
+const SALT = 10;
 
 // ── Helpers ────────────────────────────────────────────────────
 
@@ -147,6 +150,13 @@ function cooRateFromRow(r) {
     addlDuty:    r.addl_duty,
     usaMult:     r.usa_mult,
     canadaMult:  r.canada_mult,
+  };
+}
+
+function internalProgramFromRow(r) {
+  return {
+    id: r.id, name: r.name, brand: r.brand, tier: r.tier,
+    gender: r.gender, targetMargin: r.target_margin,
   };
 }
 
@@ -365,10 +375,7 @@ router.get('/trading-companies/:id', requireAuth, (req, res) => {
 
 // GET /api/internal-programs
 router.get('/internal-programs', requireAuth, (req, res) => {
-  res.json(stmt.allInternalPrograms.all().map(r => ({
-    id: r.id, name: r.name, brand: r.brand, tier: r.tier,
-    gender: r.gender, targetMargin: r.target_margin,
-  })));
+  res.json(stmt.allInternalPrograms.all().map(internalProgramFromRow));
 });
 
 // GET /api/brand-tier-margins
@@ -394,6 +401,193 @@ router.get('/users', requireAuth, requireRole('admin', 'pc'), (req, res) => {
     id: r.id, name: r.name, email: r.email, role: r.role,
     departmentId: r.department_id, createdAt: r.created_at,
   })));
+});
+
+// =============================================================
+// REFERENCE DATA — WRITE ROUTES
+// =============================================================
+
+// POST /api/coo-rates  (upsert by code)
+router.post('/coo-rates', requireAuth, requireRole('admin'), (req, res) => {
+  const b = req.body;
+  if (!b.code || !b.country) return res.status(400).json({ error: 'code and country required' });
+  const existing = db.prepare('SELECT id FROM coo_rates WHERE code = ?').get(b.code);
+  if (existing) {
+    db.prepare('UPDATE coo_rates SET country=?, addl_duty=?, usa_mult=?, canada_mult=? WHERE id=?')
+      .run(b.country, b.addlDuty ?? 0, b.usaMult ?? 0, b.canadaMult ?? 0, existing.id);
+    res.json(cooRateFromRow(db.prepare('SELECT * FROM coo_rates WHERE id=?').get(existing.id)));
+  } else {
+    const id = uid();
+    db.prepare('INSERT INTO coo_rates (id,code,country,addl_duty,usa_mult,canada_mult) VALUES (?,?,?,?,?,?)')
+      .run(id, b.code, b.country, b.addlDuty ?? 0, b.usaMult ?? 0, b.canadaMult ?? 0);
+    res.status(201).json(cooRateFromRow(db.prepare('SELECT * FROM coo_rates WHERE id=?').get(id)));
+  }
+});
+
+// DELETE /api/coo-rates/:id
+router.delete('/coo-rates/:id', requireAuth, requireRole('admin'), (req, res) => {
+  const info = db.prepare('DELETE FROM coo_rates WHERE id=?').run(req.params.id);
+  if (!info.changes) return res.status(404).json({ error: 'Not found' });
+  res.json({ ok: true });
+});
+
+// POST /api/customers
+router.post('/customers', requireAuth, requireRole('admin', 'pc'), (req, res) => {
+  const b = req.body;
+  if (!b.code || !b.name) return res.status(400).json({ error: 'code and name required' });
+  const id = uid();
+  db.prepare('INSERT INTO customers (id,code,name) VALUES (?,?,?)').run(id, b.code, b.name);
+  res.status(201).json(db.prepare('SELECT * FROM customers WHERE id=?').get(id));
+});
+
+// PATCH /api/customers/:id
+router.patch('/customers/:id', requireAuth, requireRole('admin', 'pc'), (req, res) => {
+  const row = db.prepare('SELECT * FROM customers WHERE id=?').get(req.params.id);
+  if (!row) return res.status(404).json({ error: 'Not found' });
+  applyPatch('customers', req.params.id, req.body, { code: 'code', name: 'name' });
+  res.json(db.prepare('SELECT * FROM customers WHERE id=?').get(req.params.id));
+});
+
+// DELETE /api/customers/:id
+router.delete('/customers/:id', requireAuth, requireRole('admin', 'pc'), (req, res) => {
+  const info = db.prepare('DELETE FROM customers WHERE id=?').run(req.params.id);
+  if (!info.changes) return res.status(404).json({ error: 'Not found' });
+  res.json({ ok: true });
+});
+
+// POST /api/internal-programs
+router.post('/internal-programs', requireAuth, requireRole('admin', 'pc'), (req, res) => {
+  const b = req.body;
+  if (!b.name) return res.status(400).json({ error: 'name required' });
+  const id = uid();
+  db.prepare('INSERT INTO internal_programs (id,name,brand,tier,gender,target_margin) VALUES (?,?,?,?,?,?)')
+    .run(id, b.name, b.brand || null, b.tier || null, b.gender || null, b.targetMargin ?? null);
+  res.status(201).json(internalProgramFromRow(db.prepare('SELECT * FROM internal_programs WHERE id=?').get(id)));
+});
+
+// PATCH /api/internal-programs/:id
+router.patch('/internal-programs/:id', requireAuth, requireRole('admin', 'pc'), (req, res) => {
+  const row = db.prepare('SELECT * FROM internal_programs WHERE id=?').get(req.params.id);
+  if (!row) return res.status(404).json({ error: 'Not found' });
+  applyPatch('internal_programs', req.params.id, req.body, {
+    name: 'name', brand: 'brand', tier: 'tier', gender: 'gender', targetMargin: 'target_margin',
+  });
+  res.json(internalProgramFromRow(db.prepare('SELECT * FROM internal_programs WHERE id=?').get(req.params.id)));
+});
+
+// DELETE /api/internal-programs/:id
+router.delete('/internal-programs/:id', requireAuth, requireRole('admin', 'pc'), (req, res) => {
+  const info = db.prepare('DELETE FROM internal_programs WHERE id=?').run(req.params.id);
+  if (!info.changes) return res.status(404).json({ error: 'Not found' });
+  res.json({ ok: true });
+});
+
+// POST /api/brand-tier-margins  (upsert by brand+tier)
+router.post('/brand-tier-margins', requireAuth, requireRole('admin'), (req, res) => {
+  const b = req.body;
+  if (!b.brand || !b.tier || b.targetMargin == null) {
+    return res.status(400).json({ error: 'brand, tier, and targetMargin required' });
+  }
+  const existing = db.prepare('SELECT id FROM brand_tier_margins WHERE brand=? AND tier=?').get(b.brand, b.tier);
+  if (existing) {
+    db.prepare('UPDATE brand_tier_margins SET target_margin=? WHERE id=?').run(b.targetMargin, existing.id);
+    const updated = db.prepare('SELECT * FROM brand_tier_margins WHERE id=?').get(existing.id);
+    res.json({ id: updated.id, brand: updated.brand, tier: updated.tier, targetMargin: updated.target_margin });
+  } else {
+    const id = uid();
+    db.prepare('INSERT INTO brand_tier_margins (id,brand,tier,target_margin) VALUES (?,?,?,?)').run(id, b.brand, b.tier, b.targetMargin);
+    const created = db.prepare('SELECT * FROM brand_tier_margins WHERE id=?').get(id);
+    res.status(201).json({ id: created.id, brand: created.brand, tier: created.tier, targetMargin: created.target_margin });
+  }
+});
+
+// DELETE /api/brand-tier-margins/:id
+router.delete('/brand-tier-margins/:id', requireAuth, requireRole('admin'), (req, res) => {
+  const info = db.prepare('DELETE FROM brand_tier_margins WHERE id=?').run(req.params.id);
+  if (!info.changes) return res.status(404).json({ error: 'Not found' });
+  res.json({ ok: true });
+});
+
+// POST /api/departments
+router.post('/departments', requireAuth, requireRole('admin'), (req, res) => {
+  const b = req.body;
+  if (!b.name) return res.status(400).json({ error: 'name required' });
+  const id = uid();
+  db.prepare(`
+    INSERT INTO departments
+      (id,name,description,can_view_fob,can_view_sell_price,can_edit,
+       can_edit_tech_pack,can_edit_sell_status,brand_filter,tier_filter)
+    VALUES (?,?,?,?,?,?,?,?,?,?)
+  `).run(id, b.name, b.description || null,
+         b.canViewFOB ? 1 : 0, b.canViewSellPrice ? 1 : 0,
+         b.canEdit ? 1 : 0, b.canEditTechPack ? 1 : 0, b.canEditSellStatus ? 1 : 0,
+         JSON.stringify(b.brandFilter || []), JSON.stringify(b.tierFilter || []));
+  res.status(201).json(deptFromRow(db.prepare('SELECT * FROM departments WHERE id=?').get(id)));
+});
+
+// PATCH /api/departments/:id
+router.patch('/departments/:id', requireAuth, requireRole('admin'), (req, res) => {
+  const row = db.prepare('SELECT * FROM departments WHERE id=?').get(req.params.id);
+  if (!row) return res.status(404).json({ error: 'Not found' });
+  const b = req.body;
+  applyPatch('departments', req.params.id, b, { name: 'name', description: 'description' });
+  const boolMap = {
+    canViewFOB: 'can_view_fob', canViewSellPrice: 'can_view_sell_price',
+    canEdit: 'can_edit', canEditTechPack: 'can_edit_tech_pack', canEditSellStatus: 'can_edit_sell_status',
+  };
+  for (const [k, col] of Object.entries(boolMap)) {
+    if (b[k] !== undefined) db.prepare(`UPDATE departments SET ${col}=? WHERE id=?`).run(b[k] ? 1 : 0, req.params.id);
+  }
+  if (b.brandFilter !== undefined) db.prepare('UPDATE departments SET brand_filter=? WHERE id=?').run(JSON.stringify(b.brandFilter), req.params.id);
+  if (b.tierFilter  !== undefined) db.prepare('UPDATE departments SET tier_filter=? WHERE id=?').run(JSON.stringify(b.tierFilter),  req.params.id);
+  res.json(deptFromRow(db.prepare('SELECT * FROM departments WHERE id=?').get(req.params.id)));
+});
+
+// DELETE /api/departments/:id
+router.delete('/departments/:id', requireAuth, requireRole('admin'), (req, res) => {
+  const info = db.prepare('DELETE FROM departments WHERE id=?').run(req.params.id);
+  if (!info.changes) return res.status(404).json({ error: 'Not found' });
+  res.json({ ok: true });
+});
+
+// POST /api/users  (admin creates a staff account)
+router.post('/users', requireAuth, requireRole('admin'), async (req, res) => {
+  const b = req.body;
+  if (!b.name || !b.email || !b.password || !b.role) {
+    return res.status(400).json({ error: 'name, email, password, and role required' });
+  }
+  if (db.prepare('SELECT id FROM users WHERE email=?').get(b.email)) {
+    return res.status(409).json({ error: 'Email already in use' });
+  }
+  const hash = await bcrypt.hash(b.password, SALT);
+  const id = uid();
+  const ts = now();
+  db.prepare('INSERT INTO users (id,name,email,password_hash,role,department_id,created_at) VALUES (?,?,?,?,?,?,?)')
+    .run(id, b.name, b.email, hash, b.role, b.departmentId || null, ts);
+  res.status(201).json({ id, name: b.name, email: b.email, role: b.role, departmentId: b.departmentId || null, createdAt: ts });
+});
+
+// PATCH /api/users/:id
+router.patch('/users/:id', requireAuth, requireRole('admin'), async (req, res) => {
+  const row = stmt.userById.get(req.params.id);
+  if (!row) return res.status(404).json({ error: 'Not found' });
+  const b = req.body;
+  applyPatch('users', req.params.id, b, {
+    name: 'name', email: 'email', role: 'role', departmentId: 'department_id',
+  });
+  if (b.password) {
+    const hash = await bcrypt.hash(b.password, SALT);
+    db.prepare('UPDATE users SET password_hash=? WHERE id=?').run(hash, req.params.id);
+  }
+  const u = stmt.userById.get(req.params.id);
+  res.json({ id: u.id, name: u.name, email: u.email, role: u.role, departmentId: u.department_id, createdAt: u.created_at });
+});
+
+// DELETE /api/users/:id
+router.delete('/users/:id', requireAuth, requireRole('admin'), (req, res) => {
+  const info = db.prepare('DELETE FROM users WHERE id=?').run(req.params.id);
+  if (!info.changes) return res.status(404).json({ error: 'Not found' });
+  res.json({ ok: true });
 });
 
 // =============================================================
