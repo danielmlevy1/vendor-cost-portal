@@ -82,8 +82,10 @@ const API = (() => {
     recostPendingProduction: [],
     pendingChanges:      [],
     styleLinks:          {},   // programId -> [links]
+    costHistory:         {},   // styleId -> [events]
     designChanges:       {},   // styleId -> [changes]
     cellFlags:           {},   // subId -> [flags]
+    revisionsBySubmission: {},  // subId -> [revisions]
   };
 
   // ── Auth ──────────────────────────────────────────────────────
@@ -509,6 +511,7 @@ const API = (() => {
   const Submissions = {
     all()             { return Object.values(cache.submissions).flat(); },
     byStyle(styleId)  { return cache.submissions[styleId] || []; },
+    byTcAndStyle(tcId, styleId) { return (cache.submissions[styleId] || []).filter(s => s.tcId === tcId); },
     get(id) {
       for (const list of Object.values(cache.submissions)) {
         const s = list.find(x => x.id === id);
@@ -673,6 +676,7 @@ const API = (() => {
   // ── Design Changes ────────────────────────────────────────────
 
   const DesignChanges = {
+    all() { return Object.values(cache.designChanges).flat(); },
     byStyle(styleId) { return cache.designChanges[styleId] || []; },
     async fetchByStyle(styleId) {
       cache.designChanges[styleId] = await GET(`/api/styles/${styleId}/design-changes`);
@@ -696,6 +700,7 @@ const API = (() => {
   }
 
   const RecostRequests = {
+    all()               { return Object.values(cache.recostByProgram).flat(); },
     byProgram(pid)      { return cache.recostByProgram[pid] || []; },
     pendingSales()      { return cache.recostPendingSales; },
     pendingProduction() { return cache.recostPendingProduction; },
@@ -774,13 +779,25 @@ const API = (() => {
   // ── Revisions ─────────────────────────────────────────────────
 
   const Revisions = {
+    // Sync cache read: price revisions only (excludes flag events), sorted by time
+    byField(subId, field) {
+      return (cache.revisionsBySubmission[subId] || [])
+        .filter(r => r.field === field && !r.type)
+        .sort((a, b) => (a.submittedAt || '').localeCompare(b.submittedAt || ''));
+    },
     async byFieldAll(subId, field) { return GET(`/api/submissions/${subId}/revisions${field ? '?field=' + field : ''}`); },
+    async fetchBySubmission(subId) {
+      const revs = await GET(`/api/submissions/${subId}/revisions`);
+      cache.revisionsBySubmission[subId] = revs;
+      return revs;
+    },
     async log(entry) { return POST('/api/revisions', entry); },
   };
 
   // ── Pending Changes ───────────────────────────────────────────
 
   const PendingChanges = {
+    all()     { return cache.pendingChanges; },
     pending() { return cache.pendingChanges.filter(c => c.status === 'pending'); },
     async fetch() {
       cache.pendingChanges = await GET('/api/pending-changes');
@@ -899,6 +916,26 @@ const API = (() => {
     },
   };
 
+  // ── Cost History ──────────────────────────────────────────────
+
+  const CostHistory = {
+    byStyle(styleId) { return cache.costHistory[styleId] || []; },
+    async fetchByStyle(styleId) {
+      cache.costHistory[styleId] = await GET(`/api/styles/${styleId}/cost-history`);
+      return cache.costHistory[styleId];
+    },
+    async fetchByProgram(pid) {
+      const events = await GET(`/api/programs/${pid}/cost-history`);
+      // Group by styleId
+      events.forEach(e => {
+        if (!cache.costHistory[e.styleId]) cache.costHistory[e.styleId] = [];
+        const idx = cache.costHistory[e.styleId].findIndex(x => x.id === e.id);
+        if (idx < 0) cache.costHistory[e.styleId].push(e);
+      });
+      return events;
+    },
+  };
+
   // ── Preloaders ────────────────────────────────────────────────
   // Called by navigate() before rendering.
   // Each loads all data needed for the given route.
@@ -947,6 +984,15 @@ const API = (() => {
         RecostRequests.fetchByProgram(id),
         preload.nav(),
       ]);
+      // Post-load: cell flags, revisions, cost history (parallel)
+      const subs = Object.values(cache.submissions).flat();
+      await Promise.all([
+        ...subs.map(s => Promise.all([
+          CellFlags.fetchBySubmission(s.id).catch(() => {}),
+          Revisions.fetchBySubmission(s.id).catch(() => {}),
+        ])),
+        CostHistory.fetchByProgram(id).catch(() => {}),
+      ]);
     },
     async staff() {
       await Promise.all([Users.all(), Departments.all(), PendingChanges.fetch()]);
@@ -985,7 +1031,7 @@ const API = (() => {
     Programs, Styles, TradingCompanies, Assignments,
     Submissions, Placements, CustomerAssignments, CustomerBuys,
     StyleLinks, DesignChanges, RecostRequests, CellFlags, Revisions,
-    PendingChanges, DesignHandoffs, FabricLibrary, SalesRequests,
+    PendingChanges, DesignHandoffs, FabricLibrary, SalesRequests, CostHistory,
     calcLDP, computeTargetLDP, parseCSV, csvRowToStyle,
     cache, preload,
   };

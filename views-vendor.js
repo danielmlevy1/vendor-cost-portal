@@ -12,12 +12,12 @@ const VendorViews = (() => {
 
   // ── Programs Dashboard (TC home page) ──────────────────────
   function renderPrograms(tcId) {
-    const tc = DB.TradingCompanies.get(tcId);
-    const assignments = DB.Assignments.all().filter(a => a.tcId === tcId);
-    const allStyles = DB.Assignments.stylesByTc(tcId);
-    const subs = DB.Submissions.all().filter(s => s.tcId === tcId);
+    const tc = API.TradingCompanies.get(tcId);
+    const assignments = API.Assignments.all().filter(a => a.tcId === tcId);
+    const allStyles = API.Assignments.stylesByTc(tcId);
+    const subs = API.Submissions.all().filter(s => s.tcId === tcId);
     const flaggedCount = subs.filter(s => s.status === 'flagged').length;
-    const programs = assignments.map(a => DB.Programs.get(a.programId)).filter(p => p && p.status !== 'Draft');
+    const programs = assignments.map(a => API.Programs.get(a.programId)).filter(p => p && p.status !== 'Draft');
 
     const progStats = programs.map(prog => {
       const styles   = allStyles.filter(s => s.programId === prog.id);
@@ -90,11 +90,11 @@ const VendorViews = (() => {
 
   // ── Per-Program Style List ─────────────────────────────────
   function renderProgramStyles(tcId, programId) {
-    const tc = DB.TradingCompanies.get(tcId);
-    const prog = DB.Programs.get(programId);
-    const allStyles = DB.Assignments.stylesByTc(tcId);
+    const tc = API.TradingCompanies.get(tcId);
+    const prog = API.Programs.get(programId);
+    const allStyles = API.Assignments.stylesByTc(tcId);
     const styles = allStyles.filter(s => s.programId === programId);
-    const subs = DB.Submissions.all().filter(s => s.tcId === tcId);
+    const subs = API.Submissions.all().filter(s => s.tcId === tcId);
     const flaggedSubs = subs.filter(s => s.status === 'flagged' && styles.some(st => st.id === s.styleId));
     const coos = tc?.coos || [];
 
@@ -104,8 +104,8 @@ const VendorViews = (() => {
 
     // Helper: inline editable FOB or FC cell
     function cooCell(sub, field, styleId, coo) {
-      const flag = sub ? DB.CellFlags.get(sub.id, field) : null;
-      const revs = sub ? DB.Revisions.byField(sub.id, field) : [];
+      const flag = sub ? API.CellFlags.get(sub.id, field) : null;
+      const revs = sub ? API.Revisions.byField(sub.id, field) : [];
       const rawVal = (sub && sub[field]) ? parseFloat(sub[field]).toFixed(2) : '';
       const isSkipped = sub?.status === 'skipped';
       const dot  = flag ? `<span class="flag-dot flag-${flag.color}" style="margin-left:4px" title="${(flag.note||flag.color).replace(/"/g,'&quot;')}"></span>` : '';
@@ -179,8 +179,8 @@ const VendorViews = (() => {
           coos.forEach(coo => {
             const sub = styleSubs.find(sub => sub.coo === coo);
             if (!sub) return;
-            const fFlag = DB.CellFlags.get(sub.id, 'fob');
-            const cFlag = DB.CellFlags.get(sub.id, 'factoryCost');
+            const fFlag = API.CellFlags.get(sub.id, 'fob');
+            const cFlag = API.CellFlags.get(sub.id, 'factoryCost');
             if (fFlag?.note) pills.push(`<span class="flag-note-pill flag-pill-${fFlag.color}">🚩 ${coo} FOB: ${fFlag.note}</span>`);
             if (cFlag?.note) pills.push(`<span class="flag-note-pill flag-pill-${cFlag.color}">🚩 ${coo} Factory Cost: ${cFlag.note}</span>`);
             if (sub.status === 'skipped' && sub.skipReason) pills.push(`<span class="flag-note-pill flag-pill-skip">⊘ ${coo} Skipped: ${sub.skipReason}</span>`);
@@ -232,9 +232,9 @@ const VendorViews = (() => {
 
   // ── All Styles View ────────────────────────────────────────
   function renderMyStyles(tcId) {
-    const tc = DB.TradingCompanies.get(tcId);
-    const styles = DB.Assignments.stylesByTc(tcId);
-    const subs = DB.Submissions.all().filter(s => s.tcId === tcId);
+    const tc = API.TradingCompanies.get(tcId);
+    const styles = API.Assignments.stylesByTc(tcId);
+    const subs = API.Submissions.all().filter(s => s.tcId === tcId);
     const flagged = subs.filter(s => s.status === 'flagged');
 
     return `
@@ -262,7 +262,7 @@ const VendorViews = (() => {
           </tr></thead>
           <tbody>
             ${styles.length ? styles.flatMap(s => {
-              const prog = DB.Programs.get(s.programId);
+              const prog = API.Programs.get(s.programId);
               const styleSubs = subs.filter(sub => sub.styleId === s.id);
               const allCoos = tc?.coos || [];
               return allCoos.map(coo => {
@@ -274,15 +274,15 @@ const VendorViews = (() => {
                   <td class="text-sm">${(s.fabrication || '').substring(0, 30)}${(s.fabrication || '').length > 30 ? '…' : ''}</td>
                   <td><span class="badge badge-pending">${coo}</span></td>
                   <td class="font-bold">${(() => {
-                    const flag = sub ? DB.CellFlags.get(sub.id, 'fob') : null;
-                    const revs = sub ? DB.Revisions.byField(sub.id, 'fob').length : 0;
+                    const flag = sub ? API.CellFlags.get(sub.id, 'fob') : null;
+                    const revs = sub ? API.Revisions.byField(sub.id, 'fob').length : 0;
                     const dot  = flag ? `<span class="flag-dot flag-${flag.color}" title="${(flag.note||'').replace(/"/g,'&quot;') || flag.color}"></span>` : '';
                     const hist = revs > 1 ? `<span class="revision-badge vendor-hist" title="View history (${revs})" onclick="App.openRevisionHistory('${sub?.id}','fob')">&#128338; ${revs}</span>` : '';
                     return `${sub?.fob ? '$' + parseFloat(sub.fob).toFixed(2) : '—'}${dot}${hist}`;
                   })()}</td>
                   <td class="text-sm">${(() => {
-                    const flag = sub ? DB.CellFlags.get(sub.id, 'factoryCost') : null;
-                    const revs = sub ? DB.Revisions.byField(sub.id, 'factoryCost').length : 0;
+                    const flag = sub ? API.CellFlags.get(sub.id, 'factoryCost') : null;
+                    const revs = sub ? API.Revisions.byField(sub.id, 'factoryCost').length : 0;
                     const dot  = flag ? `<span class="flag-dot flag-${flag.color}" title="${(flag.note||'').replace(/"/g,'&quot;') || flag.color}"></span>` : '';
                     const hist = revs > 1 ? `<span class="revision-badge vendor-hist" title="View history (${revs})" onclick="App.openRevisionHistory('${sub?.id}','factoryCost')">&#128338; ${revs}</span>` : '';
                     return `${sub?.factoryCost ? '$' + parseFloat(sub.factoryCost).toFixed(2) : '—'}${dot}${hist}`;
@@ -302,10 +302,10 @@ const VendorViews = (() => {
 
   // ── Quote Form ─────────────────────────────────────────────
   function quoteForm(styleId, tcId, coo) {
-    const s = DB.Styles.get(styleId);
-    const tc = DB.TradingCompanies.get(tcId);
-    const existing = DB.Submissions.byTcAndStyle(tcId, styleId).find(s => s.coo === coo) || {};
-    const cooRates = DB.CooRates.all();
+    const s = API.Styles.get(styleId);
+    const tc = API.TradingCompanies.get(tcId);
+    const existing = API.Submissions.byTcAndStyle(tcId, styleId).find(s => s.coo === coo) || {};
+    const cooRates = API.cache.cooRates;
     const availCoos = (tc?.coos || []).length ? tc.coos : cooRates.map(r => r.code);
     const v = existing;
 
@@ -325,9 +325,9 @@ const VendorViews = (() => {
         </select>
       </div>
       ${(() => {
-        const sub = DB.Submissions.byTcAndStyle(tcId, styleId).find(s => s.coo === coo) || null;
-        const fFlag = sub ? DB.CellFlags.get(sub.id, 'fob') : null;
-        const cFlag = sub ? DB.CellFlags.get(sub.id, 'factoryCost') : null;
+        const sub = API.Submissions.byTcAndStyle(tcId, styleId).find(s => s.coo === coo) || null;
+        const fFlag = sub ? API.CellFlags.get(sub.id, 'fob') : null;
+        const cFlag = sub ? API.CellFlags.get(sub.id, 'factoryCost') : null;
         const banner = (flag, label) => flag ? `<div class="flag-banner flag-banner-${flag.color}"><strong>&#128681; ${label} Flagged</strong>${flag.note ? ': ' + flag.note : ''}</div>` : '';
         return banner(fFlag,'FOB') + banner(cFlag,'Factory Cost');
       })()}
@@ -377,9 +377,9 @@ const VendorViews = (() => {
 
   // ── My Company (TC read-only self-view) ──────────────────────
   function renderMyCompany(tcId) {
-    const tc = DB.TradingCompanies.get(tcId);
+    const tc = API.TradingCompanies.get(tcId);
     if (!tc) return `<div class="empty-state"><h3>Company not found</h3></div>`;
-    const cooRates = DB.CooRates.all();
+    const cooRates = API.cache.cooRates;
     return `
     <div class="page-header">
       <div>

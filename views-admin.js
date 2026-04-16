@@ -40,21 +40,21 @@ const AdminViews = (() => {
     // Admin/PC can temporarily filter by team via the dropdown (_dashIpFilter).
     // Design/Planning see only their own internalProgramId.
     const userIpId   = user?._dashIpFilter || user?.internalProgramId || null;
-    const allPrograms = DB.Programs.all();
+    const allPrograms = API.cache.programs;
     const programs    = (userIpId && !isAdminOrPC)
       ? allPrograms.filter(p => p.internalProgramId === userIpId)
       : userIpId
         ? allPrograms.filter(p => p.internalProgramId === userIpId)
         : allPrograms;
 
-    const ip = userIpId ? DB.InternalPrograms.get(userIpId) : null;
-    const allStylesDB   = DB.Styles.all();
-    const allSubs       = DB.Submissions.all();
+    const ip = userIpId ? API.InternalPrograms.get(userIpId) : null;
+    const allStylesDB   = API.Styles.all();
+    const allSubs       = API.Submissions.all();
     const allFlags      = JSON.parse(localStorage.getItem('vcp_cell_flags') || '[]');
     const allPlacements = JSON.parse(localStorage.getItem('vcp_placements') || '[]');
     const allRevs       = JSON.parse(localStorage.getItem('vcp_revisions') || '[]');
-    const allHandoffs   = DB.DesignHandoffs.all();
-    const allSalesReqs  = DB.SalesRequests.all();
+    const allHandoffs   = API.DesignHandoffs.all();
+    const allSalesReqs  = API.SalesRequests.all();
 
     const today = new Date(); today.setHours(0,0,0,0);
     const in30  = new Date(today); in30.setDate(in30.getDate() + 30);
@@ -92,12 +92,12 @@ const AdminViews = (() => {
 
     // Action items
     const flagCount    = allFlags.length;
-    const pendingCount = isAdmin ? DB.PendingChanges.pending().length : 0;
+    const pendingCount = isAdmin ? API.PendingChanges.pending().length : 0;
 
     // Re-cost request counts (for alerts)
-    const allRecosts        = DB.RecostRequests ? DB.RecostRequests.all() : [];
-    const recostForSales    = DB.RecostRequests ? DB.RecostRequests.pendingSales().length : 0;
-    const recostForProd     = DB.RecostRequests ? DB.RecostRequests.pendingProduction().length : 0;
+    const allRecosts        = API.RecostRequests.all();
+    const recostForSales    = API.RecostRequests.pendingSales().length;
+    const recostForProd     = API.RecostRequests.pendingProduction().length;
     const recostRejectedDesign = allRecosts.filter(r =>
       r.status === 'rejected' && r.rejectedStage === 'sales' &&
       ((user?.id && r.requestedBy === user.id) || (user?.name && r.requestedByName === user.name))
@@ -170,7 +170,7 @@ const AdminViews = (() => {
     const tcProgressRows = activeProgs.map(prog => {
       const progStyles  = allStylesDB.filter(s => s.programId === prog.id && s.status !== 'cancelled');
       const quotedCount = progStyles.filter(s => allSubs.some(sub => sub.styleId === s.id && sub.fob != null)).length;
-      const placedCount = progStyles.filter(s => DB.Placements.get(s.id) != null).length;
+      const placedCount = progStyles.filter(s => API.Placements.get(s.id) != null).length;
       const total       = progStyles.length;
       const pct         = total > 0 ? Math.round((quotedCount / total) * 100) : 0;
       const placedPct   = total > 0 ? Math.round((placedCount / total) * 100) : 0;
@@ -181,7 +181,7 @@ const AdminViews = (() => {
         <td><div class="font-bold">${prog.name}</div>
           <div class="text-sm text-muted" style="margin-top:2px">${[prog.season, prog.year, prog.gender, prog.brand].filter(Boolean).join(' · ')}</div>
         </td>
-        <td>${ip ? '' : `<span class="tag" style="font-size:0.7rem">${(DB.InternalPrograms.get(prog.internalProgramId)||{name:'—'}).name}</span>`}</td>
+        <td>${ip ? '' : `<span class="tag" style="font-size:0.7rem">${(API.InternalPrograms.get(prog.internalProgramId)||{name:'—'}).name}</span>`}</td>
         <td>
           <div style="display:flex;align-items:center;gap:8px;min-width:140px">
             <div style="flex:1;height:5px;border-radius:3px;background:rgba(255,255,255,0.08)">
@@ -360,7 +360,7 @@ const AdminViews = (() => {
       <select class="form-select" onchange="App.filterDashboardByIP(this.value)" style="width:200px"
         title="Filter by team">
         <option value="">All Teams</option>
-        ${DB.InternalPrograms.all().map(p =>
+        ${API.cache.internalPrograms.map(p =>
           `<option value="${p.id}" ${userIpId === p.id ? 'selected' : ''}>${p.name}</option>`
         ).join('')}
       </select>` : '';
@@ -378,9 +378,9 @@ const AdminViews = (() => {
 
   // ── Programs ───────────────────────────────────────────────
   function renderPrograms() {
-    const allHandoffs = DB.DesignHandoffs.all();
-    const allRequests = DB.SalesRequests.all();
-    const allPrograms = DB.Programs.all();
+    const allHandoffs = API.DesignHandoffs.all();
+    const allRequests = API.SalesRequests.all();
+    const allPrograms = API.cache.programs;
 
     const openHandoffs = allHandoffs.filter(h => !allRequests.find(r => r.sourceHandoffId === h.id));
     const openRequests = allRequests.filter(r => !r.linkedProgramId);
@@ -398,7 +398,7 @@ const AdminViews = (() => {
       </div>
       <div style="display:flex;flex-direction:column;gap:8px">
         ${draftPrograms.map(p => {
-          const styles = DB.Styles.byProgram(p.id);
+          const styles = API.Styles.byProgram(p.id);
           const hasHandoff = !!p.sourceHandoffId;
           return `<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:var(--bg-elevated);border-radius:var(--radius-sm);border:1px solid var(--border)">
             <div style="display:flex;gap:16px;align-items:center">
@@ -460,7 +460,7 @@ const AdminViews = (() => {
   function programsTable(openHandoffs, openRequests, allPrograms) {
     const fmtDate = d => d ? new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' }) : '—';
     const dash = `<span class="text-muted">—</span>`;
-    const allSubs = DB.Submissions.all();
+    const allSubs = API.Submissions.all();
     // Role check — used to show/hide admin buttons in program rows
     const _role = DB?.Session?.current()?.role;
     const isAdminOrPC = _role === 'admin' || _role === 'pc';
@@ -484,7 +484,7 @@ const AdminViews = (() => {
         ? `<span class="badge badge-pending" style="font-size:0.68rem;margin-left:6px">No fabrics</span>` : '';
       const name = [h.season, h.year, h.retailer].filter(Boolean).join(' ') || 'Design Handoff';
       const assignedTCIds = h.assignedTCIds || [];
-      const assignedTCs   = assignedTCIds.map(id => DB.TradingCompanies.get(id)).filter(Boolean);
+      const assignedTCs   = assignedTCIds.map(id => API.TradingCompanies.get(id)).filter(Boolean);
       const tcChips = assignedTCs.length
         ? `<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px">${assignedTCs.map(tc =>
             `<span class="tag" style="font-size:0.7rem;padding:2px 6px">${tc.code}</span>`).join('')}</div>`
@@ -525,7 +525,7 @@ const AdminViews = (() => {
       const projQty = (r.styles || []).reduce((s, x) => s + (parseFloat(x.projQty) || 0), 0);
       const name = r.name || [r.season, r.year, r.retailer].filter(Boolean).join(' ') || 'Sales Request';
       const reqTCIds = r.assignedTCIds || [];
-      const reqTCs   = reqTCIds.map(id => DB.TradingCompanies.get(id)).filter(Boolean);
+      const reqTCs   = reqTCIds.map(id => API.TradingCompanies.get(id)).filter(Boolean);
       const reqTCChips = reqTCs.length
         ? `<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px">${reqTCs.map(tc =>
             `<span class="tag" style="font-size:0.7rem;padding:2px 6px">${tc.code}</span>`).join('')}</div>`
@@ -560,15 +560,15 @@ const AdminViews = (() => {
 
     // ── Program rows (all statuses) ───────────────────────────
     const programRows = allPrograms.map(p => {
-      const styles       = DB.Styles.byProgram(p.id);
+      const styles       = API.Styles.byProgram(p.id);
       const styleCount   = styles.length;
-      const tcCount      = DB.Programs.tcCount(p.id);
-      const placedCount  = styles.filter(s => DB.Placements.get(s.id) != null).length;
+      const tcCount      = p.tcCount || 0;
+      const placedCount  = styles.filter(s => API.Placements.get(s.id) != null).length;
       const costedCount  = styles.filter(s => allSubs.some(sub => sub.styleId === s.id && sub.fob != null)).length;
       const projQtyTotal = styles.reduce((sum, s) => sum + (parseFloat(s.projQty)   || 0), 0);
       const actlQtyTotal = styles.reduce((sum, s) => sum + (parseFloat(s.actualQty) || 0), 0);
       const isDraft  = p.status === 'Draft';
-      const handoff  = DB.DesignHandoffs.all().find(h => h.linkedProgramId === p.id);
+      const handoff  = API.DesignHandoffs.all().find(h => h.linkedProgramId === p.id);
       const srNum    = handoff?.supplierRequestNumber || '';
       return `<tr style="cursor:${isDraft ? 'default' : 'pointer'}" onclick="${isDraft ? '' : `App.openProgram('${p.id}')`}">
         <td onclick="App._inlineEdit(event,'${p.id}','season')" style="cursor:pointer;user-select:none" title="Click to edit season">${p.season || '<span class="text-muted">—</span>'}</td>
@@ -614,9 +614,9 @@ const AdminViews = (() => {
   }
 
   function programCard(p) {
-    const styleCount = DB.Programs.styleCount(p.id);
-    const tcCount = DB.Programs.tcCount(p.id);
-    const quotedCount = DB.Programs.quotedCount(p.id);
+    const styleCount = p.styleCount || 0;
+    const tcCount = p.tcCount || 0;
+    const quotedCount = p.quotedCount || 0;
     return `
     <div class="program-card status-${p.status.toLowerCase()}" onclick="App.openProgram('${p.id}')" data-name="${p.name.toLowerCase()}" data-status="${p.status}">
       <div class="program-card-header">
@@ -644,16 +644,16 @@ const AdminViews = (() => {
   }
 
   function renderStyleManager(programId) {
-    const prog   = DB.Programs.get(programId);
-    const styles = DB.Styles.byProgram(programId);
-    const tcs    = DB.Assignments.byProgram(programId);
-    const links  = DB.StyleLinks ? DB.StyleLinks.byProgram(programId) : [];
+    const prog   = API.Programs.get(programId);
+    const styles = API.Styles.byProgram(programId);
+    const tcs    = API.Assignments.byProgram(programId);
+    const links  = API.StyleLinks.byProgram(programId);
     const linkedIds = new Set(links.flatMap(l => l.styleIds || []));
 
     // ── Link Groups summary panel ──────────────────────────────
     const linkGroupCards = links.map(lnk => {
       const members = (lnk.styleIds||[]).map(id => styles.find(s => s.id === id)).filter(Boolean);
-      const prefTc  = lnk.preferredTcId ? DB.TradingCompanies.get(lnk.preferredTcId) : null;
+      const prefTc  = lnk.preferredTcId ? API.TradingCompanies.get(lnk.preferredTcId) : null;
       return `<div class="style-link-group-card" style="border-left:4px solid ${lnk.color||'#6366f1'}">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
           <div>
@@ -736,20 +736,20 @@ const AdminViews = (() => {
 
   function styleRow(s, prog, linkedIds) {
     linkedIds = linkedIds || new Set();
-    const link = DB.StyleLinks ? DB.StyleLinks.byStyle(s.id) : null;
+    const link = API.StyleLinks.byStyle(s.id);
     const isLinked = !!link;
     const linkBadge = isLinked
       ? `<span class="style-link-badge" style="background:${link.color||'#6366f1'}22;color:${link.color||'#6366f1'};border-color:${link.color||'#6366f1'}44" onclick="App.openStyleLinkDetail('${link.id}','${s.programId}')">🔗</span>`
       : '';
-    const subs = DB.Submissions.byStyle(s.id);
-    const targetLDP = DB.computeTargetLDP(s, prog);
+    const subs = API.Submissions.byStyle(s.id);
+    const targetLDP = API.computeTargetLDP(s, prog);
     const flagged = subs.filter(x => x.status === 'flagged').length;
     const bestLDP = subs.reduce((best, sub) => {
       if (!sub.fob) return best;
-      const r = DB.calcLDP(parseFloat(sub.fob), s, sub.coo, s.market || 'USA', 'NY', sub.paymentTerms, sub.factoryCost);
+      const r = API.calcLDP(parseFloat(sub.fob), s, sub.coo, s.market || 'USA', 'NY', sub.paymentTerms, sub.factoryCost);
       return (r && (best === null || r.ldp < best)) ? r.ldp : best;
     }, null);
-    const cooRate = DB.CooRates.get(s.defaultCoo || 'KH');
+    const cooRate = API.CooRates.get(s.defaultCoo || 'KH');
     const totalDuty = ((s.dutyRate || 0) + (cooRate?.addlDuty || 0)) * 100;
     return `<tr data-style-id="${s.id}">
       <td class="sel-col">
@@ -825,9 +825,9 @@ const AdminViews = (() => {
 
   // ── Cost Summary Matrix ────────────────────────────────────
   function renderCostSummary(programId) {
-    const prog = DB.Programs.get(programId);
-    const styles = DB.Styles.byProgram(programId);
-    const asgns = DB.Assignments.byProgram(programId);
+    const prog = API.Programs.get(programId);
+    const styles = API.Styles.byProgram(programId);
+    const asgns = API.Assignments.byProgram(programId);
     const tcs = asgns.map(a => a.tc).filter(Boolean);
     // Build (TC, COO) column list: one column group per TC×COO combination
     const colGroups = tcs.flatMap(tc => tc.coos.map(coo => ({ tc, coo })));
@@ -966,10 +966,10 @@ const AdminViews = (() => {
     }
 
     // ── Precompute repeat-style lookup ─────────────────────────
-    const _allStylesGlobal   = DB.Styles.all();
-    const _allSubsGlobal     = DB.Submissions.all();
+    const _allStylesGlobal   = API.Styles.all();
+    const _allSubsGlobal     = API.Submissions.all();
     const _allPlacements     = JSON.parse(localStorage.getItem('vcp_placements') || '[]');
-    const _allPrograms       = DB.Programs.all();
+    const _allPrograms       = API.cache.programs;
     // repeatHistory[styleNumber] = sorted array of {prog, tc, coo, fob, ldp}
     const repeatHistory = {};
     _allPlacements.forEach(pl => {
@@ -978,10 +978,10 @@ const AdminViews = (() => {
       const sn = (pastStyle.styleNumber || '').trim();
       if (!sn) return;
       const prog = _allPrograms.find(p => p.id === pastStyle.programId);
-      const tc   = DB.TradingCompanies.get(pl.tcId);
+      const tc   = API.TradingCompanies.get(pl.tcId);
       const sub  = _allSubsGlobal.find(s => s.styleId === pl.styleId && s.tcId === pl.tcId && s.coo === pl.coo);
       const fob  = parseFloat(pl.confirmedFob || sub?.fob || 0);
-      const r    = fob > 0 ? DB.calcLDP(fob, pastStyle, pl.coo, pastStyle.market || 'USA', 'NY',
+      const r    = fob > 0 ? API.calcLDP(fob, pastStyle, pl.coo, pastStyle.market || 'USA', 'NY',
                     tc?.paymentTerms || sub?.paymentTerms || 'FOB', sub?.factoryCost) : null;
       const entry = {
         season: prog ? `${prog.season || ''} ${prog.year || ''}`.trim() : '?',
@@ -998,19 +998,19 @@ const AdminViews = (() => {
     // Build data rows
     function buildRows(styleList, isCancelled) {
       return styleList.map(s => {
-        const allSubs = DB.Submissions.byStyle(s.id);
-        const targetLDP = DB.computeTargetLDP(s, prog);
+        const allSubs = API.Submissions.byStyle(s.id);
+        const targetLDP = API.computeTargetLDP(s, prog);
         let bestLDP = null, bestKey = null;
         colGroups.forEach(({ tc, coo }) => {
           const sub = allSubs.find(x => x.tcId === tc.id && x.coo === coo);
           if (sub?.fob) {
-            const r = DB.calcLDP(parseFloat(sub.fob), s, coo, s.market || 'USA', 'NY', tc.paymentTerms || sub?.paymentTerms || 'FOB', sub?.factoryCost);
+            const r = API.calcLDP(parseFloat(sub.fob), s, coo, s.market || 'USA', 'NY', tc.paymentTerms || sub?.paymentTerms || 'FOB', sub?.factoryCost);
             if (r && (bestLDP === null || r.ldp < bestLDP)) { bestLDP = r.ldp; bestKey = `${tc.id}_${coo}`; }
           }
         });
 
         const pid = programId;
-        const placement = DB.Placements.get(s.id); // needed for green highlight in TC cells
+        const placement = API.Placements.get(s.id); // needed for green highlight in TC cells
 
         // Fixed style-level inline fields
         const styleNameInput = `<input class="cell-input cell-input-wide" data-sid="${s.id}" data-field="styleName" value="${(s.styleName || '').replace(/"/g, '&quot;')}" onblur="App.saveStyleInline('${s.id}',this)" onkeydown="if(event.key==='Enter')this.blur()">`;
@@ -1026,7 +1026,7 @@ const AdminViews = (() => {
         const freightInput = `<input class="cell-input cell-input-sm fmt-freight" data-sid="${s.id}" data-field="estFreight" data-raw="${s.estFreight || ''}" value="${frtFmt}" placeholder="$0.00" onfocus="App.fmtFocusRaw(this)" onblur="App.fmtBlurCurrency(this,'${s.id}','estFreight')" onkeydown="if(event.key==='Enter')this.blur()" title="Est base freight per unit">`;
 
         // Actual QTY + Wtd Avg Sell from Buy Summary
-        const styleBuys   = DB.CustomerBuys.byStyle(s.id).filter(b => b.programId === programId);
+        const styleBuys   = API.CustomerBuys.byStyle(s.id).filter(b => b.programId === programId);
         const actualQty   = styleBuys.reduce((sum, b) => sum + (parseFloat(b.qty) || 0), 0);
         const buyRevenue  = styleBuys.reduce((sum, b) => sum + ((parseFloat(b.qty) || 0) * (parseFloat(b.sellPrice) || 0)), 0);
         const wtdSell     = actualQty > 0 ? buyRevenue / actualQty : null;
@@ -1043,7 +1043,7 @@ const AdminViews = (() => {
           if (placedGroup) {
             const placedSub = allSubs.find(x => x.tcId === placement.tcId && x.coo === placement.coo);
             if (placedSub?.fob) {
-              const pr = DB.calcLDP(parseFloat(placedSub.fob), s, placement.coo,
+              const pr = API.calcLDP(parseFloat(placedSub.fob), s, placement.coo,
                 s.market || 'USA', 'NY',
                 placedGroup.tc.paymentTerms || placedSub?.paymentTerms || 'FOB',
                 placedSub?.factoryCost);
@@ -1094,7 +1094,7 @@ const AdminViews = (() => {
           const sub = allSubs.find(x => x.tcId === tc.id && x.coo === coo);
           // Use TC-level payment terms (falls back to submission terms for backward compat, then 'FOB')
           const effectiveTerms = tc.paymentTerms || sub?.paymentTerms || 'FOB';
-          const r = sub?.fob ? DB.calcLDP(parseFloat(sub.fob), s, coo, s.market || 'USA', 'NY', effectiveTerms, sub?.factoryCost) : null;
+          const r = sub?.fob ? API.calcLDP(parseFloat(sub.fob), s, coo, s.market || 'USA', 'NY', effectiveTerms, sub?.factoryCost) : null;
           const isBest = r && k === bestKey;
           const over = r && targetLDP && r.ldp > targetLDP;
           const flagIcon = sub?.status === 'flagged' ? ' 🚩' : sub?.status === 'accepted' ? ' ✅' : '';
@@ -1118,10 +1118,10 @@ const AdminViews = (() => {
             onkeydown="if(event.key==='Enter')this.blur()">`;
 
           // Per-cell flags and revision history
-          const fobFlag = sub ? DB.CellFlags.get(sub.id, 'fob') : null;
-          const fcFlag  = sub ? DB.CellFlags.get(sub.id, 'factoryCost') : null;
-          const fobRevs = sub ? DB.Revisions.byField(sub.id, 'fob').length : 0;
-          const fcRevs  = sub ? DB.Revisions.byField(sub.id, 'factoryCost').length : 0;
+          const fobFlag = sub ? API.CellFlags.get(sub.id, 'fob') : null;
+          const fcFlag  = sub ? API.CellFlags.get(sub.id, 'factoryCost') : null;
+          const fobRevs = sub ? API.Revisions.byField(sub.id, 'fob').length : 0;
+          const fcRevs  = sub ? API.Revisions.byField(sub.id, 'factoryCost').length : 0;
           const cellWrap = (inputHtml, flag, revCount, subId, field) => {
             const dot  = flag ? `<span class="flag-dot flag-${flag.color}" title="${(flag.note||flag.color).replace(/"/g,'&quot;')} (right-click to edit)" oncontextmenu="App.openFlagMenu(event,'${subId}','${field}');return false;"></span>` : '';
             const lastSeen = subId ? parseInt(localStorage.getItem(`vcp_rev_seen_${subId}_${field}`) || '0') : 0;
@@ -1202,7 +1202,7 @@ const AdminViews = (() => {
 
     // ── Aggregation helpers ───────────────────────────────────
     const styleActualQty = s => {
-      const buys = DB.CustomerBuys.byStyle(s.id).filter(b => b.programId === programId);
+      const buys = API.CustomerBuys.byStyle(s.id).filter(b => b.programId === programId);
       return buys.reduce((sum, b) => sum + (parseFloat(b.qty) || 0), 0);
     };
 
@@ -1210,7 +1210,7 @@ const AdminViews = (() => {
     // For each link group: anchor = style with highest projQty.
     // Guest styles (different fabric from anchor) will be rendered as
     // indented sub-rows under the anchor's fabric band.
-    const progLinks     = DB.StyleLinks ? DB.StyleLinks.byProgram(programId) : [];
+    const progLinks     = API.StyleLinks.byProgram(programId);
     // Map: styleId → link group
     const styleToLink   = {};
     progLinks.forEach(lnk => (lnk.styleIds || []).forEach(sid => { styleToLink[sid] = lnk; }));
@@ -1238,17 +1238,17 @@ const AdminViews = (() => {
       const badge      = `<span class="style-link-badge" style="background:${color}22;color:${color};border-color:${color}44"
         title="Linked group: ${(lnk.note||'').replace(/"/g,'&quot;')}" onclick="App.openStyleLinkDetail('${lnk.id}','${programId}')">🔗 w/ ${anchorStyle?.styleNumber||'?'}</span>`;
       // Render a full row but prefixed with ↳ indent styling
-      const allSubs = DB.Submissions.byStyle(s.id);
-      const targetLDP = DB.computeTargetLDP(s, prog);
+      const allSubs = API.Submissions.byStyle(s.id);
+      const targetLDP = API.computeTargetLDP(s, prog);
       let bestLDP = null, bestKey = null;
       colGroups.forEach(({ tc, coo }) => {
         const sub = allSubs.find(x => x.tcId === tc.id && x.coo === coo);
         if (sub?.fob) {
-          const r = DB.calcLDP(parseFloat(sub.fob), s, coo, s.market || 'USA', 'NY', tc.paymentTerms || sub?.paymentTerms || 'FOB', sub?.factoryCost);
+          const r = API.calcLDP(parseFloat(sub.fob), s, coo, s.market || 'USA', 'NY', tc.paymentTerms || sub?.paymentTerms || 'FOB', sub?.factoryCost);
           if (r && (bestLDP === null || r.ldp < bestLDP)) { bestLDP = r.ldp; bestKey = `${tc.id}_${coo}`; }
         }
       });
-      const placement  = DB.Placements.get(s.id);
+      const placement  = API.Placements.get(s.id);
       const qtyFmt     = s.projQty ? Number(s.projQty).toLocaleString() : '';
       const sellFmt    = s.projSellPrice ? '$' + parseFloat(s.projSellPrice).toFixed(2) : '';
       const dutyFmt    = s.dutyRate ? (parseFloat(s.dutyRate) * 100).toFixed(1) + '%' : '';
@@ -1260,7 +1260,7 @@ const AdminViews = (() => {
       const sellInput  = `<input class="cell-input cell-input-sm fmt-sell" data-sid="${s.id}" data-field="projSellPrice" data-raw="${s.projSellPrice||''}" value="${sellFmt}" placeholder="Sell" onfocus="App.fmtFocusRaw(this)" onblur="App.fmtBlurCurrency(this,'${s.id}','projSellPrice')" onkeydown="if(event.key==='Enter')this.blur()">`;
       const dutyInput  = `<input class="cell-input cell-input-sm fmt-duty" data-sid="${s.id}" data-field="dutyRate" data-raw="${s.dutyRate||''}" value="${dutyFmt}" placeholder="e.g. 28.2%" onfocus="App.fmtFocusDuty(this)" onblur="App.fmtBlurDuty(this,'${s.id}')" onkeydown="if(event.key==='Enter')this.blur()">`;
       const freightInput = `<input class="cell-input cell-input-sm fmt-freight" data-sid="${s.id}" data-field="estFreight" data-raw="${s.estFreight||''}" value="${frtFmt}" placeholder="$0.00" onfocus="App.fmtFocusRaw(this)" onblur="App.fmtBlurCurrency(this,'${s.id}','estFreight')" onkeydown="if(event.key==='Enter')this.blur()">`;
-      const styleBuys  = DB.CustomerBuys.byStyle(s.id).filter(b => b.programId === programId);
+      const styleBuys  = API.CustomerBuys.byStyle(s.id).filter(b => b.programId === programId);
       const actualQty  = styleBuys.reduce((sum, b) => sum + (parseFloat(b.qty)||0), 0);
       const buyRevenue = styleBuys.reduce((sum, b) => sum + ((parseFloat(b.qty)||0)*(parseFloat(b.sellPrice)||0)), 0);
       const wtdSell    = actualQty > 0 ? buyRevenue / actualQty : null;
@@ -1288,7 +1288,7 @@ const AdminViews = (() => {
         const tcColorClass = tcIdx % 2 === 0 ? 'tc-col-even' : 'tc-col-odd';
         const sub = allSubs.find(x => x.tcId === tc.id && x.coo === coo);
         const effectiveTerms = tc.paymentTerms || sub?.paymentTerms || 'FOB';
-        const r = sub?.fob ? DB.calcLDP(parseFloat(sub.fob), s, coo, s.market||'USA','NY',effectiveTerms,sub?.factoryCost) : null;
+        const r = sub?.fob ? API.calcLDP(parseFloat(sub.fob), s, coo, s.market||'USA','NY',effectiveTerms,sub?.factoryCost) : null;
         const flagIcon = sub?.status === 'flagged' ? ' 🚩' : sub?.status === 'accepted' ? ' ✅' : '';
         const fobInput2 = `<input class="cell-input" type="text" inputmode="decimal"
           data-sid="${s.id}" data-tcid="${tc.id}" data-coo="${coo}" data-field="fob"
@@ -1302,10 +1302,10 @@ const AdminViews = (() => {
           onfocus="this.value=this.value.replace(/[^0-9.]/g,'')"
           onblur="App.saveSubmissionInline('${s.id}','${tc.id}','${coo}',this);if(this.value&&!isNaN(parseFloat(this.value)))this.value='$'+parseFloat(this.value).toFixed(2);"
           onkeydown="if(event.key==='Enter')this.blur()">`;
-        const fobFlag= sub ? DB.CellFlags.get(sub.id,'fob') : null;
-        const fcFlag = sub ? DB.CellFlags.get(sub.id,'factoryCost') : null;
-        const fobRevs= sub ? DB.Revisions.byField(sub.id,'fob').length : 0;
-        const fcRevs = sub ? DB.Revisions.byField(sub.id,'factoryCost').length : 0;
+        const fobFlag= sub ? API.CellFlags.get(sub.id,'fob') : null;
+        const fcFlag = sub ? API.CellFlags.get(sub.id,'factoryCost') : null;
+        const fobRevs= sub ? API.Revisions.byField(sub.id,'fob').length : 0;
+        const fcRevs = sub ? API.Revisions.byField(sub.id,'factoryCost').length : 0;
         const cw = (inputHtml, flag, revCount, subId, field) => {
           const dot  = flag ? `<span class="flag-dot flag-${flag.color}" title="${(flag.note||flag.color).replace(/"/g,'&quot;')}" oncontextmenu="App.openFlagMenu(event,'${subId}','${field}');return false;"></span>` : '';
           const hist = revCount > 0 ? `<span class="revision-badge revision-badge-new" onclick="App.openRevisionHistory('${subId}','${field}')">&#128338;${revCount>1?' '+revCount:''}</span>` : '';
@@ -1461,19 +1461,19 @@ const AdminViews = (() => {
 
   // ── Cost Comparison (per style detail) ─────────────────────
   function renderCostComparison(styleId) {
-    const style = DB.Styles.get(styleId);
-    const prog = DB.Programs.get(style.programId);
-    const asgns = DB.Assignments.byProgram(style.programId);
-    const subs = DB.Submissions.byStyle(styleId);
-    const placement = DB.Placements.get(styleId);
-    const targetLDP = DB.computeTargetLDP(style, prog);
+    const style = API.Styles.get(styleId);
+    const prog = API.Programs.get(style.programId);
+    const asgns = API.Assignments.byProgram(style.programId);
+    const subs = API.Submissions.byStyle(styleId);
+    const placement = API.Placements.get(styleId);
+    const targetLDP = API.computeTargetLDP(style, prog);
 
     let bestLDP = Infinity;
     subs.forEach(s => {
       if (s.fob) {
-        const subTc = DB.TradingCompanies.get(s.tcId);
+        const subTc = API.TradingCompanies.get(s.tcId);
         const terms = subTc?.paymentTerms || s.paymentTerms || 'FOB';
-        const r = DB.calcLDP(parseFloat(s.fob), style, s.coo, style.market || 'USA', 'NY', terms, s.factoryCost);
+        const r = API.calcLDP(parseFloat(s.fob), style, s.coo, style.market || 'USA', 'NY', terms, s.factoryCost);
         if (r && r.ldp < bestLDP) bestLDP = r.ldp;
       }
     });
@@ -1495,7 +1495,7 @@ const AdminViews = (() => {
       </div>
       ${targetLDP ? `<div class="card card-sm" style="text-align:center;min-width:130px"><div class="text-sm text-muted">Target LDP</div><div class="font-bold text-accent" style="font-size:1.3rem">${fmt(targetLDP)}</div></div>` : ''}
     </div>
-    ${placement ? `<div class="alert alert-success mb-3">🏆 Placed with <strong>${DB.TradingCompanies.get(placement.tcId)?.code || ''} (${placement.coo})</strong> at ${fmt(placement.confirmedFob)} FOB</div>` : ''}
+    ${placement ? `<div class="alert alert-success mb-3">🏆 Placed with <strong>${API.TradingCompanies.get(placement.tcId)?.code || ''} (${placement.coo})</strong> at ${fmt(placement.confirmedFob)} FOB</div>` : ''}
     ${tcCooBlocks.length === 0
         ? `<div class="empty-state"><div class="icon">🏭</div><h3>No trading companies assigned</h3><button class="btn btn-primary mt-3" onclick="App.openAssignTCs('${style.programId}')">Assign Trading Companies</button></div>`
         : `<div class="grid-auto">${tcCooBlocks.map(b => tcBlock(b.tc, b.coo, b.sub, style, bestLDP < Infinity ? bestLDP : null, placement, targetLDP)).join('')}</div>`}
@@ -1525,7 +1525,7 @@ const AdminViews = (() => {
     </div>`;
 
     const effectiveTerms = tc.paymentTerms || sub.paymentTerms || 'FOB';
-    const r = sub.fob ? DB.calcLDP(parseFloat(sub.fob), style, coo, style.market || 'USA', 'NY', effectiveTerms, sub.factoryCost) : null;
+    const r = sub.fob ? API.calcLDP(parseFloat(sub.fob), style, coo, style.market || 'USA', 'NY', effectiveTerms, sub.factoryCost) : null;
     const isBest = r && bestLDP !== null && Math.abs(r.ldp - bestLDP) < 0.001;
     const withinTarget = r && targetLDP && r.ldp <= targetLDP;
     const fobBg = isPlaced ? 'background:rgba(34,197,94,0.18);' : isConsidering ? 'background:rgba(234,179,8,0.18);' : '';
@@ -1569,8 +1569,8 @@ const AdminViews = (() => {
 
   // ── Cross-Program ──────────────────────────────────────────
   function renderCrossProgram() {
-    const programs = DB.Programs.all().filter(p => p.status === 'Costing' || p.status === 'Draft');
-    const allStyles = DB.Styles.all().filter(s => programs.some(p => p.id === s.programId));
+    const programs = API.cache.programs.filter(p => p.status === 'Costing' || p.status === 'Draft');
+    const allStyles = API.Styles.all().filter(s => programs.some(p => p.id === s.programId));
     return `
     <div class="page-header">
       <div><h1 class="page-title">All Open Programs</h1><p class="page-subtitle">${allStyles.length} styles across ${programs.length} active programs</p></div>
@@ -1603,13 +1603,13 @@ const AdminViews = (() => {
   function crossProgramTable(styles, programs, search, programFilter, vendorFilter, groupBy, sortBy) {
     let rows = styles.map(s => {
       const prog = programs.find(p => p.id === s.programId);
-      const subs = DB.Submissions.byStyle(s.id);
-      const targetLDP = DB.computeTargetLDP(s, prog);
+      const subs = API.Submissions.byStyle(s.id);
+      const targetLDP = API.computeTargetLDP(s, prog);
       let bestLDP = null, bestTC = null;
       subs.forEach(sub => {
-        if (sub.fob) { const r = DB.calcLDP(parseFloat(sub.fob), s, sub.coo, s.market || 'USA', 'NY', sub.paymentTerms, sub.factoryCost); if (r && (bestLDP === null || r.ldp < bestLDP)) { bestLDP = r.ldp; bestTC = sub.tcId; } }
+        if (sub.fob) { const r = API.calcLDP(parseFloat(sub.fob), s, sub.coo, s.market || 'USA', 'NY', sub.paymentTerms, sub.factoryCost); if (r && (bestLDP === null || r.ldp < bestLDP)) { bestLDP = r.ldp; bestTC = sub.tcId; } }
       });
-      const bestTCObj = DB.TradingCompanies.get(bestTC);
+      const bestTCObj = API.TradingCompanies.get(bestTC);
       return { ...s, prog, subs, bestLDP, bestTC: bestTCObj, targetLDP };
     });
 
@@ -1689,12 +1689,12 @@ const AdminViews = (() => {
 
   // ── Buy Summary ────────────────────────────────────────────
   function renderBuySummary(programId, role) {
-    const prog     = DB.Programs.get(programId);
-    const styles   = DB.Styles.byProgram(programId).filter(s => s.status !== 'cancelled');
-    const custIds  = DB.CustomerAssignments.byProgram(programId);
-    const allCusts = DB.Customers.all();
+    const prog     = API.Programs.get(programId);
+    const styles   = API.Styles.byProgram(programId).filter(s => s.status !== 'cancelled');
+    const custIds  = API.CustomerAssignments.byProgram(programId);
+    const allCusts = API.cache.customers;
     const custs    = custIds.map(id => allCusts.find(c => c.id === id)).filter(Boolean);
-    const allBuys  = DB.CustomerBuys.byProgram(programId);
+    const allBuys  = API.CustomerBuys.byProgram(programId);
     const canEdit  = role === 'admin' || role === 'pc' || role === 'planning';
 
     if (!prog) return `<div class="empty-state"><div class="icon">⚠️</div><h3>Program not found</h3></div>`;
@@ -1788,7 +1788,7 @@ const AdminViews = (() => {
 
   // ── Customer Manager (Admin Settings) ─────────────────────
   function renderCustomers() {
-    const custs = DB.Customers.all();
+    const custs = API.cache.customers;
     return `
     <div class="page-header">
       <div><h1 class="page-title">Customers</h1><p class="page-subtitle">Global customer list</p></div>
@@ -1810,7 +1810,7 @@ const AdminViews = (() => {
 
   // ── Trading Company Manager ────────────────────────────────
   function renderTradingCompanies() {
-    const tcs = DB.TradingCompanies.all();
+    const tcs = API.cache.tradingCompanies;
     return `
     <div class="page-header">
       <div><h1 class="page-title">Trading Companies</h1><p class="page-subtitle">${tcs.length} trading companies · One login per company, multiple COOs</p></div>
@@ -1835,14 +1835,14 @@ const AdminViews = (() => {
 
   // ── Internal Programs ──────────────────────────────────────
   function renderInternalPrograms() {
-    const items   = DB.InternalPrograms.all();
-    const margins = DB.BrandTierMargins.all();
+    const items   = API.cache.internalPrograms;
+    const margins = API.cache.brandTierMargins;
     const BRANDS  = ['Reebok','Champion','And1','Gaiam','Head'];
     const TIERS   = ['Mass','Mid Tier','Off Price','Clubs','Specialty'];
     const GENDERS = ['Mens','Ladies','Boys','Girls','Infant/Toddler'];
 
     const ipRows = items.length ? items.map(ip => {
-      const autoM = ip.brand && ip.tier ? DB.BrandTierMargins.lookup(ip.brand, ip.tier) : null;
+      const autoM = ip.brand && ip.tier ? API.BrandTierMargins.lookup(ip.brand, ip.tier) : null;
       const isAuto = autoM !== null && Math.abs((ip.targetMargin || 0) - autoM) < 0.0001;
       const marginCell = ip.targetMargin != null
         ? `${(ip.targetMargin * 100).toFixed(1)}% ${isAuto ? '<span class="badge badge-costing" style="font-size:0.65rem">auto</span>' : '<span class="badge badge-pending" style="font-size:0.65rem">override</span>'}`
@@ -1898,7 +1898,7 @@ const AdminViews = (() => {
 
   // ── COO Rate Table ─────────────────────────────────────────
   function renderCOO() {
-    const rates = DB.CooRates.all();
+    const rates = API.cache.cooRates;
     return `
     <div class="page-header">
       <div><h1 class="page-title">COO Rate Table</h1><p class="page-subtitle">Total container freight & duty by country of origin</p></div>
@@ -1922,7 +1922,7 @@ const AdminViews = (() => {
 
   // ── Pending Changes Approval Queue (Admin only) ──────────────
   function renderPendingChanges() {
-    const all = DB.PendingChanges.all().slice().reverse(); // newest first
+    const all = API.PendingChanges.all().slice().reverse(); // newest first
     const typeLabel = { tc: 'Trading Company', coo: 'COO Rate', 'internal-program': 'Internal Program', 'pc-user': 'PC User' };
     const actionLabel = { create: '＋ Create', update: '✏ Edit', delete: '🗑 Delete' };
     function summaryOf(c) {
@@ -1978,8 +1978,8 @@ const AdminViews = (() => {
   // ── Staff Management (Admin only) ────────────────────────────
   function renderStaff(tab) {
     const showDepts = tab === 'departments';
-    const staff  = DB.PCUsers.allStaff();
-    const depts  = DB.Departments.all();
+    const staff  = API.PCUsers.allStaff();
+    const depts  = API.cache.departments;
     const deptMap = Object.fromEntries(depts.map(d => [d.id, d]));
 
     // ── tab bar ────────────────────────────────────────────────
@@ -2090,8 +2090,8 @@ const AdminViews = (() => {
 
   // ── PC Propose-mode Settings Views ──────────────────────────
   function renderTradingCompaniesPC() {
-    const tcs = DB.TradingCompanies.all();
-    const pending = DB.PendingChanges.pending().filter(c => c.type === 'tc');
+    const tcs = API.cache.tradingCompanies;
+    const pending = API.PendingChanges.pending().filter(c => c.type === 'tc');
     return `
     <div class="page-header">
       <div><h1 class="page-title">Trading Companies</h1><p class="page-subtitle">Read-only — propose changes for Admin approval</p></div>
@@ -2116,8 +2116,8 @@ const AdminViews = (() => {
   }
 
   function renderInternalProgramsPC() {
-    const ips = DB.InternalPrograms.all();
-    const pending = DB.PendingChanges.pending().filter(c => c.type === 'internal-program');
+    const ips = API.cache.internalPrograms;
+    const pending = API.PendingChanges.pending().filter(c => c.type === 'internal-program');
     return `
     <div class="page-header">
       <div><h1 class="page-title">Internal Programs</h1><p class="page-subtitle">Read-only — propose changes for Admin approval</p></div>
@@ -2141,8 +2141,8 @@ const AdminViews = (() => {
   }
 
   function renderCOOPC() {
-    const rates = DB.CooRates.all();
-    const pending = DB.PendingChanges.pending().filter(c => c.type === 'coo');
+    const rates = API.cache.cooRates;
+    const pending = API.PendingChanges.pending().filter(c => c.type === 'coo');
     return `
     <div class="page-header">
       <div><h1 class="page-title">COO Rate Table</h1><p class="page-subtitle">Read-only — propose changes for Admin approval</p></div>
@@ -2181,8 +2181,8 @@ const AdminViews = (() => {
   }
 
   function collapseAllTCs(programId) {
-    const prog = DB.Programs.get(programId);
-    const asgns = DB.Assignments.byProgram(programId);
+    const prog = API.Programs.get(programId);
+    const asgns = API.Assignments.byProgram(programId);
     const tcs = asgns.map(a => a.tc).filter(Boolean);
     tcs.forEach(tc => tc.coos.forEach(coo => _collapsedTCs.add(`${tc.id}_${coo}`)));
     App.openProgram(programId);
@@ -2190,8 +2190,8 @@ const AdminViews = (() => {
 
   // ── Design Handoff ─────────────────────────────────────────
   function renderDesignHandoff() {
-    const handoffs  = DB.DesignHandoffs.all().slice().reverse();
-    const allSRs    = DB.SalesRequests.all();
+    const handoffs  = API.DesignHandoffs.all().slice().reverse();
+    const allSRs    = API.SalesRequests.all();
 
     // SalesRequests that have no design handoff linked to them yet, and aren't converted
     const awaitingHandoff = allSRs.filter(r =>
@@ -2323,8 +2323,8 @@ const AdminViews = (() => {
 
   // ── Sales Request ──────────────────────────────────────────
   function renderSalesRequests() {
-    const requests = DB.SalesRequests.all().slice().reverse();
-    const allHandoffs = DB.DesignHandoffs.all();
+    const requests = API.SalesRequests.all().slice().reverse();
+    const allHandoffs = API.DesignHandoffs.all();
     // Handoffs not yet linked to a Sales Request — available for Sales to build from
     const availableHandoffs = allHandoffs.filter(h => !h.linkedProgramId && !requests.find(r => r.sourceHandoffId === h.id));
 
@@ -2414,7 +2414,7 @@ const AdminViews = (() => {
 
   // ── Build Request from Handoff — FULL PAGE SPREADSHEET ─────────────────────
   function renderBuildFromHandoff(handoffId) {
-    const h = DB.DesignHandoffs.get(handoffId);
+    const h = API.DesignHandoffs.get(handoffId);
     if (!h) return `<div class="empty-state"><div class="icon">❌</div><h3>Handoff not found</h3><p><button class="btn btn-secondary" onclick="App.navigate('sales-requests')">← Back</button></p></div>`;
 
     const styles = h.stylesList || [];
@@ -2555,9 +2555,9 @@ const AdminViews = (() => {
     const isSales = dept.includes('sales');
     const isPC    = role === 'admin' || role === 'pc';
 
-    const all = DB.RecostRequests ? DB.RecostRequests.all().slice().reverse() : [];
-    const programs = DB.Programs.all();
-    const styles   = DB.Styles.all();
+    const all = API.RecostRequests.all().slice().reverse();
+    const programs = API.cache.programs;
+    const styles   = API.Styles.all();
 
     // Status display helper
     const stageInfo = {
@@ -2826,9 +2826,9 @@ const AdminViews = (() => {
 
 
     function renderBottleneckTracker(allRequests) {
-    const allStyles = DB.Styles.all().filter(s => s.status !== 'cancelled');
-    const allSubs   = DB.Submissions.all();
-    const allProgs  = DB.Programs.all().filter(p => p.status === 'Costing');
+    const allStyles = API.Styles.all().filter(s => s.status !== 'cancelled');
+    const allSubs   = API.Submissions.all();
+    const allProgs  = API.cache.programs.filter(p => p.status === 'Costing');
     const activeIds = new Set(allProgs.map(p => p.id));
     const active    = allStyles.filter(s => activeIds.has(s.programId));
 
@@ -2864,7 +2864,7 @@ const AdminViews = (() => {
 
   // ── Design Change Log modal trigger & history panel ────────
   function designChangeHistoryPanel(styleId) {
-    const changes = DB.DesignChanges.byStyle(styleId);
+    const changes = API.DesignChanges.byStyle(styleId);
     if (!changes.length) return `<div class="text-muted text-sm" style="padding:12px">No design changes logged for this style.</div>`;
     const fmtDate = d => new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' });
     return `<div class="design-change-timeline">${changes.map(c => `
@@ -2880,11 +2880,11 @@ const AdminViews = (() => {
   }
 
   function renderAllDesignChanges() {
-    const changes = DB.DesignChanges.all().slice().reverse();
+    const changes = API.DesignChanges.all().slice().reverse();
     const fmtDate = d => new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
     const rows = changes.length ? changes.map(c => {
-      const style = DB.Styles.get(c.styleId);
-      const prog  = style ? DB.Programs.get(style.programId) : null;
+      const style = API.Styles.get(c.styleId);
+      const prog  = style ? API.Programs.get(style.programId) : null;
       return `<tr>
         <td class="text-sm text-muted">${fmtDate(c.changedAt)}</td>
         <td class="primary font-bold" style="cursor:pointer" onclick="App.navigate('styles','${style?.programId}')">${c.styleNumber || c.styleId}</td>
@@ -2913,9 +2913,9 @@ const AdminViews = (() => {
   // Shows style-level costing status without FOB/LDP/Sell price data.
   // ====================================================================
   function renderDesignCostingView(programId, userRole) {
-    const prog   = DB.Programs.get(programId);
+    const prog   = API.Programs.get(programId);
     if (!prog) return `<div class="empty-state"><h3>Program not found</h3></div>`;
-    const styles = DB.Styles.byProgram(programId).filter(s => s.status !== 'cancelled');
+    const styles = API.Styles.byProgram(programId).filter(s => s.status !== 'cancelled');
 
     // Resolve write permissions from dept settings (falls back to role-based)
     const perms = (typeof App !== 'undefined' && App.getPerms) ? App.getPerms() : {};
@@ -2934,13 +2934,13 @@ const AdminViews = (() => {
     });
 
     // Re-cost requests for this program
-    const recostReqs     = DB.RecostRequests ? DB.RecostRequests.byProgram(programId) : [];
+    const recostReqs     = API.RecostRequests.byProgram(programId);
     const pendingRecosts = recostReqs.filter(r => r.status === 'pending');
     const reqByStyle     = {};
     recostReqs.forEach(r => { if (!reqByStyle[r.styleId] || r.createdAt > reqByStyle[r.styleId].createdAt) reqByStyle[r.styleId] = r; });
 
     // Link groups
-    const progLinks  = DB.StyleLinks ? DB.StyleLinks.byProgram(programId) : [];
+    const progLinks  = API.StyleLinks.byProgram(programId);
     const styleToLink = {};
     progLinks.forEach(lnk => (lnk.styleIds||[]).forEach(sid => { styleToLink[sid] = lnk; }));
 
@@ -2983,18 +2983,18 @@ const AdminViews = (() => {
       </td></tr>`;
 
       grpStyles.forEach(s => {
-        const placement    = DB.Placements.get(s.id);
+        const placement    = API.Placements.get(s.id);
         const considCount  = consideringCountByStyle[s.id] || 0;
         const isPlaced     = !!placement;
         const lnk          = styleToLink[s.id];
         const req          = reqByStyle[s.id];
-        const buys         = DB.CustomerBuys.byStyle(s.id).filter(b => b.programId === programId);
+        const buys         = API.CustomerBuys.byStyle(s.id).filter(b => b.programId === programId);
         const actualQty    = buys.reduce((sum, b) => sum + (parseFloat(b.qty)||0), 0);
 
         // Costing status
         let costingBadge;
         if (isPlaced) {
-          const tc = DB.TradingCompanies.get(placement.tcId);
+          const tc = API.TradingCompanies.get(placement.tcId);
           costingBadge = `<span class="dcv-placed-badge">✅ ${tc?.code||'TC'} — ${placement.coo||''}</span>`;
         } else if (considCount > 0) {
           costingBadge = `<span class="dcv-considering-badge">🔍 ${considCount} TC${considCount>1?'s':''} Considering</span>`;
@@ -3028,7 +3028,7 @@ const AdminViews = (() => {
         }
 
         // Cost history indicator
-        const histEvents = DB.CostHistory ? DB.CostHistory.byStyle(s.id) : [];
+        const histEvents = API.CostHistory.byStyle(s.id);
         const histBtn = histEvents.length > 0
           ? `<button class="btn btn-ghost btn-sm" style="padding:2px 6px;font-size:0.68rem;color:#f59e0b;margin-top:4px" onclick="App.showCostHistory('${s.id}','${(s.styleNumber||'').replace(/'/g,"\\'")} ${(s.styleName||'').replace(/'/g,"\\'")}')">📋 ${histEvents.length} event${histEvents.length>1?'s':''}</button>`
           : '';
@@ -3153,8 +3153,8 @@ const AdminViews = (() => {
   // Renders a compact read-only timeline of re-cost events for a given style.
   // Used inline in the design costing view and style detail modals.
   function renderCostHistoryTimeline(styleId) {
-    if (!DB.CostHistory) return '';
-    const events = DB.CostHistory.byStyle(styleId).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+    if (!API.CostHistory) return '';
+    const events = API.CostHistory.byStyle(styleId).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
     if (!events.length) return '';
 
     const typeConfig = {
