@@ -78,10 +78,11 @@
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 
   <!-- Scripts -->
-  <script src="db.js?v=82"></script>
-  <script src="views-admin.js?v=82"></script>
-  <script src="views-vendor.js?v=82"></script>
-  <script src="app.js?v=82"></script>
+  <script src="db.js?v=83"></script>
+  <script src="api.js?v=83"></script>
+  <script src="views-admin.js?v=83"></script>
+  <script src="views-vendor.js?v=83"></script>
+  <script src="app.js?v=83"></script>
 
   <!-- ── Inline login: works even if app.js fails to init ──────── -->
   <script>
@@ -110,33 +111,24 @@
       try { appReady = !!App && typeof App._login === 'function'; } catch(e) {}
       if (appReady) { return App._login(e); }
 
-      // Fallback: localStorage auth (mirrors DB.Auth.login exactly)
-      try {
-        var SEED_USERS = [
-          { id:'admin',    email:'admin@company.com',   password:'admin123',  role:'admin' },
-          { id:'pc1',      email:'pc@company.com',       password:'pc123',     role:'pc' },
-          { id:'planning1',email:'planning@company.com', password:'plan123',   role:'planning' },
-          { id:'sales1',   email:'sales@company.com',    password:'sales123',  role:'planning' },
-          { id:'design1',  email:'design@company.com',   password:'design123', role:'design' },
-          { id:'techdes1', email:'techdesign@company.com',password:'tech123',  role:'design' },
-        ];
-        var users = JSON.parse(localStorage.getItem('vcp_users') || 'null') || SEED_USERS;
-        var tcs   = JSON.parse(localStorage.getItem('vcp_trading_companies') || '[]');
-        var user  = users.find(function(u){ return u.email===email && u.password===password; });
-        if (!user) {
-          var tc = tcs.find(function(t){ return t.email===email && t.password===password; });
-          if (tc) user = { id:tc.id, name:tc.name, email:tc.email, role:'vendor', tcId:tc.id };
-        }
-        if (!user) {
-          if (errEl) { errEl.style.display=''; errEl.textContent='Invalid email or password'; }
+      // Fallback: call the server API directly
+      fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email, password: password }),
+      })
+      .then(function(res) { return res.json().then(function(d) { return { ok: res.ok, data: d }; }); })
+      .then(function(result) {
+        if (!result.ok) {
+          if (errEl) { errEl.style.display=''; errEl.textContent = result.data.error || 'Invalid email or password'; }
           return;
         }
-        localStorage.setItem('vcp_session', JSON.stringify(user));
-        // Reload so App.init() picks up the session (or stays in fallback mode)
+        localStorage.setItem('vcp_token', result.data.token);
         window.location.replace(window.location.pathname);
-      } catch(ex) {
+      })
+      .catch(function(ex) {
         if (errEl) { errEl.style.display=''; errEl.textContent='Login error: '+ex.message; }
-      }
+      });
     }
 
     document.addEventListener('DOMContentLoaded', function () {

@@ -18,24 +18,67 @@ App = (() => {
   };
 
   // ── Init ───────────────────────────────────────────────────
-  function init() {
-    DB.init();
-    // Clear stale session if the saved user/TC no longer exists in the DB
-    const saved = DB.Auth.current();
-    if (saved) {
-      const stillExists =
-        DB.Users.all().find(u => u.id === saved.id) ||
-        DB.TradingCompanies.all().find(t => t.id === saved.id);
-      if (!stillExists) DB.Auth.logout();
+  async function init() {
+    try {
+      const user = await API.Auth.current();
+      if (user) {
+        state.user = user;
+        // Pre-load data needed by the sidebar (users list for role switcher, badges)
+        await Promise.all([
+          API.Users.all().catch(() => {}),
+          API.TradingCompanies.all().catch(() => {}),
+          API.preload.nav(),
+        ]);
+        renderApp();
+      } else {
+        renderLogin();
+      }
+    } catch (_) {
+      renderLogin();
     }
-    const validSession = DB.Auth.current();
-    if (validSession) { state.user = validSession; renderApp(); }
-    else renderLogin();
   }
 
   // ── Routing ────────────────────────────────────────────────
-  function navigate(route, param) {
+  async function navigate(route, param) {
     state.route = route; state.routeParam = param || null;
+
+    // Route-based preloading — warm the cache before rendering
+    try {
+      if (route === 'programs' || route === 'dashboard')
+        await API.preload.programs();
+      else if (route === 'cost-summary' || route === 'styles' || route === 'buy-summary' || route === 'compare' || route === 'design-costing')
+        await API.preload.program(param);
+      else if (route === 'cross-program')
+        await API.preload.crossProgram();
+      else if (route === 'trading-companies' || route === 'my-company')
+        await API.preload.tradingCompanies();
+      else if (route === 'customers' || route === 'internal' || route === 'coo')
+        await API.preload.programs();
+      else if (route === 'staff' || route === 'departments')
+        await API.preload.staff();
+      else if (route === 'design-handoff')
+        await API.preload.designHandoff();
+      else if (route === 'sales-request')
+        await API.preload.salesRequest();
+      else if (route === 'fabric-standards')
+        await API.preload.fabricStandards();
+      else if (route === 'recost-queue')
+        await API.preload.recostQueue();
+      else if (route === 'pending-changes')
+        await API.preload.pendingChanges();
+      else if (route === 'design-changes')
+        await API.preload.programs();
+      else if (route === '' || route === 'vendor-home' || route === 'vendor-program' || route === 'my-styles') {
+        // Vendor routes
+        await API.preload.programs();
+        if (param) await API.preload.program(param);
+      }
+      else
+        await API.preload.nav();
+    } catch (err) {
+      console.error('[navigate] preload error:', err);
+    }
+
     renderApp();
   }
 
@@ -61,27 +104,32 @@ App = (() => {
     if (err) err.style.display = 'none';
   }
 
-  function login(e) {
+  async function login(e) {
     e.preventDefault();
     const emailEl = document.getElementById('login-email');
     const pwdEl = document.getElementById('login-password');
     const errEl = document.getElementById('login-error');
     const email = (emailEl?.value || '').trim();
     const password = (pwdEl?.value || '').trim();
-    console.log('[Login] Attempting:', email, '/ len:', password.length);
-    const user = DB.Auth.login(email, password);
-    console.log('[Login] Result:', user);
-    if (!user) {
-      if (errEl) { errEl.style.display = ''; errEl.textContent = 'Invalid email or password'; }
-      console.warn('[Login] FAILED. Users in DB:', DB.Users ? DB.Users.all() : 'no Users API');
-      return;
+    try {
+      const user = await API.Auth.login(email, password);
+      state.user = user;
+      // Pre-load sidebar data before first render
+      await Promise.all([
+        API.Users.all().catch(() => {}),
+        API.TradingCompanies.all().catch(() => {}),
+        API.preload.nav(),
+      ]);
+      renderApp();
+    } catch (err) {
+      if (errEl) { errEl.style.display = ''; errEl.textContent = err.message || 'Invalid email or password'; }
     }
-    state.user = user; renderApp();
   }
 
 
-  function logout() {
-    DB.Auth.logout(); state.user = null;
+  async function logout() {
+    await API.Auth.logout();
+    state.user = null;
     const ls = document.getElementById('login-screen');
     const ml = document.getElementById('main-layout');
     if (ls) ls.style.display = '';
@@ -101,9 +149,9 @@ App = (() => {
 
     // ── Role switcher panel (inject once, update active user indicator) ──
     if (!document.getElementById('role-switcher')) {
-      // All internal staff users + Trading Companies
-      const internalUsers = DB.Users.all();
-      const allTCs        = DB.TradingCompanies.all();
+      // All internal staff users + Trading Companies (from cache, loaded at login)
+      const internalUsers = API.cache.users;
+      const allTCs        = API.cache.tradingCompanies;
 
       const roleLabelMap = { admin: 'Admin', pc: 'Production', planning: 'Planning & Sales', design: 'Design', tech_design: 'Tech Design', prod_dev: 'Product Development' };
       const roleOrder    = ['admin', 'pc', 'planning', 'design', 'tech_design', 'prod_dev'];
@@ -116,8 +164,8 @@ App = (() => {
       })).filter(g => g.users.length > 0);
 
       const accounts = [
-        ...internalUsers.map(u => ({ label: u.name, sub: roleLabelMap[u.role] || u.role, email: u.email, password: u.password })),
-        ...allTCs.map(t  => ({ label: t.name,  sub: t.code + ' · Vendor',                  email: t.email, password: t.password })),
+        ...internalUsers.map(u => ({ label: u.name, sub: roleLabelMap[u.role] || u.role, email: u.email })),
+        ...allTCs.map(t  => ({ label: t.name,  sub: t.code + ' · Vendor',                  email: t.email })),
       ];
 
       const panel = document.createElement('div');
@@ -175,7 +223,7 @@ App = (() => {
     const navEl      = document.getElementById('sidebar-nav');
     const userEl     = document.getElementById('sidebar-user');
     const isPlanning = state.user.role === 'planning';
-    const pendingCount = isAdmin ? DB.PendingChanges.pending().length : 0;
+    const pendingCount = isAdmin ? API.PendingChanges.pending().length : 0;
     const badgeHtml  = pendingCount > 0 ? `<span class="pending-badge">${pendingCount}</span>` : '';
 
     if (navEl) navEl.innerHTML = `
@@ -190,7 +238,7 @@ App = (() => {
         <button class="nav-item ${state.route === 'sales-request' ? 'active' : ''}" onclick="App.navigate('sales-request')"><span class="icon">📝</span> Sales Requests</button>
         <button class="nav-item ${state.route === 'fabric-standards' ? 'active' : ''}" onclick="App.navigate('fabric-standards')"><span class="icon">🧵</span> Fabric Standards</button>
         <button class="nav-item ${state.route === 'design-changes' ? 'active' : ''}" onclick="App.navigate('design-changes')"><span class="icon">📌</span> Design Changes</button>
-        ${(() => { const rc = DB.RecostRequests ? DB.RecostRequests.pendingProduction().length : 0; return `<button class="nav-item ${state.route === 'recost-queue' ? 'active' : ''}" onclick="App.navigate('recost-queue')"><span class="icon">↩</span> Re-cost Queue${rc > 0 ? ` <span class="pending-badge">${rc}</span>` : ''}</button>`; })()}
+        ${(() => { const rc = API.RecostRequests.pendingProduction().length; return `<button class="nav-item ${state.route === 'recost-queue' ? 'active' : ''}" onclick="App.navigate('recost-queue')"><span class="icon">↩</span> Re-cost Queue${rc > 0 ? ` <span class="pending-badge">${rc}</span>` : ''}</button>`; })()}
         <div class="sidebar-section"><div class="sidebar-section-label">Settings</div></div>
         <button class="nav-item ${state.route === 'trading-companies' ? 'active' : ''}" onclick="App.navigate('trading-companies')"><span class="icon">🏣</span> Trading Companies</button>
         <button class="nav-item ${state.route === 'customers' ? 'active' : ''}" onclick="App.navigate('customers')"><span class="icon">👥</span> Customers</button>
@@ -222,7 +270,7 @@ App = (() => {
         <button class="nav-item ${state.route === 'programs' || state.route === 'design-costing' || state.route === 'buy-summary' ? 'active' : ''}" onclick="App.navigate('programs')"><span class="icon">📋</span> Programs</button>
         <button class="nav-item ${state.route === 'sales-request' ? 'active' : ''}" onclick="App.navigate('sales-request')"><span class="icon">📝</span> Sales Requests</button>
         <button class="nav-item ${state.route === 'design-handoff' ? 'active' : ''}" onclick="App.navigate('design-handoff')"><span class="icon">🎨</span> Design Handoffs</button>
-        ${(() => { const rc = DB.RecostRequests ? DB.RecostRequests.pendingSales().length : 0; return `<button class="nav-item ${state.route === 'recost-queue' ? 'active' : ''}" onclick="App.navigate('recost-queue')"><span class="icon">↩</span> Re-cost Queue${rc > 0 ? ` <span class="pending-badge">${rc}</span>` : ''}</button>`; })()}
+        ${(() => { const rc = API.RecostRequests.pendingSales().length; return `<button class="nav-item ${state.route === 'recost-queue' ? 'active' : ''}" onclick="App.navigate('recost-queue')"><span class="icon">↩</span> Re-cost Queue${rc > 0 ? ` <span class="pending-badge">${rc}</span>` : ''}</button>`; })()}
       ` : `
         <button class="nav-item ${
           state.route === '' || state.route === 'vendor-home' || state.route === 'vendor-program' ? 'active' : ''
@@ -2323,13 +2371,21 @@ App = (() => {
     const accounts = panel?._accounts;
     if (!accounts || !accounts[idx]) return;
     const acct = accounts[idx];
-    const user = DB.Auth.login(acct.email, acct.password);
-    if (!user) return;
     toggleRoleSwitcher();
-    state.user = user;
-    state.route = '';
-    state.routeParam = null;
-    renderApp();
+    // Logout current user and pre-fill login form with selected account's email
+    API.Auth.logout().then(() => {
+      state.user = null;
+      const ls = document.getElementById('login-screen');
+      const ml = document.getElementById('main-layout');
+      if (ls) ls.style.display = '';
+      if (ml) ml.style.display = 'none';
+      const emailEl = document.getElementById('login-email');
+      const pwdEl   = document.getElementById('login-password');
+      if (emailEl) emailEl.value = acct.email;
+      if (pwdEl)   { pwdEl.value = ''; pwdEl.focus(); }
+      const form = document.getElementById('login-form');
+      if (form) form.onsubmit = login;
+    });
   }
 
 
@@ -2563,7 +2619,7 @@ App = (() => {
     // Formatting helpers used by inline inputs
     fmtFocusRaw, fmtFocusDuty, fmtBlurQty, fmtBlurCurrency, fmtBlurDuty,
     // unplaceStyle alias
-    unplaceStyle: (styleId) => { DB.Placements.unplace(styleId); navigate(state.route, state.routeParam); },
+    unplaceStyle: async (styleId) => { await API.Placements.unplace(styleId); navigate(state.route, state.routeParam); },
     closeModal, closeModalOutside,
     showModal,
     _stateRef: state,
@@ -2588,12 +2644,12 @@ App = (() => {
 // Resolve the current user's effective permissions from their department.
 // Returns a plain object — callers should NOT mutate it.
 App.getPerms = function() {
-  const user = DB.Session.current();
+  const user = App._stateRef?.user || null;
   const FULL = { canViewFOB: true, canViewSellPrice: true, canEdit: true, canEditTechPack: true, canEditSellStatus: true, isAdmin: false, brandFilter: [], tierFilter: [] };
   if (!user) return { ...FULL, canEdit: false };
   if (user.role === 'admin') return { ...FULL, isAdmin: true };
   if (user.role === 'vendor') return { canViewFOB: true, canViewSellPrice: false, canEdit: true, canEditTechPack: false, canEditSellStatus: false, isAdmin: false, brandFilter: [], tierFilter: [] };
-  const dept = user.departmentId ? DB.Departments.get(user.departmentId) : null;
+  const dept = user.departmentId ? API.Departments.get(user.departmentId) : null;
   if (!dept) {
     // Legacy role-based fallback — Sales/Planning NEVER see FOB/LDP
     if (user.role === 'design')      return { canViewFOB: false, canViewSellPrice: false, canEdit: false, canEditTechPack: true,  canEditSellStatus: false, canEditTechNotes: false, isAdmin: false, brandFilter: [], tierFilter: [] };

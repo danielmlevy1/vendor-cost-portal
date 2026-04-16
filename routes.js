@@ -373,6 +373,60 @@ router.get('/trading-companies/:id', requireAuth, (req, res) => {
   res.json(tcFromRow(row, coos));
 });
 
+// POST /api/trading-companies  (admin — direct creation, bypasses pending-changes)
+router.post('/trading-companies', requireAuth, requireRole('admin'), async (req, res) => {
+  const b = req.body;
+  if (!b.code || !b.name || !b.email || !b.password) {
+    return res.status(400).json({ error: 'code, name, email, and password required' });
+  }
+  if (db.prepare('SELECT id FROM trading_companies WHERE code=?').get(b.code)) {
+    return res.status(409).json({ error: 'TC code already exists' });
+  }
+  const hash = await bcrypt.hash(b.password, SALT);
+  const id = uid();
+  db.prepare('INSERT INTO trading_companies (id,code,name,email,password_hash,payment_terms,created_at) VALUES (?,?,?,?,?,?,?)')
+    .run(id, b.code, b.name, b.email, hash, b.paymentTerms || 'FOB', now());
+  // Insert COOs
+  if (Array.isArray(b.coos)) {
+    const ins = db.prepare('INSERT OR IGNORE INTO tc_coos (tc_id, coo) VALUES (?,?)');
+    b.coos.forEach(coo => ins.run(id, coo));
+  }
+  const row = stmt.tcById.get(id);
+  const coos = stmt.coosByTc.all(id).map(r => r.coo);
+  res.status(201).json(tcFromRow(row, coos));
+});
+
+// PATCH /api/trading-companies/:id
+router.patch('/trading-companies/:id', requireAuth, requireRole('admin', 'pc'), async (req, res) => {
+  const row = stmt.tcById.get(req.params.id);
+  if (!row) return res.status(404).json({ error: 'Not found' });
+  const b = req.body;
+  applyPatch('trading_companies', req.params.id, b, {
+    code: 'code', name: 'name', email: 'email', paymentTerms: 'payment_terms',
+  });
+  if (b.password) {
+    const hash = await bcrypt.hash(b.password, SALT);
+    db.prepare('UPDATE trading_companies SET password_hash=? WHERE id=?').run(hash, req.params.id);
+  }
+  if (Array.isArray(b.coos)) {
+    db.prepare('DELETE FROM tc_coos WHERE tc_id=?').run(req.params.id);
+    const ins = db.prepare('INSERT OR IGNORE INTO tc_coos (tc_id, coo) VALUES (?,?)');
+    b.coos.forEach(coo => ins.run(req.params.id, coo));
+  }
+  const updated = stmt.tcById.get(req.params.id);
+  const coos = stmt.coosByTc.all(req.params.id).map(r => r.coo);
+  res.json(tcFromRow(updated, coos));
+});
+
+// DELETE /api/trading-companies/:id
+router.delete('/trading-companies/:id', requireAuth, requireRole('admin'), (req, res) => {
+  const info = db.prepare('DELETE FROM trading_companies WHERE id=?').run(req.params.id);
+  if (!info.changes) return res.status(404).json({ error: 'Not found' });
+  db.prepare('DELETE FROM tc_coos WHERE tc_id=?').run(req.params.id);
+  db.prepare('DELETE FROM assignments WHERE tc_id=?').run(req.params.id);
+  res.json({ ok: true });
+});
+
 // GET /api/internal-programs
 router.get('/internal-programs', requireAuth, (req, res) => {
   res.json(stmt.allInternalPrograms.all().map(internalProgramFromRow));
