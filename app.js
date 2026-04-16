@@ -834,31 +834,16 @@ App = (() => {
     const value = raw === '' ? null : parseFloat(raw);
     if (raw !== '' && isNaN(value)) return; // invalid — don't save
 
-    const existing = DB.Submissions.all().find(s => s.tcId === tcId && s.styleId === styleId && s.coo === coo);
+    const existing = API.Submissions.all().find(s => s.tcId === tcId && s.styleId === styleId && s.coo === coo);
     const oldValue = existing?.[field] ?? null;
     const hasChanged = value !== null && String(value) !== String(oldValue);
 
-    const doSave = (reason) => {
-      const updateData = existing
-        ? { ...existing, [field]: value }
-        : { tcId, styleId, coo, [field]: value };
+    const doSave = async (reason) => {
+      const updateData = { tcId, styleId, coo, [field]: value };
+      if (existing) Object.assign(updateData, existing, { [field]: value });
       if (value != null && updateData.status === 'skipped') delete updateData.status;
-      const user = state.user;
-      const sub = DB.Submissions.upsert(updateData, user?.name || user?.email);
-      // Patch reason + submittedByName into the revision entry that upsert just wrote
-      if (hasChanged && sub?.id && reason) {
-        const revs = JSON.parse(localStorage.getItem('vcp_revisions') || '[]');
-        // Find the most recent entry for this sub+field (the one just written)
-        let lastIdx = -1;
-        for (let i = revs.length - 1; i >= 0; i--) {
-          if (revs[i].subId === sub.id && revs[i].field === field && !revs[i].type) { lastIdx = i; break; }
-        }
-        if (lastIdx >= 0) {
-          revs[lastIdx].reason = reason;
-          revs[lastIdx].submittedByName = user?.name || user?.email || revs[lastIdx].submittedByName;
-          localStorage.setItem('vcp_revisions', JSON.stringify(revs));
-        }
-      }
+      await API.Submissions.upsert(updateData);
+      // Server handles revision tracking automatically during upsert
       if (value != null) inputEl.value = '$' + value.toFixed(2);
     };
 
@@ -887,7 +872,7 @@ App = (() => {
 
   // ── TC Skip / Un-skip a COO ────────────────────────────────
   function openSkipVendorCoo(styleId, tcId, coo) {
-    const existing = DB.Submissions.all().find(s => s.tcId === tcId && s.styleId === styleId && s.coo === coo);
+    const existing = API.Submissions.all().find(s => s.tcId === tcId && s.styleId === styleId && s.coo === coo);
     const currentReason = existing?.skipReason || '';
     showModal(`
       <div class="modal-header" style="display:block;margin-bottom:16px">
@@ -907,19 +892,17 @@ App = (() => {
       </div>`);
   }
 
-  function confirmSkipVendorCoo(styleId, tcId, coo) {
+  async function confirmSkipVendorCoo(styleId, tcId, coo) {
     const reasonEl = document.getElementById('skip-reason-input');
     const reason = reasonEl ? reasonEl.value.trim() : '';
     if (!reason) { reasonEl?.classList.add('input-error'); return; }
-    const existing = DB.Submissions.all().find(s => s.tcId === tcId && s.styleId === styleId && s.coo === coo);
-    DB.Submissions.upsert({ ...(existing || { tcId, styleId, coo }), status: 'skipped', skipReason: reason, fob: null, factoryCost: null });
+    await API.Submissions.upsert({ tcId, styleId, coo, status: 'skipped', skipReason: reason, fob: null, factoryCost: null });
     closeModal();
     navigate(state.route, state.routeParam);
   }
 
-  function unskipVendorCoo(styleId, tcId, coo) {
-    const existing = DB.Submissions.all().find(s => s.tcId === tcId && s.styleId === styleId && s.coo === coo);
-    if (existing) DB.Submissions.upsert({ ...existing, status: 'pending', skipReason: null, fob: null, factoryCost: null });
+  async function unskipVendorCoo(styleId, tcId, coo) {
+    await API.Submissions.upsert({ tcId, styleId, coo, status: 'submitted', skipReason: null, fob: null, factoryCost: null });
     navigate(state.route, state.routeParam);
   }
 
@@ -982,9 +965,11 @@ App = (() => {
     reader.readAsText(file);
   }
 
-  function confirmVendorUpload(tcId) {
+  async function confirmVendorUpload(tcId) {
     if (!_pendingVendorRows?.length) return;
-    _pendingVendorRows.forEach(row => DB.Submissions.upsert({ tcId, styleId: row.styleId, coo: row.coo, fob: row.fob, factoryCost: row.factoryCost, tcMarkup: row.tcMarkup, paymentTerms: row.paymentTerms, moq: row.moq, leadTime: row.leadTime, vendorComments: row.vendorComments }));
+    for (const row of _pendingVendorRows) {
+      await API.Submissions.upsert({ tcId, styleId: row.styleId, coo: row.coo, fob: row.fob, factoryCost: row.factoryCost, tcMarkup: row.tcMarkup, paymentTerms: row.paymentTerms, moq: row.moq, leadTime: row.leadTime, vendorComments: row.vendorComments });
+    }
     _pendingVendorRows = null; closeModal(); navigate('my-styles');
   }
 
@@ -1208,13 +1193,13 @@ App = (() => {
   }
 
   // ── Buy Summary ─────────────────────────────────────────────
-  function saveBuyInline(styleId, customerId, programId, field, el) {
+  async function saveBuyInline(styleId, customerId, programId, field, el) {
     const raw = parseFloat(el.value.replace(/[^0-9.]/g, ''));
     const val = isNaN(raw) ? null : raw;
     if (val === null && !el.value.trim()) {
-      DB.CustomerBuys.delete(programId, styleId, customerId);
+      await API.CustomerBuys.delete(programId, styleId, customerId);
     } else if (val !== null) {
-      DB.CustomerBuys.upsert({ programId, styleId, customerId, [field]: val });
+      await API.CustomerBuys.upsert({ programId, styleId, customerId, [field]: val });
     }
     // refresh totals without full re-render
     const row = el.closest('tr');
@@ -1269,7 +1254,7 @@ App = (() => {
   // ── Assign Customers to Program ──────────────────────────────
   function openAssignCustomers(programId) {
     const all     = DB.Customers.all();
-    const current = new Set(DB.CustomerAssignments.byProgram(programId));
+    const current = new Set(API.CustomerAssignments.byProgram(programId));
     showModal(`
       <div class="modal-header"><h2>Assign Customers</h2><button class="btn btn-ghost btn-icon" onclick="App.closeModal()">✕</button></div>
       <div class="modal-body">
@@ -1287,10 +1272,10 @@ App = (() => {
       </div>`);
   }
 
-  function saveCustomerAssignments(programId) {
-    const all = DB.Customers.all();
+  async function saveCustomerAssignments(programId) {
+    const all = API.cache.customers;
     const selected = all.filter(c => document.getElementById(`cca-${c.id}`)?.checked).map(c => c.id);
-    DB.CustomerAssignments.assign(programId, selected);
+    await API.CustomerAssignments.assign(programId, selected);
     closeModal(); navigate('buy-summary', programId);
   }
 
@@ -1298,7 +1283,7 @@ App = (() => {
   function downloadBuyTemplate(programId) {
     const prog    = API.Programs.get(programId);
     const styles  = API.Styles.byProgram(programId).filter(s => s.status !== 'cancelled');
-    const custIds = DB.CustomerAssignments.byProgram(programId);
+    const custIds = API.CustomerAssignments.byProgram(programId);
     const custs   = custIds.map(id => DB.Customers.get(id)).filter(Boolean);
     if (!custs.length) { alert('Assign customers to this program before downloading the template.'); return; }
 
@@ -1308,7 +1293,7 @@ App = (() => {
     const header    = [...fixedHdrs, ...custHdrs].join(',');
 
     // Existing buy data to pre-fill
-    const allBuys = DB.CustomerBuys.byProgram(programId);
+    const allBuys = API.CustomerBuys.byProgram(programId);
 
     const rows = styles.map(s => {
       const fixed = [
@@ -1356,7 +1341,7 @@ App = (() => {
 
   let _pendingBuyRows = null;
   function processBuyUpload(file, programId) {
-    const custIds = DB.CustomerAssignments.byProgram(programId);
+    const custIds = API.CustomerAssignments.byProgram(programId);
     const custs   = custIds.map(id => DB.Customers.get(id)).filter(Boolean);
     const styles  = API.Styles.byProgram(programId);
 
@@ -1417,19 +1402,19 @@ App = (() => {
     reader.readAsText(file);
   }
 
-  function confirmBuyUpload() {
+  async function confirmBuyUpload() {
     if (!_pendingBuyRows) return;
     const { programId, rows } = _pendingBuyRows;
-    rows.forEach(({ style, buys }) => {
-      buys.forEach(b => {
-        const existing = DB.CustomerBuys.get(programId, style.id, b.customerId) || {};
-        DB.CustomerBuys.upsert({
+    for (const { style, buys } of rows) {
+      for (const b of buys) {
+        const existing = API.CustomerBuys.get(programId, style.id, b.customerId) || {};
+        await API.CustomerBuys.upsert({
           programId, styleId: style.id, customerId: b.customerId,
           qty:       b.qty       != null ? b.qty       : existing.qty,
           sellPrice: b.sellPrice != null ? b.sellPrice : existing.sellPrice,
         });
-      });
-    });
+      }
+    }
     _pendingBuyRows = null;
     closeModal(); navigate('buy-summary', programId);
   }
@@ -1450,9 +1435,9 @@ App = (() => {
       </div>
     </form>`);
   }
-  function confirmFlag(e, subId) { e.preventDefault(); DB.Submissions.flag(subId, v('flag-reason')); closeModal(); renderRoute(); }
-  function unflagSub(id) { DB.Submissions.unflag(id); renderRoute(); }
-  function acceptSub(id) { DB.Submissions.accept(id); renderRoute(); }
+  async function confirmFlag(e, subId) { e.preventDefault(); await API.Submissions.flag(subId, v('flag-reason')); closeModal(); renderRoute(); }
+  async function unflagSub(id) { await API.Submissions.unflag(id); renderRoute(); }
+  async function acceptSub(id) { await API.Submissions.accept(id); renderRoute(); }
 
   // ── Place/Unplace ──────────────────────────────────────────
   async function placeStyle(styleId, tcId, coo, fob) {
@@ -1528,7 +1513,7 @@ App = (() => {
     if (['dutyRate', 'projQty', 'specialPackaging'].includes(field) && style) {
       const fmt = v => (v != null && !isNaN(v)) ? '$' + parseFloat(v).toFixed(2) : '—';
       const pct = v => v != null ? (v * 100).toFixed(1) + '%' : '—';
-      const allSubs = DB.Submissions.byStyle(styleId);
+      const allSubs = API.Submissions.byStyle(styleId);
       // Find all duty_pct cells in this row to identify which TC×COO columns exist
       row.querySelectorAll('td[data-col$="_duty_pct"]').forEach(cell => {
         const colKey = cell.dataset.col.replace('_duty_pct', ''); // e.g. "tc1_KH"
@@ -1556,25 +1541,22 @@ App = (() => {
   }
 
   // ── Inline Submission Save (FOB / Factory Cost) ────────────
-  function saveSubmissionInline(styleId, tcId, coo, inputEl) {
+  async function saveSubmissionInline(styleId, tcId, coo, inputEl) {
     const field = inputEl.dataset.field;
     const raw = inputEl.value.trim().replace(/^\$/, ''); // strip currency prefix
     const value = raw === '' ? null : parseFloat(raw);
     if (raw !== '' && isNaN(value)) return; // invalid — don't save
 
-    // Upsert submission with the changed field
-    const existing = DB.Submissions.all().find(s => s.tcId === tcId && s.styleId === styleId && s.coo === coo);
+    // Upsert submission with the changed field (server handles revision tracking)
     const updateData = { tcId, styleId, coo, [field]: value };
-    // Preserve other fields from existing submission
-    if (existing) Object.assign(updateData, { ...existing, [field]: value });
-    DB.Submissions.upsert(updateData);
+    await API.Submissions.upsert(updateData);
 
     // Refresh calculated cells (Duty%, Duty/unit, Freight/unit, LDP/unit) in the same row
     const row = inputEl.closest('tr');
     if (!row) return;
     const style = API.Styles.get(styleId);
     const prog = API.Programs.get(state.routeParam);
-    const sub = DB.Submissions.all().find(s => s.tcId === tcId && s.styleId === styleId && s.coo === coo);
+    const sub = API.Submissions.all().find(s => s.tcId === tcId && s.styleId === styleId && s.coo === coo);
     if (!sub || !sub.fob) return;
     // Use TC-level payment terms, not submission-level
     const tc = API.TradingCompanies.get(tcId);
@@ -1626,7 +1608,7 @@ App = (() => {
         if (!fobInput) return;
         const styleId = fobInput.dataset.sid;
         const style = API.Styles.get(styleId);
-        const sub = DB.Submissions.all().find(s => s.tcId === tcId && s.styleId === styleId && s.coo === coo);
+        const sub = API.Submissions.all().find(s => s.tcId === tcId && s.styleId === styleId && s.coo === coo);
         if (!sub || !sub.fob) return;
         const r = DB.calcLDP(parseFloat(sub.fob), style, coo, style.market || 'USA', 'NY', terms, sub.factoryCost);
         if (!r) return;
@@ -1648,9 +1630,9 @@ App = (() => {
   // TC-side quote form
   function openSubmitQuote(styleId, tcId) {
     showModal(VendorViews.quoteForm(styleId, tcId), 'modal-lg');
-    $('quote-form').onsubmit = e => {
+    $('quote-form').onsubmit = async e => {
       e.preventDefault();
-      DB.Submissions.upsert({ styleId, tcId, coo: v('q-coo'), fob: nv('q-fob'), factoryCost: nv('q-factory'), tcMarkup: nv('q-tcmu') ? nv('q-tcmu') / 100 : null, paymentTerms: v('q-terms'), moq: nv('q-moq'), leadTime: nv('q-lead'), vendorComments: v('q-comments') });
+      await API.Submissions.upsert({ styleId, tcId, coo: v('q-coo'), fob: nv('q-fob'), factoryCost: nv('q-factory'), tcMarkup: nv('q-tcmu') ? nv('q-tcmu') / 100 : null, paymentTerms: v('q-terms'), moq: nv('q-moq'), leadTime: nv('q-lead'), vendorComments: v('q-comments') });
       closeModal(); navigate('my-styles');
     };
   }
@@ -1661,9 +1643,9 @@ App = (() => {
     showModal(VendorViews.quoteForm(styleId, tcId, coo), 'modal-lg');
     const h = document.querySelector('.modal h2');
     if (h) h.innerHTML = `✏ Enter Cost — <span style="color:var(--accent)">${tc?.code} (${coo})</span>`;
-    $('quote-form').onsubmit = e => {
+    $('quote-form').onsubmit = async e => {
       e.preventDefault();
-      DB.Submissions.upsert({ styleId, tcId, coo, fob: nv('q-fob'), factoryCost: nv('q-factory'), tcMarkup: nv('q-tcmu') ? nv('q-tcmu') / 100 : null, paymentTerms: v('q-terms'), moq: nv('q-moq'), leadTime: nv('q-lead'), vendorComments: v('q-comments'), enteredByAdmin: true });
+      await API.Submissions.upsert({ styleId, tcId, coo, fob: nv('q-fob'), factoryCost: nv('q-factory'), tcMarkup: nv('q-tcmu') ? nv('q-tcmu') / 100 : null, paymentTerms: v('q-terms'), moq: nv('q-moq'), leadTime: nv('q-lead'), vendorComments: v('q-comments'), enteredByAdmin: true });
       closeModal(); navigate(state.route, state.routeParam);
     };
   }
@@ -1773,7 +1755,7 @@ App = (() => {
     if (tldpCell) tldpCell.textContent = targetLDP ? '$' + parseFloat(targetLDP).toFixed(2) : '—';
     const fmtD = v => (v != null && !isNaN(v)) ? '$' + parseFloat(v).toFixed(2) : '—';
     const pctD = v => v != null ? (v * 100).toFixed(1) + '%' : '—';
-    const allSubs = DB.Submissions.byStyle(styleId);
+    const allSubs = API.Submissions.byStyle(styleId);
     row.querySelectorAll('td[data-col$="_duty_pct"]').forEach(cell => {
       const colKey = cell.dataset.col.replace('_duty_pct', '');
       const lastUnderscore = colKey.lastIndexOf('_');
@@ -2100,7 +2082,7 @@ App = (() => {
   // ── Repeat Style History Modal ────────────────────────────
   function openRepeatStyleHistory(styleNum) {
     const allStyles  = API.Styles.all();
-    const allSubs    = DB.Submissions.all();
+    const allSubs    = API.Submissions.all();
     const allPlacements = JSON.parse(localStorage.getItem('vcp_placements') || '[]');
     const allPrograms   = API.cache.programs;
 
@@ -2171,7 +2153,7 @@ App = (() => {
   function openRevisionHistory(subId, field) {
     if (!subId) return;
     const label = field === 'fob' ? 'FOB Cost' : 'Factory Cost';
-    const sub = DB.Submissions.get(subId);
+    const sub = API.Submissions.get(subId);
     // Use byFieldAll — includes flag events alongside price revisions
     const entries = DB.Revisions.byFieldAll(subId, field);
     const flag = DB.CellFlags.get(subId, field);
@@ -2271,7 +2253,7 @@ App = (() => {
     const tag = subId ? `${styleId}:${subId}` : null;
     const list = JSON.parse(localStorage.getItem(considerKey) || '[]');
     const isConsidering = tag ? list.includes(tag) : false;
-    const placement = DB.Placements.get(styleId);
+    const placement = API.Placements.get(styleId);
     const isPlaced = placement?.tcId === tcId && placement?.coo === coo;
 
     const isLight = document.body.dataset.theme === 'light';
@@ -2309,7 +2291,7 @@ App = (() => {
     if (m) m.remove();
   }
 
-  function setCellHighlight(action, styleId, tcId, coo, subId, fob) {
+  async function setCellHighlight(action, styleId, tcId, coo, subId, fob) {
     closeCellMenu();
     const considerKey = 'vcp_considering';
     const tag = subId ? `${styleId}:${subId}` : null;
@@ -2328,7 +2310,7 @@ App = (() => {
         const idx = list.indexOf(tag);
         if (idx >= 0) { list.splice(idx, 1); localStorage.setItem(considerKey, JSON.stringify(list)); }
       }
-      DB.Placements.place({ styleId, tcId, coo, confirmedFob: parseFloat(fob) || 0 });
+      await API.Placements.place({ styleId, tcId, coo, confirmedFob: parseFloat(fob) || 0 });
     } else if (action === 'clear') {
       // Clear both
       if (tag) {
@@ -2336,8 +2318,8 @@ App = (() => {
         const idx = list.indexOf(tag);
         if (idx >= 0) { list.splice(idx, 1); localStorage.setItem(considerKey, JSON.stringify(list)); }
       }
-      const existing = DB.Placements.get(styleId);
-      if (existing?.tcId === tcId && existing?.coo === coo) DB.Placements.unplace(styleId);
+      const existing = API.Placements.get(styleId);
+      if (existing?.tcId === tcId && existing?.coo === coo) await API.Placements.unplace(styleId);
     }
     const styles = API.Styles.all();
     const styleObj = styles.find(s2 => s2.id === styleId);
@@ -3220,19 +3202,19 @@ App._computeRecap = function(programId) {
   const p      = API.Programs.get(programId);
   const styles = API.Styles.byProgram(programId).filter(s => s.status !== 'cancelled');
   const allTCs = API.Assignments.byProgram(programId).map(a => API.TradingCompanies.get(a.tcId)).filter(Boolean);
-  const custIds= DB.CustomerAssignments.byProgram(programId);
+  const custIds= API.CustomerAssignments.byProgram(programId);
   const allCusts = custIds.map(id => DB.Customers.get(id)).filter(Boolean);
 
   // Build per-style data: resolve FOB + TC from Placement, then fall back to best submission
   const styleData = styles.map(s => {
     let fob = null, tcId = null, coo = '';
-    const pl = DB.Placements.get(s.id);
+    const pl = API.Placements.get(s.id);
     if (pl) {
       fob  = parseFloat(pl.confirmedFob)  || null;
       tcId = pl.tcId;
       coo  = pl.coo || '';
     } else {
-      const subs = DB.Submissions.byStyle(s.id);
+      const subs = API.Submissions.byStyle(s.id);
       if (subs.length) {
         const best = subs.find(sub => sub.status === 'accepted')
           || subs.reduce((a, b) => (parseFloat(a.fob)||9999) <= (parseFloat(b.fob)||9999) ? a : b);
@@ -3241,7 +3223,7 @@ App._computeRecap = function(programId) {
         coo  = best.coo || '';
       }
     }
-    const custBuys = DB.CustomerBuys.byStyle(s.id);  // [{customerId, qty, sellPrice}]
+    const custBuys = API.CustomerBuys.byStyle(s.id);  // [{customerId, qty, sellPrice}]
     return {
       id: s.id, styleNumber: s.styleNumber, styleName: s.styleName,
       fabrication: s.fabrication || '',
@@ -5757,7 +5739,7 @@ App.openTechPackHistory = function(styleId) {
 App.openFobHistory = function(styleId) {
   const s = API.Styles.get(styleId);
   if (!s) return;
-  const subs  = DB.Submissions.byStyle(styleId);
+  const subs  = API.Submissions.byStyle(styleId);
   const prog  = API.Programs.get(s.programId);
   const asgns = API.Assignments.byProgram(s.programId || '');
 
