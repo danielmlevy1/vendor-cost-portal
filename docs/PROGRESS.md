@@ -1,0 +1,58 @@
+# Vendor Cost Portal — SQLite Migration Progress
+
+## Overview
+Migration of the Vendor Cost Portal from a fully client-side, `localStorage`-backed
+data layer (`db.js` / `DB.*` namespace) to a server-backed REST architecture
+powered by SQLite + Express + JWT auth.
+
+## What Was Built
+
+### Backend
+- **SQLite database** ([data/portal.db](../data/portal.db) at runtime) with full
+  relational schema defined in [schema.sql](../schema.sql).
+- **Server-side data layer** in [database.js](../database.js) — opens the DB,
+  applies the schema, and seeds reference data (users, trading companies, COO
+  rates, internal programs, brand-tier margins, etc.) on first run.
+- **Authentication** in [auth.js](../auth.js):
+  - `POST /api/auth/login` — bcrypt password check against `users` and
+    `trading_companies` tables, issues a JWT (8h expiry by default).
+  - `GET /api/auth/me` — rehydrates session from token.
+  - `POST /api/auth/logout` — client-side token discard.
+  - `requireAuth` / `requireRole(...)` middleware for protected routes.
+- **REST API — ~98 endpoints** split across:
+  - [routes.js](../routes.js) — core resources (programs, styles, submissions,
+    placements, customer assignments, customer buys, design handoffs, sales
+    requests, recost requests, design changes, etc.)
+  - [routes-supporting.js](../routes-supporting.js) — supporting resources
+    (trading companies, COO rates, customers, departments, users, internal
+    programs, brand-tier margins, fabric library, style links, cost history,
+    cell flags, submission revisions, pending changes).
+  - [auth.js](../auth.js) — login / me / logout.
+
+### Frontend
+- **API layer** ([api.js](../api.js)) — `API.*` namespace mirroring the old
+  `DB.*` shape so call sites could be migrated namespace-by-namespace.
+  - JWT stored in `localStorage` under `vcp_token`; auto-cleared on 401.
+  - Synchronous in-memory `cache` populated by `preload.*` helpers.
+  - Async mutators (`upsert`, `delete`) keep cache consistent with server.
+- **Full frontend migration complete** — every `DB.*` call site in
+  [app.js](../app.js), [views-vendor.js](../views-vendor.js), and
+  [views-admin.js](../views-admin.js) has been replaced with the API
+  equivalent. Recent commits (Tier 3 → Tier 6) walked the migration through
+  in layers; final commit (`8f74343`) confirms zero remaining `DB.*` calls.
+
+## Current Status
+**Browser testing phase.** The server runs, the schema applies cleanly, and
+the frontend boots against the live API. Now exercising every screen
+end-to-end in a real browser to surface any bugs introduced by the migration
+(stale cache reads, missing preload calls, payload-shape mismatches between
+the old `DB` API and the new REST API, auth/role gating, etc.).
+
+## What's Next
+1. **Fix any bugs surfaced during browser testing** — patch as found.
+2. **Hosting setup** — once the app is stable locally, deploy:
+   - Pick a host (Render / Fly.io / Railway / VPS).
+   - Persist `data/portal.db` on a mounted volume.
+   - Configure env vars: `JWT_SECRET`, `SMTP_*`, `PORT`, `DB_PATH`.
+   - Set up backups for the SQLite file.
+   - Wire up a production domain + TLS.

@@ -16,3 +16,7 @@ dist/
 
 # Database (generated at runtime — do not commit)
 data/
+
+# Docs — always commit, even if a future ignore rule would catch them
+!docs/
+!docs/**
