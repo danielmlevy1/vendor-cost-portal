@@ -516,7 +516,7 @@ App = (() => {
     const seasons = ['N/A', 'Q1', 'Q2', 'Q3', 'Q4'];
     const years = ['2026', '2027', '2028', '2029', '2030'];
     // Draw Brand options from distinct brands across InternalPrograms
-    const brands  = (() => { const b = [...new Set(DB.BrandTierMargins.all().map(m => m.brand).filter(Boolean))].sort(); return b.length ? b : ['Reebok','Champion','And1','Gaiam','Head']; })();
+    const brands  = (() => { const b = [...new Set(API.cache.brandTierMargins.map(m => m.brand).filter(Boolean))].sort(); return b.length ? b : ['Reebok','Champion','And1','Gaiam','Head']; })();
     const TIERS  = ['Mass','Mid Tier','Off Price','Clubs','Specialty'];
     const GENDERS = ['Mens','Ladies','Boys','Girls','Infant/Toddler'];
     showModal(`
@@ -608,10 +608,10 @@ App = (() => {
     const name       = manualName || autoName || 'Unnamed Program';
 
     // Look up target margin from BrandTierMargins (brand+tier combo)
-    const targetMargin = DB.BrandTierMargins.lookup(brand, retailer) || 0;
+    const targetMargin = API.BrandTierMargins.lookup(brand, retailer) || 0;
 
     // Auto-resolve best matching InternalProgram (Brand+Retailer+Gender, then Brand+Retailer)
-    const ips = DB.InternalPrograms.all();
+    const ips = API.cache.internalPrograms;
     const matchedIp =
       ips.find(ip => ip.brand === brand && ip.tier === retailer && ip.gender === gender) ||
       ips.find(ip => ip.brand === brand && ip.tier === retailer) ||
@@ -643,7 +643,7 @@ App = (() => {
   function openStyleModal(programId, styleId) {
     const s = styleId ? API.Styles.get(styleId) : null;
     const prog = API.Programs.get(programId);
-    const cooRates = DB.CooRates.all();
+    const cooRates = API.cache.cooRates;
     showModal(`
     <div class="modal-header"><h2>${s ? 'Edit' : 'Add'} Style</h2><button class="btn btn-ghost btn-icon" onclick="App.closeModal()">✕</button></div>
     <form onsubmit="App.saveStyle(event,'${programId}','${styleId || ''}')">
@@ -739,7 +739,7 @@ App = (() => {
   // ── Trading Company CRUD ────────────────────────────────────
   function openTCModal(id) {
     const tc = id ? API.TradingCompanies.get(id) : null;
-    const cooRates = DB.CooRates.all();
+    const cooRates = API.cache.cooRates;
     const TERMS_LIST = ['FOB', 'CIF', 'First Sale', 'FCA', 'Duty Free', 'CPTPP'];
     showModal(`
     <div class="modal-header"><h2>${tc ? 'Edit' : 'Add'} Trading Company</h2><button class="btn btn-ghost btn-icon" onclick="App.closeModal()">✕</button></div>
@@ -802,7 +802,7 @@ App = (() => {
   function processUpload(file, programId) {
     const reader = new FileReader();
     reader.onload = ev => {
-      const rows = DB.parseCSV(ev.target.result).map(DB.csvRowToStyle).filter(r => r.styleNumber);
+      const rows = API.parseCSV(ev.target.result).map(API.csvRowToStyle).filter(r => r.styleNumber);
       _pendingRows = rows;
       const el = $('upload-preview'); if (!el) return;
       if (!rows.length) { el.innerHTML = '<div class="alert alert-danger">No valid rows found.</div>'; return; }
@@ -937,7 +937,7 @@ App = (() => {
     reader.onload = ev => {
       const tc = API.TradingCompanies.get(tcId);
       const styles = API.Assignments.stylesByTc(tcId);
-      const csvRows = DB.parseCSV(ev.target.result);
+      const csvRows = API.parseCSV(ev.target.result);
       const el = $('vendor-upload-preview'); if (!el) return;
       if (!csvRows.length) { el.innerHTML = '<div class="alert alert-danger">No rows found.</div>'; return; }
       const matched = [], unmatched = [];
@@ -975,7 +975,7 @@ App = (() => {
 
   // ── Internal Programs ──────────────────────────────────────
   function openInternalProgramModal(id) {
-    const ip = id ? DB.InternalPrograms.get(id) : null;
+    const ip = id ? API.InternalPrograms.get(id) : null;
     const BRANDS  = ['Reebok','Champion','And1','Gaiam','Head'];
     const TIERS   = ['Mass','Mid Tier','Off Price','Clubs','Specialty'];
     const GENDERS = ['Mens','Ladies','Boys','Girls','Infant/Toddler'];
@@ -1021,12 +1021,12 @@ App = (() => {
     </form>`);
   }
 
-  function saveInternalProgram(e, id) {
+  async function saveInternalProgram(e, id) {
     e.preventDefault();
     const brand  = document.getElementById('ip-brand')?.value  || '';
     const tier   = document.getElementById('ip-tier')?.value   || '';
     const gender = document.getElementById('ip-gender')?.value || '';
-    DB.InternalPrograms.upsert({
+    await API.InternalPrograms.upsert({
       id: id || undefined,
       name: `${brand} · ${tier} · ${gender}`,
       brand, tier, gender,
@@ -1034,14 +1034,14 @@ App = (() => {
     });
     closeModal(); navigate('internal');
   }
-  function deleteInternalProgram(id) { if (confirm('Delete?')) { DB.InternalPrograms.delete(id); navigate('internal'); } }
+  async function deleteInternalProgram(id) { if (confirm('Delete?')) { await API.InternalPrograms.delete(id); navigate('internal'); } }
 
   // Auto-fill margin in Internal Program modal when Brand+Tier change
   function _ipAutoMargin() {
     const brand = document.getElementById('ip-brand')?.value || '';
     const tier  = document.getElementById('ip-tier')?.value  || '';
     if (!brand || !tier) return;
-    const m = DB.BrandTierMargins.lookup(brand, tier);
+    const m = API.BrandTierMargins.lookup(brand, tier);
     if (m != null) {
       const el = document.getElementById('ip-margin');
       if (el) el.value = (m * 100).toFixed(1);
@@ -1052,7 +1052,7 @@ App = (() => {
     const brand = document.getElementById('pip-brand')?.value || '';
     const tier  = document.getElementById('pip-tier')?.value  || '';
     if (!brand || !tier) return;
-    const m = DB.BrandTierMargins.lookup(brand, tier);
+    const m = API.BrandTierMargins.lookup(brand, tier);
     if (m != null) {
       const el = document.getElementById('pip-margin');
       if (el) el.value = (m * 100).toFixed(1);
@@ -1061,7 +1061,7 @@ App = (() => {
 
   // ── Brand-Tier Margins CRUD ────────────────────────────────
   function openBrandTierMarginModal(id, preBrand, preTier) {
-    const m = id ? DB.BrandTierMargins.get(id) : null;
+    const m = id ? API.BrandTierMargins.get(id) : null;
     const BRANDS = ['Reebok','Champion','And1','Gaiam','Head'];
     const TIERS  = ['Mass','Mid Tier','Off Price','Clubs','Specialty'];
     const selOpts = (arr, cur) => arr.map(v => `<option${v === cur ? ' selected' : ''}>${v}</option>`).join('');
@@ -1105,23 +1105,22 @@ App = (() => {
     </form>`);
   }
 
-  function saveBrandTierMargin(e, id) {
+  async function saveBrandTierMargin(e, id) {
     e.preventDefault();
-    // When editing, brand/tier selects are disabled — read from existing record
-    const existing = id ? DB.BrandTierMargins.get(id) : null;
+    const existing = id ? API.BrandTierMargins.get(id) : null;
     const brand  = existing?.brand || document.getElementById('btm-brand')?.value  || '';
     const tier   = existing?.tier  || document.getElementById('btm-tier')?.value   || '';
     const margin = parseFloat(document.getElementById('btm-margin')?.value || '');
     if (!brand || !tier) { alert('Brand and Tier are required.'); return; }
     if (isNaN(margin))   { alert('Target Margin is required.'); return; }
-    DB.BrandTierMargins.upsert({ id: id || undefined, brand, tier, targetMargin: margin / 100 });
+    await API.BrandTierMargins.upsert({ id: id || undefined, brand, tier, targetMargin: margin / 100 });
     closeModal();
     navigate('internal');
   }
 
-  function deleteBrandTierMargin(id) {
+  async function deleteBrandTierMargin(id) {
     if (confirm('Remove this Brand-Tier margin setting?')) {
-      DB.BrandTierMargins.delete(id);
+      await API.BrandTierMargins.delete(id);
       closeModal();
       navigate('internal');
     }
@@ -1129,7 +1128,7 @@ App = (() => {
 
 
   function openCooModal(id) {
-    const r = id ? DB.CooRates.get(id) : null;
+    const r = id ? API.CooRates.get(id) : null;
     showModal(`
     <div class="modal-header"><h2>${r ? 'Edit' : 'Add'} COO Rate</h2><button class="btn btn-ghost btn-icon" onclick="App.closeModal()">✕</button></div>
     <form onsubmit="App.saveCoo(event,'${id || ''}')">
@@ -1150,11 +1149,11 @@ App = (() => {
     </form>`, 'modal-lg');
   }
 
-  function saveCoo(e, id) {
+  async function saveCoo(e, id) {
     e.preventDefault();
     const usaMult  = parseFloat(document.getElementById('cr-usa-mult')?.value);
     const canMult  = parseFloat(document.getElementById('cr-can-mult')?.value);
-    DB.CooRates.upsert({
+    await API.CooRates.upsert({
       id: v('cr-code'), code: v('cr-code'), country: v('cr-country'),
       addlDuty: nv('cr-duty') || 0,
       usaMult:  isNaN(usaMult)  ? 0 : usaMult,
@@ -1222,7 +1221,7 @@ App = (() => {
 
   // ── Customer CRUD ────────────────────────────────────────────
   function openCustomerModal(id) {
-    const c = id ? DB.Customers.get(id) : null;
+    const c = id ? API.Customers.get(id) : null;
     showModal(`
       <div class="modal-header"><h2>${c ? 'Edit' : 'New'} Customer</h2><button class="btn btn-ghost btn-icon" onclick="App.closeModal()">✕</button></div>
       <form onsubmit="App.saveCustomer(event,'${id || ''}')">
@@ -1240,20 +1239,20 @@ App = (() => {
       </form>`);
   }
 
-  function saveCustomer(e, id) {
+  async function saveCustomer(e, id) {
     e.preventDefault();
     const data = { code: v('cust-code').trim().toUpperCase(), name: v('cust-name').trim() };
-    if (id) DB.Customers.update(id, data); else DB.Customers.create(data);
+    if (id) await API.Customers.update(id, data); else await API.Customers.create(data);
     closeModal(); navigate('customers');
   }
 
-  function deleteCustomer(id) {
-    if (confirm('Delete this customer?')) { DB.Customers.delete(id); closeModal(); navigate('customers'); }
+  async function deleteCustomer(id) {
+    if (confirm('Delete this customer?')) { await API.Customers.delete(id); closeModal(); navigate('customers'); }
   }
 
   // ── Assign Customers to Program ──────────────────────────────
   function openAssignCustomers(programId) {
-    const all     = DB.Customers.all();
+    const all     = API.cache.customers;
     const current = new Set(API.CustomerAssignments.byProgram(programId));
     showModal(`
       <div class="modal-header"><h2>Assign Customers</h2><button class="btn btn-ghost btn-icon" onclick="App.closeModal()">✕</button></div>
@@ -1284,7 +1283,7 @@ App = (() => {
     const prog    = API.Programs.get(programId);
     const styles  = API.Styles.byProgram(programId).filter(s => s.status !== 'cancelled');
     const custIds = API.CustomerAssignments.byProgram(programId);
-    const custs   = custIds.map(id => DB.Customers.get(id)).filter(Boolean);
+    const custs   = custIds.map(id => API.Customers.get(id)).filter(Boolean);
     if (!custs.length) { alert('Assign customers to this program before downloading the template.'); return; }
 
     // Header row: fixed cols + per-customer pair
@@ -1342,7 +1341,7 @@ App = (() => {
   let _pendingBuyRows = null;
   function processBuyUpload(file, programId) {
     const custIds = API.CustomerAssignments.byProgram(programId);
-    const custs   = custIds.map(id => DB.Customers.get(id)).filter(Boolean);
+    const custs   = custIds.map(id => API.Customers.get(id)).filter(Boolean);
     const styles  = API.Styles.byProgram(programId);
 
     const reader = new FileReader();
@@ -1419,7 +1418,7 @@ App = (() => {
     closeModal(); navigate('buy-summary', programId);
   }
 
-  function deleteCoo(id) { if (confirm('Delete COO rate?')) { DB.CooRates.delete(id); navigate('coo'); } }
+  async function deleteCoo(id) { if (confirm('Delete COO rate?')) { await API.CooRates.delete(id); navigate('coo'); } }
 
   // ── Flagging ───────────────────────────────────────────────
   function openFlagModal(subId) {
@@ -1504,7 +1503,7 @@ App = (() => {
     const prog = API.Programs.get(state.routeParam);
     const style = API.Styles.get(styleId);
     if (prog && style) {
-      const targetLDP = DB.computeTargetLDP(style, prog);
+      const targetLDP = API.computeTargetLDP(style, prog);
       const tldpCell = row.querySelector('td[data-col="tldp"]');
       if (tldpCell) tldpCell.textContent = targetLDP ? '$' + parseFloat(targetLDP).toFixed(2) : '—';
     }
@@ -1527,7 +1526,7 @@ App = (() => {
         if (!sub || !sub.fob) return;
         const tcObj = API.TradingCompanies.get(tcId);
         const effectiveTerms = tcObj?.paymentTerms || sub.paymentTerms || 'FOB';
-        const r = DB.calcLDP(parseFloat(sub.fob), style, coo, style.market || 'USA', 'NY', effectiveTerms, sub.factoryCost);
+        const r = API.calcLDP(parseFloat(sub.fob), style, coo, style.market || 'USA', 'NY', effectiveTerms, sub.factoryCost);
         if (!r) return;
         cell.textContent = pct(r.dutyRate);
         const dutyAmtCell  = row.querySelector(`td[data-col="${colKey}_duty_amt"]`);
@@ -1561,7 +1560,7 @@ App = (() => {
     // Use TC-level payment terms, not submission-level
     const tc = API.TradingCompanies.get(tcId);
     const effectiveTerms = tc?.paymentTerms || sub.paymentTerms || 'FOB';
-    const r = DB.calcLDP(parseFloat(sub.fob), style, coo, style.market || 'USA', 'NY', effectiveTerms, sub.factoryCost);
+    const r = API.calcLDP(parseFloat(sub.fob), style, coo, style.market || 'USA', 'NY', effectiveTerms, sub.factoryCost);
     if (!r) return;
 
     const fmt = v => (v != null && !isNaN(v)) ? '$' + parseFloat(v).toFixed(2) : '—';
@@ -1581,7 +1580,7 @@ App = (() => {
     // Also update Target LDP cell to reflect any qty change
     const tldpCell = row.querySelector('td[data-col="tldp"]');
     if (tldpCell && prog) {
-      const targetLDP = DB.computeTargetLDP(style, prog);
+      const targetLDP = API.computeTargetLDP(style, prog);
       tldpCell.textContent = targetLDP ? fmt(targetLDP) : '—';
     }
   }
@@ -1610,7 +1609,7 @@ App = (() => {
         const style = API.Styles.get(styleId);
         const sub = API.Submissions.all().find(s => s.tcId === tcId && s.styleId === styleId && s.coo === coo);
         if (!sub || !sub.fob) return;
-        const r = DB.calcLDP(parseFloat(sub.fob), style, coo, style.market || 'USA', 'NY', terms, sub.factoryCost);
+        const r = API.calcLDP(parseFloat(sub.fob), style, coo, style.market || 'USA', 'NY', terms, sub.factoryCost);
         if (!r) return;
 
         const dutyPctCell = row.querySelector(`td[data-col="${k}_duty_pct"]`);
@@ -1750,7 +1749,7 @@ App = (() => {
     const prog = API.Programs.get(state.routeParam);
     const style = API.Styles.get(styleId);
     if (!prog || !style) return;
-    const targetLDP = DB.computeTargetLDP(style, prog);
+    const targetLDP = API.computeTargetLDP(style, prog);
     const tldpCell = row.querySelector('td[data-col="tldp"]');
     if (tldpCell) tldpCell.textContent = targetLDP ? '$' + parseFloat(targetLDP).toFixed(2) : '—';
     const fmtD = v => (v != null && !isNaN(v)) ? '$' + parseFloat(v).toFixed(2) : '—';
@@ -1766,7 +1765,7 @@ App = (() => {
       if (!sub || !sub.fob) return;
       const tcObj = API.TradingCompanies.get(tcId);
       const effectiveTerms = tcObj?.paymentTerms || sub.paymentTerms || 'FOB';
-      const r = DB.calcLDP(parseFloat(sub.fob), style, coo, style.market || 'USA', 'NY', effectiveTerms, sub.factoryCost);
+      const r = API.calcLDP(parseFloat(sub.fob), style, coo, style.market || 'USA', 'NY', effectiveTerms, sub.factoryCost);
       if (!r) return;
       cell.textContent = pctD(r.dutyRate);
       const dutyAmtCell = row.querySelector(`td[data-col="${colKey}_duty_amt"]`);
@@ -1805,19 +1804,19 @@ App = (() => {
   }
 
   // ── Pending Changes (Admin approve/reject) ─────────────────
-  function approvePendingChange(id) {
-    DB.PendingChanges.approve(id, state.user.id);
+  async function approvePendingChange(id) {
+    await API.PendingChanges.approve(id);
     navigate('pending-changes');
   }
 
-  function rejectPendingChange(id) {
-    DB.PendingChanges.reject(id, state.user.id);
+  async function rejectPendingChange(id) {
+    await API.PendingChanges.reject(id);
     navigate('pending-changes');
   }
 
   // ── Propose Setting (PC submits a proposal) ───────────────
-  function proposeSetting(type, action, data, currentData) {
-    DB.PendingChanges.propose({
+  async function proposeSetting(type, action, data, currentData) {
+    await API.PendingChanges.propose({
       type, action, data, currentData: currentData || null,
       proposedBy: state.user.id,
       proposedByName: state.user.name,
@@ -1826,8 +1825,8 @@ App = (() => {
 
   // ── Staff Modal (Admin: create/edit PC accounts) ──────────
   function openStaffModal(userId) {
-    const u    = userId ? DB.PCUsers.allStaff().find(s => s.id === userId) : null;
-    const depts = DB.Departments.all();
+    const u    = userId ? API.PCUsers.allStaff().find(s => s.id === userId) : null;
+    const depts = API.cache.departments;
     const deptOpts = depts.map(d => `<option value="${d.id}" ${u?.departmentId === d.id ? 'selected' : ''}>${d.name}</option>`).join('');
     showModal(`
       <div class="modal-header"><h2>${u ? 'Edit' : 'Add'} Staff Member</h2>
@@ -1850,7 +1849,7 @@ App = (() => {
       </div>`);
   }
 
-  function saveStaff(userId) {
+  async function saveStaff(userId) {
     const name   = (document.getElementById('staff-name')?.value  || '').trim();
     const email  = (document.getElementById('staff-email')?.value || '').trim();
     const pwd    = (document.getElementById('staff-pwd')?.value   || '').trim();
@@ -1859,18 +1858,18 @@ App = (() => {
     if (userId) {
       const upd = { name, email, departmentId: deptId };
       if (pwd) upd.password = pwd;
-      DB.PCUsers.update(userId, upd);
+      await API.PCUsers.update(userId, upd);
     } else {
       if (!pwd) return alert('Password is required for new accounts.');
-      DB.PCUsers.create({ name, email, password: pwd, departmentId: deptId });
+      await API.PCUsers.create({ name, email, password: pwd, role: 'pc', departmentId: deptId });
     }
     closeModal();
     navigate('staff');
   }
 
-  function deleteStaff(userId) {
+  async function deleteStaff(userId) {
     if (!confirm('Delete this staff account?')) return;
-    DB.PCUsers.delete(userId);
+    await API.PCUsers.delete(userId);
     navigate('staff');
   }
 
@@ -1907,7 +1906,7 @@ App = (() => {
   }
 
   function openProposeIPModal(ipId) {
-    const ip = ipId ? DB.InternalPrograms.get(ipId) : null;
+    const ip = ipId ? API.InternalPrograms.get(ipId) : null;
     const BRANDS  = ['Reebok','Champion','And1','Gaiam','Head'];
     const TIERS   = ['Mass','Mid Tier','Off Price','Clubs','Specialty'];
     const GENDERS = ['Mens','Ladies','Boys','Girls','Infant/Toddler'];
@@ -1959,14 +1958,14 @@ App = (() => {
     const data = ipId
       ? { id: ipId, name, brand, tier, gender, targetMargin }
       : { name, brand, tier, gender, targetMargin };
-    proposeSetting('internal-program', ipId ? 'update' : 'create', data, ipId ? DB.InternalPrograms.get(ipId) : null);
+    proposeSetting('internal-program', ipId ? 'update' : 'create', data, ipId ? API.InternalPrograms.get(ipId) : null);
     closeModal();
     alert('✅ Proposal submitted for Admin review.');
     navigate('internal');
   }
 
   function openProposeCOOModal(cooId) {
-    const r = cooId ? DB.CooRates.get(cooId) : null;
+    const r = cooId ? API.CooRates.get(cooId) : null;
     showModal(`
       <div class="modal-header"><h2>${r ? 'Propose Edit: ' + r.code : 'Propose New COO Rate'}</h2>
         <button class="btn btn-ghost btn-icon" onclick="App.closeModal()">✕</button></div>
@@ -1993,7 +1992,7 @@ App = (() => {
     if (!code || !country) return alert('Code and country are required.');
     const data = { code, country, addlDuty, usaMult, canadaMult };
     if (cooId) data.id = cooId;
-    proposeSetting('coo', cooId ? 'update' : 'create', data, cooId ? DB.CooRates.get(cooId) : null);
+    proposeSetting('coo', cooId ? 'update' : 'create', data, cooId ? API.CooRates.get(cooId) : null);
     closeModal();
     alert('✅ Proposal submitted for Admin review.');
     navigate('coo');
@@ -2012,7 +2011,7 @@ App = (() => {
     const old = document.getElementById('flag-context-menu');
     if (old) old.remove();
 
-    const existing = DB.CellFlags.get(subId, field);
+    const existing = API.CellFlags.get(subId, field);
     const label = field === 'fob' ? 'FOB' : 'Factory Cost';
 
     const menu = document.createElement('div');
@@ -2038,7 +2037,7 @@ App = (() => {
   }
 
   function openFlagNoteModal(subId, field, color) {
-    const existing = DB.CellFlags.get(subId, field);
+    const existing = API.CellFlags.get(subId, field);
     const label = field === 'fob' ? 'FOB' : 'Factory Cost';
     const colorLabel = color.charAt(0).toUpperCase() + color.slice(1);
     showModal(`
@@ -2056,25 +2055,25 @@ App = (() => {
       </div>`);
   }
 
-  function saveCellFlag(subId, field, color) {
+  async function saveCellFlag(subId, field, color) {
     const note = (document.getElementById('flag-note')?.value || '').trim();
     const user = state.user;
-    DB.CellFlags.set(subId, field, color, note, user.id, user.name || user.email);
+    await API.CellFlags.set(subId, field, color, note, user.id, user.name || user.email);
     // Log flag event into revision timeline
-    DB.Revisions.log({ subId, field, type: 'flag', flagColor: color, flagNote: note,
+    await API.Revisions.log({ subId, field, type: 'flag', flagColor: color, flagNote: note,
       submittedBy: user.id, submittedByName: user.name || user.email });
     closeModal();
     renderRoute();
   }
 
-  function clearCellFlag(subId, field) {
+  async function clearCellFlag(subId, field) {
     const old = document.getElementById('flag-context-menu');
     if (old) old.remove();
     const user = state.user;
     // Log flag-clear event
-    DB.Revisions.log({ subId, field, type: 'flag-clear',
+    await API.Revisions.log({ subId, field, type: 'flag-clear',
       submittedBy: user?.id, submittedByName: user?.name || user?.email });
-    DB.CellFlags.clear(subId, field);
+    await API.CellFlags.clear(subId, field);
     renderRoute();
   }
 
@@ -2097,7 +2096,7 @@ App = (() => {
       const tc   = pl ? API.TradingCompanies.get(pl.tcId) : null;
       const placedSub = pl ? subs.find(sub => sub.tcId === pl.tcId && sub.coo === pl.coo) : null;
       const fob  = parseFloat(pl?.confirmedFob || placedSub?.fob || 0);
-      const r    = fob > 0 ? DB.calcLDP(fob, s, pl.coo, s.market || 'USA', 'NY',
+      const r    = fob > 0 ? API.calcLDP(fob, s, pl.coo, s.market || 'USA', 'NY',
                     tc?.paymentTerms || placedSub?.paymentTerms || 'FOB', placedSub?.factoryCost) : null;
       return {
         season: prog ? `${prog.season || ''} ${prog.year || ''}`.trim() : '?',
@@ -2155,8 +2154,8 @@ App = (() => {
     const label = field === 'fob' ? 'FOB Cost' : 'Factory Cost';
     const sub = API.Submissions.get(subId);
     // Use byFieldAll — includes flag events alongside price revisions
-    const entries = DB.Revisions.byFieldAll(subId, field);
-    const flag = DB.CellFlags.get(subId, field);
+    const entries = API.Revisions.byFieldAll(subId, field);
+    const flag = API.CellFlags.get(subId, field);
 
     // Mark as reviewed: store timestamp of latest entry seen
     const latestTs = entries.length ? entries[entries.length - 1].submittedAt : 0;
@@ -2379,8 +2378,8 @@ App = (() => {
   function _buildStyleLinkModal(programId, linkId, preIds) {
     const prog    = API.Programs.get(programId);
     const styles  = API.Styles.byProgram(programId).filter(s => s.status !== 'cancelled');
-    const lnk     = linkId ? DB.StyleLinks.get(linkId) : null;
-    const linked  = new Set(DB.StyleLinks.linkedStyleIds(programId));
+    const lnk     = linkId ? API.StyleLinks.get(linkId) : null;
+    const linked  = new Set(API.StyleLinks.linkedStyleIds(programId));
     // When editing, the group's own style IDs are not "taken" by another group
     if (lnk) (lnk.styleIds || []).forEach(id => linked.delete(id));
     const preChecked = new Set(preIds || (lnk ? lnk.styleIds : []));
@@ -2454,15 +2453,15 @@ App = (() => {
       — ${guests.length} guest${guests.length>1?'s':''} will nest under its fabric group`;
   }
 
-  function saveStyleLink(programId, linkId) {
+  async function saveStyleLink(programId, linkId) {
     const checked = [...document.querySelectorAll('.sl-modal-chk:checked')].map(el => el.dataset.sid);
     if (checked.length < 2) { alert('Select at least 2 styles to link.'); return; }
     const note          = (document.getElementById('sl-note')?.value || '').trim();
     const preferredTcId = document.getElementById('sl-tc')?.value || null;
     const user          = state.user;
     const data = { programId, styleIds: checked, note, preferredTcId, createdBy: user?.id, createdByName: user?.name || user?.email };
-    if (linkId) DB.StyleLinks.update(linkId, data);
-    else        DB.StyleLinks.create(data);
+    if (linkId) await API.StyleLinks.update(linkId, data);
+    else        await API.StyleLinks.create(data);
     closeModal();
     navigate('styles', programId);
   }
@@ -2472,16 +2471,16 @@ App = (() => {
     setTimeout(() => App._onSlModalChk(), 50);
   }
 
-  function deleteStyleLink(linkId, programId) {
-    const lnk = DB.StyleLinks.get(linkId);
+  async function deleteStyleLink(linkId, programId) {
+    const lnk = API.StyleLinks.get(linkId);
     if (!lnk) return;
     if (!confirm(`Remove this link group (${(lnk.styleIds||[]).length} styles)?`)) return;
-    DB.StyleLinks.delete(linkId);
+    await API.StyleLinks.delete(linkId);
     navigate('styles', programId);
   }
 
   function openStyleLinkDetail(linkId, programId) {
-    const lnk = DB.StyleLinks.get(linkId);
+    const lnk = API.StyleLinks.get(linkId);
     if (!lnk) return;
     const styles = API.Styles.all();
     const members = (lnk.styleIds||[]).map(id => styles.find(s => s.id === id)).filter(Boolean);
@@ -2675,8 +2674,8 @@ App.filterByPerms = function(items) {
 const TIERS_LIST  = ['Mass','Mid Tier','Off Price','Clubs','Specialty'];
 
 App.openDepartmentModal = function(deptId) {
-  const d = deptId ? DB.Departments.get(deptId) : null;
-  const allBrands = [...new Set(DB.BrandTierMargins.all().map(b => b.brand))].sort();
+  const d = deptId ? API.Departments.get(deptId) : null;
+  const allBrands = [...new Set(API.cache.brandTierMargins.map(b => b.brand))].sort();
   const brandChecks = allBrands.map(b => `
     <label style="display:flex;align-items:center;gap:6px;padding:4px 10px;border:1px solid var(--border);border-radius:20px;cursor:pointer;font-size:0.82rem;white-space:nowrap">
       <input type="checkbox" class="dept-brand-chk" value="${b}" ${(d?.brandFilter||[]).includes(b) ? 'checked' : ''}> ${b}
@@ -2739,7 +2738,7 @@ App.openDepartmentModal = function(deptId) {
   `, 'modal-lg');
 };
 
-App.saveDepartment = function(deptId) {
+App.saveDepartment = async function(deptId) {
   const name = (document.getElementById('dept-name')?.value || '').trim();
   if (!name) return alert('Department name is required.');
   const data = {
@@ -2751,18 +2750,18 @@ App.saveDepartment = function(deptId) {
     brandFilter: [...document.querySelectorAll('.dept-brand-chk:checked')].map(c => c.value),
     tierFilter:  [...document.querySelectorAll('.dept-tier-chk:checked')].map(c => c.value),
   };
-  if (deptId) DB.Departments.update(deptId, data);
-  else        DB.Departments.create(data);
+  if (deptId) await API.Departments.update(deptId, data);
+  else        await API.Departments.create(data);
   App.closeModal();
   App.navigate('departments');
 };
 
-App.deleteDepartment = function(deptId) {
-  const d = DB.Departments.get(deptId);
+App.deleteDepartment = async function(deptId) {
+  const d = API.Departments.get(deptId);
   if (!d) return;
-  const count = DB.Departments.memberCount(deptId);
+  const count = API.Departments.memberCount(deptId);
   if (!confirm(`Delete "${d.name}"?${count ? ` ${count} user(s) will lose their department assignment.` : ''}`)) return;
-  DB.Departments.delete(deptId);
+  await API.Departments.delete(deptId);
   App.navigate('departments');
 };
 
@@ -2923,14 +2922,14 @@ App.bulkLinkStyles = function(programId) {
   App.clearStyleSelection();
 };
 
-App.bulkUnlinkStyles = function() {
+App.bulkUnlinkStyles = async function() {
   if (!App._sel.size) return;
   const count = App._sel.size;
   if (!confirm(`Remove link groups from ${count} style${count > 1 ? 's' : ''}?`)) return;
-  App._sel.forEach(styleId => {
-    const lnk = DB.StyleLinks ? DB.StyleLinks.byStyle(styleId) : null;
-    if (lnk) DB.StyleLinks.delete(lnk.id);
-  });
+  for (const styleId of App._sel) {
+    const lnk = API.StyleLinks.byStyle(styleId);
+    if (lnk) await API.StyleLinks.delete(lnk.id);
+  }
   App.clearStyleSelection();
   App.navigate(App._stateRef?.route, App._selProgramId);
 };
@@ -3203,7 +3202,7 @@ App._computeRecap = function(programId) {
   const styles = API.Styles.byProgram(programId).filter(s => s.status !== 'cancelled');
   const allTCs = API.Assignments.byProgram(programId).map(a => API.TradingCompanies.get(a.tcId)).filter(Boolean);
   const custIds= API.CustomerAssignments.byProgram(programId);
-  const allCusts = custIds.map(id => DB.Customers.get(id)).filter(Boolean);
+  const allCusts = custIds.map(id => API.Customers.get(id)).filter(Boolean);
 
   // Build per-style data: resolve FOB + TC from Placement, then fall back to best submission
   const styleData = styles.map(s => {
@@ -3548,8 +3547,8 @@ App.toggleTheme = function() {
 
 App._getState = () => App._stateRef;
 
-App.deleteStaff = function(id) {
-  if (confirm('Delete this staff account?')) { DB.PCUsers.delete(id); App.navigate('staff'); }
+App.deleteStaff = async function(id) {
+  if (confirm('Delete this staff account?')) { await API.PCUsers.delete(id); App.navigate('staff'); }
 };
 
 // Filter the admin/PC dashboard by a specific internal program team
@@ -3572,7 +3571,7 @@ App.openNewHandoffModal = function(preSrId) {
   const years   = ['2026','2027','2028','2029','2030'];
   const genders = ['Mens','Ladies','Boys','Girls','Infant/Toddler'];
   const tiers   = ['Mass','Mid Tier','Off Price','Clubs','Specialty'];
-  const brands  = (() => { const b = [...new Set(DB.BrandTierMargins.all().map(m => m.brand).filter(Boolean))].sort(); return b.length ? b : ['Reebok','Champion','And1','Gaiam','Head']; })();
+  const brands  = (() => { const b = [...new Set(API.cache.brandTierMargins.map(m => m.brand).filter(Boolean))].sort(); return b.length ? b : ['Reebok','Champion','And1','Gaiam','Head']; })();
   // Open costing requests that don't yet have a design handoff linked to them
   const allHandoffs = API.DesignHandoffs.all();
   const openSRs = API.SalesRequests.all().filter(r =>
@@ -4659,7 +4658,7 @@ App.openEditHandoffModal = function(handoffId) {
   const years   = ['2026','2027','2028','2029','2030'];
   const genders = ['Mens','Ladies','Boys','Girls','Infant/Toddler'];
   const tiers   = ['Mass','Mid Tier','Off Price','Clubs','Specialty'];
-  const brands  = (() => { const b = [...new Set(DB.BrandTierMargins.all().map(m => m.brand).filter(Boolean))].sort(); return b.length ? b : ['Reebok','Champion','And1','Gaiam','Head']; })();
+  const brands  = (() => { const b = [...new Set(API.cache.brandTierMargins.map(m => m.brand).filter(Boolean))].sort(); return b.length ? b : ['Reebok','Champion','And1','Gaiam','Head']; })();
 
   const selOpts = (arr, cur) => arr.map(v => `<option${v === cur ? ' selected' : ''}>${v}</option>`).join('');
 
@@ -4839,7 +4838,7 @@ App.openNewSalesRequestModal = function() {
   const years    = ['2026','2027','2028','2029','2030'];
   const tiers    = ['Mass','Mid Tier','Off Price','Clubs','Specialty'];
   const genders  = ['Mens','Ladies','Boys','Girls','Infant/Toddler'];
-  const brands   = (() => { const b = [...new Set(DB.BrandTierMargins.all().map(m => m.brand).filter(Boolean))].sort(); return b.length ? b : ['Reebok','Champion','And1','Gaiam','Head']; })();
+  const brands   = (() => { const b = [...new Set(API.cache.brandTierMargins.map(m => m.brand).filter(Boolean))].sort(); return b.length ? b : ['Reebok','Champion','And1','Gaiam','Head']; })();
   const handoffs = API.DesignHandoffs.all();
   App._srParsedRows = null;
   App.showModal(`
@@ -5069,7 +5068,7 @@ App.openSalesRequestDetail = function(requestId) {
 App.convertSalesRequest = function(requestId) {
   const r = API.SalesRequests.get(requestId);
   if (!r) return;
-  const ips = DB.InternalPrograms.all();
+  const ips = API.cache.internalPrograms;
   const seasons = ['N/A','Q1','Q2','Q3','Q4'], years = ['2026','2027','2028','2029','2030'];
   App.showModal(`
   <div class="modal-header"><h2>Convert Sales Request → Program</h2><button class="btn btn-ghost btn-icon" onclick="App.closeModal()">✕</button></div>
@@ -5102,7 +5101,7 @@ App.convertSalesRequest = function(requestId) {
 App.saveConvertSalesRequest = async function(e, requestId) {
   e.preventDefault();
   const ipId    = document.getElementById('csr-ip')?.value;
-  const ip      = DB.InternalPrograms.get(ipId);
+  const ip      = API.InternalPrograms.get(ipId);
   if (!ip || !ipId) return;
   const season   = document.getElementById('csr-season')?.value;
   const year     = document.getElementById('csr-year')?.value;
@@ -5475,8 +5474,8 @@ App.deleteSalesRequest = async function(id) {
 App.proposeProgramFromRequest = function(requestId) {
   const r = API.SalesRequests.get(requestId);
   if (!r) return;
-  const margin = DB.BrandTierMargins.lookup(r.brand, r.retailer) ||
-    DB.InternalPrograms.all().find(ip => ip.brand === r.brand && ip.tier === r.retailer)?.targetMargin || 0;
+  const margin = API.BrandTierMargins.lookup(r.brand, r.retailer) ||
+    API.cache.internalPrograms.find(ip => ip.brand === r.brand && ip.tier === r.retailer)?.targetMargin || 0;
   App.showModal(`
   <div class="modal-header">
     <h2>✅ Create Costing Program</h2>
@@ -5504,14 +5503,14 @@ App.saveProposeProgram = async function(e, requestId) {
   if (!r) return;
 
   // Auto-resolve the best matching Internal Program from the SR's brand + tier + gender
-  const allIPs = DB.InternalPrograms.all();
+  const allIPs = API.cache.internalPrograms;
   const matchingIP = allIPs.find(ip => ip.brand === r.brand && ip.tier === r.retailer && ip.gender === r.gender)
     || allIPs.find(ip => ip.brand === r.brand && ip.tier === r.retailer)
     || allIPs.find(ip => ip.brand === r.brand)
     || null;
 
   const ipId         = matchingIP?.id || null;
-  const targetMargin = DB.BrandTierMargins.lookup(r.brand, r.retailer) || matchingIP?.targetMargin || 0;
+  const targetMargin = API.BrandTierMargins.lookup(r.brand, r.retailer) || matchingIP?.targetMargin || 0;
   const name         = [r.brand, r.retailer, r.gender].filter(Boolean).join(' · ')
                      || [r.season, r.year, r.retailer].filter(Boolean).join(' ')
                      || 'Sales Request';
@@ -5554,7 +5553,7 @@ App.acknowledgeProgram = function(programId) {
   const seasons = ['N/A','Q1','Q2','Q3','Q4'];
   const years   = ['2025','2026','2027','2028','2029','2030'];
   const genders = ['Mens','Ladies','Boys','Girls','Infant/Toddler'];
-  const brands  = (() => { const b = [...new Set(DB.BrandTierMargins.all().map(m => m.brand).filter(Boolean))].sort(); return b.length ? b : ['Reebok','Champion','And1','Gaiam','Head']; })();
+  const brands  = (() => { const b = [...new Set(API.cache.brandTierMargins.map(m => m.brand).filter(Boolean))].sort(); return b.length ? b : ['Reebok','Champion','And1','Gaiam','Head']; })();
   const tiers   = ['Mass','Mid Tier','Off Price','Clubs','Specialty'];
 
   App.showModal(`
@@ -5759,10 +5758,10 @@ App.openFobHistory = function(styleId) {
   const rows = sorted.map(sub => {
     const tc  = API.TradingCompanies.get(sub.tcId);
     const dt  = sub.createdAt ? new Date(sub.createdAt).toLocaleString('en-US', { month:'short', day:'numeric', year:'numeric', hour:'numeric', minute:'2-digit' }) : '\u2014';
-    const r   = sub.fob ? DB.calcLDP(parseFloat(sub.fob), s, sub.coo, s.market||'USA', 'NY', sub.paymentTerms, sub.factoryCost) : null;
+    const r   = sub.fob ? API.calcLDP(parseFloat(sub.fob), s, sub.coo, s.market||'USA', 'NY', sub.paymentTerms, sub.factoryCost) : null;
     const ldp = r ? '$' + r.ldp.toFixed(2) : '\u2014';
     const fob = sub.fob ? '$' + parseFloat(sub.fob).toFixed(2) : '\u2014';
-    const onTarget = r && prog && r.ldp <= (DB.computeTargetLDP(s, prog) || Infinity);
+    const onTarget = r && prog && r.ldp <= (API.computeTargetLDP(s, prog) || Infinity);
     const trigger = sub.recostRequestId ? `<span class="tag" style="font-size:0.68rem;color:#f59e0b">\ud83d\udd04 Re-cost</span>` : '';
     return `<tr>
       <td class="font-bold text-sm">${tc?.code || sub.tcId}</td>
@@ -5861,7 +5860,7 @@ App._editProgHeader = function(programId, field, chipEl) {
   if (!valEl) return;
 
   const brands = (() => {
-    const b = [...new Set(DB.BrandTierMargins.all().map(m => m.brand).filter(Boolean))].sort();
+    const b = [...new Set(API.cache.brandTierMargins.map(m => m.brand).filter(Boolean))].sort();
     return b.length ? b : ['Reebok','Champion','And1','Gaiam','Head'];
   })();
 
