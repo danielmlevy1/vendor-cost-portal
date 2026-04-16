@@ -2801,11 +2801,11 @@ App.openRecostRequestModal = function(styleId, programId) {
     </div>`);
 };
 
-App.saveRecostRequest = function(styleId, programId) {
+App.saveRecostRequest = async function(styleId, programId) {
   const note     = (document.getElementById('rcr-note')?.value || '').trim();
   const category = document.getElementById('rcr-cat')?.value || 'Other';
   const user     = App._stateRef?.user || {};
-  DB.RecostRequests.create({
+  await API.RecostRequests.create({
     programId, styleId, note, category,
     requestedBy: user.id, requestedByName: user.name || user.email,
   });
@@ -2816,20 +2816,20 @@ App.saveRecostRequest = function(styleId, programId) {
 // Production: release a style for re-costing
 
 // Sales: approve re-cost request → advances to Production
-App.salesApproveRecost = function(reqId, programId) {
-  const req = DB.RecostRequests.get(reqId);
+App.salesApproveRecost = async function(reqId, programId) {
+  const req = API.RecostRequests.get(reqId);
   if (!req) return;
   if (!confirm('Approve this re-cost request? It will be forwarded to Production for release to TCs.')) return;
   const user = App._stateRef?.user || App._getState()?.user || {};
-  DB.RecostRequests.salesApprove(reqId, user.id, user.name || user.email);
+  await API.RecostRequests.salesApprove(reqId, user.id, user.name || user.email);
   App.navigate(App._stateRef?.route || 'cost-summary', programId || req.programId);
 };
 
 // Sales: reject re-cost request — returns to Design
-App.salesRejectRecost = function(reqId, programId) {
+App.salesRejectRecost = async function(reqId, programId) {
   const note = prompt('Reason for rejecting (returned to Design):') || '';
   if (note === null) return; // user cancelled prompt
-  DB.RecostRequests.reject(reqId, note, 'sales');
+  await API.RecostRequests.reject(reqId, note, 'sales');
   App.navigate(App._stateRef?.route || 'cost-summary', programId);
 };
 
@@ -2848,10 +2848,10 @@ App.releaseRecosting = async function(reqId, programId) {
 };
 
 // Production/Sales: reject a re-cost request
-App.rejectRecostRequest = function(reqId, programId, stage) {
+App.rejectRecostRequest = async function(reqId, programId, stage) {
   const note = prompt('Reason for rejecting (optional):') || '';
   if (note === null) return; // cancelled
-  DB.RecostRequests.reject(reqId, note, stage || 'production');
+  await API.RecostRequests.reject(reqId, note, stage || 'production');
   App.navigate(App._stateRef?.route || 'cost-summary', programId);
 };
 
@@ -2984,16 +2984,16 @@ App.bulkRequestRecost = function(programId) {
     </div>`);
 };
 
-App._saveBulkRecost = function(programId) {
+App._saveBulkRecost = async function(programId) {
   const note     = (document.getElementById('rcr-note')?.value || '').trim();
   const category = document.getElementById('rcr-cat')?.value || 'Other';
   const user     = App._stateRef?.user || {};
-  App._sel.forEach(styleId => {
-    DB.RecostRequests.create({
+  for (const styleId of App._sel) {
+    await API.RecostRequests.create({
       programId, styleId, note, category,
       requestedBy: user.id, requestedByName: user.name || user.email,
     });
-  });
+  }
   App.closeModal();
   App.clearStyleSelection();
   App.navigate(App._stateRef?.route, programId);
@@ -3116,14 +3116,14 @@ App.showCostHistory = function(styleId, styleName) {
 
 // Cost Summary: renders pending re-cost banner — role-aware (Sales sees pending_sales, PC sees pending_production)
 App._renderRecostBanner = function(programId) {
-  if (!DB.RecostRequests) return '';
+  if (!API.RecostRequests) return '';
   const user    = App._getState()?.user || App._stateRef?.user || {};
   const role    = user.role || '';
   const dept    = (user.department || '').toLowerCase();
   const isSales = dept.includes('sales');
   const isPC    = role === 'admin' || role === 'pc';
 
-  const all     = DB.RecostRequests.byProgram(programId);
+  const all     = API.RecostRequests.byProgram(programId);
   const forSales = all.filter(r => r.status === 'pending_sales' || r.status === 'pending');
   const forProd  = all.filter(r => r.status === 'pending_production');
 
@@ -3574,8 +3574,8 @@ App.openNewHandoffModal = function(preSrId) {
   const tiers   = ['Mass','Mid Tier','Off Price','Clubs','Specialty'];
   const brands  = (() => { const b = [...new Set(DB.BrandTierMargins.all().map(m => m.brand).filter(Boolean))].sort(); return b.length ? b : ['Reebok','Champion','And1','Gaiam','Head']; })();
   // Open costing requests that don't yet have a design handoff linked to them
-  const allHandoffs = DB.DesignHandoffs.all();
-  const openSRs = DB.SalesRequests.all().filter(r =>
+  const allHandoffs = API.DesignHandoffs.all();
+  const openSRs = API.SalesRequests.all().filter(r =>
     !r.linkedProgramId &&
     !allHandoffs.find(h => h.sourceSalesRequestId === r.id)
   );
@@ -3677,7 +3677,7 @@ App.openNewHandoffModal = function(preSrId) {
 App.seedHandoffFromSR = function() {
   const srId = document.getElementById('dh-sr-seed')?.value;
   if (!srId) return;
-  const r = DB.SalesRequests.get(srId);
+  const r = API.SalesRequests.get(srId);
   if (!r) return;
   const setVal = (id, val) => { const el = document.getElementById(id); if (el && val) el.value = val; };
   setVal('dh-season', r.season);
@@ -4019,7 +4019,7 @@ App.openBuildRequestFromHandoff = function(handoffId) {
 // ── Vendor allocation directly from a Design Handoff ──────────────
 // Production can pre-assign TCs before the Sales Request stage.
 App.openAssignVendorsToHandoff = function(handoffId) {
-  const h   = DB.DesignHandoffs.get(handoffId);
+  const h   = API.DesignHandoffs.get(handoffId);
   if (!h) return;
   const tcs      = API.cache.tradingCompanies;
   const assigned = h.assignedTCIds || [];
@@ -4067,19 +4067,19 @@ App.openAssignVendorsToHandoff = function(handoffId) {
   </div>`);
 };
 
-App.saveHandoffVendors = function(handoffId) {
+App.saveHandoffVendors = async function(handoffId) {
   const tcIds     = [...document.querySelectorAll('#htc-chips div[data-tcid].selected')].map(el => el.dataset.tcid);
   const firstCRD  = document.getElementById('hv-first-crd')?.value  || null;
   const startDate = document.getElementById('hv-start-date')?.value || null;
   const endDate   = document.getElementById('hv-end-date')?.value   || null;
-  DB.DesignHandoffs.update(handoffId, { assignedTCIds: tcIds, firstCRD, startDate, endDate, vendorsAssignedAt: new Date().toISOString() });
+  await API.DesignHandoffs.update(handoffId, { assignedTCIds: tcIds, firstCRD, startDate, endDate, vendorsAssignedAt: new Date().toISOString() });
   App.closeModal();
   App.navigate('programs');
 };
 
 // ── Vendor allocation directly from a Sales Request ───────────────────
 App.openAssignVendorsToRequest = function(requestId) {
-  const r   = DB.SalesRequests.get(requestId);
+  const r   = API.SalesRequests.get(requestId);
   if (!r) return;
   const tcs      = API.cache.tradingCompanies;
   const assigned = r.assignedTCIds || [];
@@ -4127,12 +4127,12 @@ App.openAssignVendorsToRequest = function(requestId) {
   </div>`);
 };
 
-App.saveRequestVendors = function(requestId) {
+App.saveRequestVendors = async function(requestId) {
   const tcIds     = [...document.querySelectorAll('#rtc-chips div[data-tcid].selected')].map(el => el.dataset.tcid);
   const firstCRD  = document.getElementById('rv-first-crd')?.value  || null;
   const startDate = document.getElementById('rv-start-date')?.value || null;
   const endDate   = document.getElementById('rv-end-date')?.value   || null;
-  DB.SalesRequests.update(requestId, { assignedTCIds: tcIds, firstCRD, startDate, endDate, vendorsAssignedAt: new Date().toISOString() });
+  await API.SalesRequests.update(requestId, { assignedTCIds: tcIds, firstCRD, startDate, endDate, vendorsAssignedAt: new Date().toISOString() });
   App.closeModal();
   App.navigate('programs');
 };
@@ -4184,8 +4184,8 @@ App._brfUpdateCount = function() {
   if (el) el.textContent = checked;
 };
 
-App.saveBuildRequestFromHandoff = function(handoffId) {
-  const h       = DB.DesignHandoffs.get(handoffId);
+App.saveBuildRequestFromHandoff = async function(handoffId) {
+  const h       = API.DesignHandoffs.get(handoffId);
   const user    = App._getState()?.user || {};
   const season  = document.getElementById('brf-season')?.value   || h?.season || '';
   const year    = document.getElementById('brf-year')?.value     || h?.year   || '';
@@ -4209,7 +4209,7 @@ App.saveBuildRequestFromHandoff = function(handoffId) {
 
   if (!styles.length) { alert('Select at least one style to include.'); return; }
 
-  DB.SalesRequests.create({ season, year, retailer,
+  await API.SalesRequests.create({ season, year, retailer,
     brand:   h?.brand  || '',
     gender:  h?.gender || '',
     styles, cancelledStyles: cancelled,
@@ -4333,8 +4333,8 @@ App._normStyle = function(n) { return (n || '').toUpperCase().replace(/[\s\-_\.]
 
 // ── Reconcile a Sales Request against a Design Handoff ────────────────────────
 App.openReconcileModal = function(requestId, handoffId) {
-  const req = DB.SalesRequests.get(requestId);
-  const h   = DB.DesignHandoffs.get(handoffId);
+  const req = API.SalesRequests.get(requestId);
+  const h   = API.DesignHandoffs.get(handoffId);
   if (!req || !h) return;
 
   const norm = App._normStyle;
@@ -4477,9 +4477,9 @@ App.openReconcileModal = function(requestId, handoffId) {
 };
 
 // ── Apply the reconciliation — merge checked styles into the Sales Request ─────
-App.applyReconciliation = function(requestId, handoffId) {
-  const req  = DB.SalesRequests.get(requestId);
-  const h    = DB.DesignHandoffs.get(handoffId);
+App.applyReconciliation = async function(requestId, handoffId) {
+  const req  = API.SalesRequests.get(requestId);
+  const h    = API.DesignHandoffs.get(handoffId);
   if (!req || !h) return;
 
   const data = App._reconData;
@@ -4518,14 +4518,14 @@ App.applyReconciliation = function(requestId, handoffId) {
   });
 
   // Update the Sales Request with the merged style list + link to handoff
-  DB.SalesRequests.update(requestId, {
+  await API.SalesRequests.update(requestId, {
     styles:          mergedStyles,
     sourceHandoffId: handoffId,
     reconciledAt:    new Date().toISOString(),
   });
 
   // Mark the handoff as linked
-  DB.DesignHandoffs.update(handoffId, { linkedRequestId: requestId });
+  await API.DesignHandoffs.update(handoffId, { linkedRequestId: requestId });
 
   App.closeModal();
 
@@ -4602,7 +4602,7 @@ App.downloadHandoffTemplate = function() {
 
 
 
-App.saveNewHandoff = function(e) {
+App.saveNewHandoff = async function(e) {
   e.preventDefault();
   const user   = App._getState()?.user || {};
   const season = document.getElementById('dh-season')?.value || '';
@@ -4637,7 +4637,7 @@ App.saveNewHandoff = function(e) {
     content:    f.content,
   }));
 
-  DB.DesignHandoffs.create({ season, year, brand, gender, tier, supplierRequestNumber, stylesList, fabricsList, trimsList, trimsUploaded: trimsList.length > 0,
+  await API.DesignHandoffs.create({ season, year, brand, gender, tier, supplierRequestNumber, stylesList, fabricsList, trimsList, trimsUploaded: trimsList.length > 0,
     submittedByName: user?.name || user?.email || '',
     submittedById:   user?.id  || '',
     sourceSalesRequestId: sourceSalesRequestId || undefined,
@@ -4652,7 +4652,7 @@ App.saveNewHandoff = function(e) {
 
 // ── Edit existing Design Handoff header ─────────────────────────────────────
 App.openEditHandoffModal = function(handoffId) {
-  const h = DB.DesignHandoffs.get(handoffId);
+  const h = API.DesignHandoffs.get(handoffId);
   if (!h) return;
 
   const seasons = ['N/A','Q1','Q2','Q3','Q4'];
@@ -4716,7 +4716,7 @@ App.openEditHandoffModal = function(handoffId) {
   </form>`);
 };
 
-App.saveEditHandoff = function(e, handoffId) {
+App.saveEditHandoff = async function(e, handoffId) {
   e.preventDefault();
   const season = document.getElementById('eh-season')?.value || '';
   const year   = document.getElementById('eh-year')?.value   || '';
@@ -4729,13 +4729,13 @@ App.saveEditHandoff = function(e, handoffId) {
   if (!gender) { alert('Please select a Gender.'); return; }
   if (!tier)   { alert('Please select a Tier of Distribution.'); return; }
 
-  DB.DesignHandoffs.update(handoffId, { season, year, brand, gender, tier, supplierRequestNumber });
+  await API.DesignHandoffs.update(handoffId, { season, year, brand, gender, tier, supplierRequestNumber });
   App.closeModal();
   App.navigate('design-handoff');
 };
 
 App.openHandoffDetail = function(handoffId) {
-  const h = DB.DesignHandoffs.get(handoffId);
+  const h = API.DesignHandoffs.get(handoffId);
   if (!h) return;
   const fmtDate = iso => iso ? new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : null;
   const fmtShort = iso => iso ? new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
@@ -4788,14 +4788,14 @@ App.openHandoffDetail = function(handoffId) {
 
 // B1: "Submit for Costing" — creates an Open Sales Request for Sales to fill in
 App.openConvertHandoffModal = function(handoffId) {
-  const h = DB.DesignHandoffs.get(handoffId);
+  const h = API.DesignHandoffs.get(handoffId);
   if (!h) return;
   if (!confirm(`Submit "${[h.season,h.year,h.brand,h.tier,h.gender].filter(Boolean).join(' · ')}" for costing? This will create an open Sales Request for Sales to add quantities and pricing.`)) return;
   App.submitHandoffForCosting(handoffId);
 };
 
-App.submitHandoffForCosting = function(handoffId) {
-  const h    = DB.DesignHandoffs.get(handoffId);
+App.submitHandoffForCosting = async function(handoffId) {
+  const h    = API.DesignHandoffs.get(handoffId);
   if (!h) return;
   const user = App._getState()?.user || App._stateRef?.user || {};
   // Build pre-populated Sales Request from handoff data
@@ -4806,7 +4806,7 @@ App.submitHandoffForCosting = function(handoffId) {
     projQty:      0,   // Sales fills in
     projSell:     0,   // Sales fills in
   }));
-  DB.SalesRequests.create({
+  await API.SalesRequests.create({
     season:          h.season  || '',
     year:            h.year    || '',
     brand:           h.brand   || '',
@@ -4819,7 +4819,7 @@ App.submitHandoffForCosting = function(handoffId) {
     status:          'submitted',
     note:            'Auto-created from Design Handoff',
   });
-  DB.DesignHandoffs.update(handoffId, { submittedForCosting: true });
+  await API.DesignHandoffs.update(handoffId, { submittedForCosting: true });
   App.navigate('design-handoff');
 };
 
@@ -4829,8 +4829,8 @@ App.saveConvertHandoff = function(e, handoffId) {
   App.submitHandoffForCosting(handoffId);
 };
 
-App.deleteHandoff = function(id) {
-  if (confirm('Delete this design handoff?')) { DB.DesignHandoffs.delete(id); App.navigate('design-handoff'); }
+App.deleteHandoff = async function(id) {
+  if (confirm('Delete this design handoff?')) { await API.DesignHandoffs.delete(id); App.navigate('design-handoff'); }
 };
 
 // ─ Sales Requests ────────────────────────────────────────────────
@@ -4840,7 +4840,7 @@ App.openNewSalesRequestModal = function() {
   const tiers    = ['Mass','Mid Tier','Off Price','Clubs','Specialty'];
   const genders  = ['Mens','Ladies','Boys','Girls','Infant/Toddler'];
   const brands   = (() => { const b = [...new Set(DB.BrandTierMargins.all().map(m => m.brand).filter(Boolean))].sort(); return b.length ? b : ['Reebok','Champion','And1','Gaiam','Head']; })();
-  const handoffs = DB.DesignHandoffs.all();
+  const handoffs = API.DesignHandoffs.all();
   App._srParsedRows = null;
   App.showModal(`
   <div class="modal-header"><h2>📝 New Sales Costing Request</h2><button class="btn btn-ghost btn-icon" onclick="App.closeModal()">✕</button></div>
@@ -4927,7 +4927,7 @@ App.seedSalesFromHandoff = function() {
   const ta  = document.getElementById('sr-styles-csv');
   if (!ta) return;
   if (!hId) { ta.value = ''; return; }
-  const h = DB.DesignHandoffs.get(hId);
+  const h = API.DesignHandoffs.get(hId);
   // Auto-fill retailer checkboxes from handoff tier
   if (h?.tier) {
     document.querySelectorAll('.sr-retailer-chk').forEach(chk => {
@@ -4938,7 +4938,7 @@ App.seedSalesFromHandoff = function() {
   ta.value = ['Style #,Style Name,Proj Qty,Proj Sell,Fabrication', ...h.stylesList.map(s => `${s.styleNumber},${s.styleName||''},,, ${s.fabrication||''}`)].join('\n');
 };
 
-App.saveSalesRequest = function(e) {
+App.saveSalesRequest = async function(e) {
   e.preventDefault();
   const user       = App._getState()?.user || {};
   const season     = document.getElementById('sr-season')?.value    || '';
@@ -4968,7 +4968,7 @@ App.saveSalesRequest = function(e) {
         fabrication: r['fabrication']||Object.values(r)[4]||'' };
     }).filter(s => s.styleNumber);
   }
-  DB.SalesRequests.create({ season, year, brand, retailer, gender, styles, sourceHandoffId: handoffId||null,
+  await API.SalesRequests.create({ season, year, brand, retailer, gender, styles, sourceHandoffId: handoffId||null,
     inWhseDate, costDueDate,
     salesSubmittedAt: new Date().toISOString(),
     submittedByName: user?.name||user?.email||'', submittedById: user?.id||'' });
@@ -4977,7 +4977,7 @@ App.saveSalesRequest = function(e) {
 };
 
 App.openSalesRequestDetail = function(requestId) {
-  const r = DB.SalesRequests.get(requestId);
+  const r = API.SalesRequests.get(requestId);
   if (!r) return;
   const d   = new Date(r.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   const fmtDate  = iso => iso ? new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : null;
@@ -5067,7 +5067,7 @@ App.openSalesRequestDetail = function(requestId) {
 };
 
 App.convertSalesRequest = function(requestId) {
-  const r = DB.SalesRequests.get(requestId);
+  const r = API.SalesRequests.get(requestId);
   if (!r) return;
   const ips = DB.InternalPrograms.all();
   const seasons = ['N/A','Q1','Q2','Q3','Q4'], years = ['2026','2027','2028','2029','2030'];
@@ -5099,7 +5099,7 @@ App.convertSalesRequest = function(requestId) {
   </form>`, 'modal-lg');
 };
 
-App.saveConvertSalesRequest = function(e, requestId) {
+App.saveConvertSalesRequest = async function(e, requestId) {
   e.preventDefault();
   const ipId    = document.getElementById('csr-ip')?.value;
   const ip      = DB.InternalPrograms.get(ipId);
@@ -5108,8 +5108,8 @@ App.saveConvertSalesRequest = function(e, requestId) {
   const year     = document.getElementById('csr-year')?.value;
   const retailer = document.getElementById('csr-retailer')?.value || '';
   const market   = document.getElementById('csr-market')?.value   || 'USA';
-  DB.SalesRequests.convertToProgram(requestId, { internalProgramId: ipId, name: ip.name, targetMargin: ip.targetMargin||0, season, year, retailer, market, status: 'Costing' });
-  const updated = DB.SalesRequests.get(requestId);
+  await API.SalesRequests.convertToProgram(requestId, { internalProgramId: ipId, name: ip.name, targetMargin: ip.targetMargin||0, season, year, retailer, market, status: 'Costing' });
+  const updated = API.SalesRequests.get(requestId);
   App.closeModal();
   if (updated?.linkedProgramId) App.navigate('styles', updated.linkedProgramId);
   else App.navigate('sales-request');
@@ -5129,7 +5129,7 @@ App._xlsxDownload = function(wb, filename) {
 // ── Build Sheet Download (from the build-from-handoff full-page form) ──────────
 // Reads current DOM input values so any edits already typed are preserved.
 App.downloadBuildSheet = function(handoffId) {
-  const h = DB.DesignHandoffs.get(handoffId);
+  const h = API.DesignHandoffs.get(handoffId);
   if (!h) return;
   const season   = document.getElementById('brf-season')?.value   || h.season   || '';
   const year     = document.getElementById('brf-year')?.value     || h.year     || '';
@@ -5228,7 +5228,7 @@ App.importBuildSheet = function(event) {
 
 // ── Download a saved Sales Request from DB ────────────────────────────────────
 App.downloadSalesRequest = function(requestId) {
-  const r = DB.SalesRequests.get(requestId);
+  const r = API.SalesRequests.get(requestId);
   if (!r) return;
 
   const header = [['Style Number','Style Name','Fabric','Proj Qty','Proj Sell','Notes','Status']];
@@ -5248,11 +5248,11 @@ App.downloadSalesRequest = function(requestId) {
 };
 
 // ── Import filled Excel back into a saved Sales Request ───────────────────────
-App.importSalesRequestXlsx = function(event, requestId) {
+App.importSalesRequestXlsx = async function(event, requestId) {
   const file = event.target.files[0];
   if (!file) return;
   const reader = new FileReader();
-  reader.onload = (e) => {
+  reader.onload = async (e) => {
     try {
       const data = new Uint8Array(e.target.result);
       const wb   = XLSX.read(data, { type: 'array' });
@@ -5270,7 +5270,7 @@ App.importSalesRequestXlsx = function(event, requestId) {
 
       if (snCol < 0) { alert('Could not find "Style Number" column.'); return; }
 
-      const r = DB.SalesRequests.get(requestId);
+      const r = API.SalesRequests.get(requestId);
       if (!r) return;
 
       // Build lookup from file
@@ -5300,7 +5300,7 @@ App.importSalesRequestXlsx = function(event, requestId) {
         allStyles.some(s => (s.styleNumber||'').toUpperCase() === sn)
       ).length;
 
-      DB.SalesRequests.update(requestId, { styles: newActive, cancelledStyles: newCancelled });
+      await API.SalesRequests.update(requestId, { styles: newActive, cancelledStyles: newCancelled });
       event.target.value = '';
       App.closeModal();
       App.navigate('sales-requests');
@@ -5442,8 +5442,8 @@ App.handleSRFile = function(event) {
 };
 
 // ── Save inline edits from the detail modal directly ─────────────────────────
-App.saveSalesRequestEdits = function(requestId) {
-  const r = DB.SalesRequests.get(requestId);
+App.saveSalesRequestEdits = async function(requestId) {
+  const r = API.SalesRequests.get(requestId);
   if (!r) return;
 
   const allStyles = [...(r.styles||[]), ...(r.cancelledStyles||[])];
@@ -5460,20 +5460,20 @@ App.saveSalesRequestEdits = function(requestId) {
     else newActive.push(updated);
   });
 
-  DB.SalesRequests.update(requestId, { styles: newActive, cancelledStyles: newCancelled });
+  await API.SalesRequests.update(requestId, { styles: newActive, cancelledStyles: newCancelled });
   App.closeModal();
   App.navigate('sales-requests');
 };
 
-App.deleteSalesRequest = function(id) {
-  if (confirm('Delete this sales request?')) { DB.SalesRequests.delete(id); App.navigate('sales-request'); }
+App.deleteSalesRequest = async function(id) {
+  if (confirm('Delete this sales request?')) { await API.SalesRequests.delete(id); App.navigate('sales-request'); }
 };
 
 // ── Propose a Draft Program from a Sales Request ──────────────────────────────
 // Sales fills in the program name and target margin, then it lands in
 // the PC's "Pending Proposals" queue. PC reviews → Acknowledge → Costing.
 App.proposeProgramFromRequest = function(requestId) {
-  const r = DB.SalesRequests.get(requestId);
+  const r = API.SalesRequests.get(requestId);
   if (!r) return;
   const margin = DB.BrandTierMargins.lookup(r.brand, r.retailer) ||
     DB.InternalPrograms.all().find(ip => ip.brand === r.brand && ip.tier === r.retailer)?.targetMargin || 0;
@@ -5500,7 +5500,7 @@ App.proposeProgramFromRequest = function(requestId) {
 
 App.saveProposeProgram = async function(e, requestId) {
   e.preventDefault();
-  const r = DB.SalesRequests.get(requestId);
+  const r = API.SalesRequests.get(requestId);
   if (!r) return;
 
   // Auto-resolve the best matching Internal Program from the SR's brand + tier + gender
@@ -5516,7 +5516,7 @@ App.saveProposeProgram = async function(e, requestId) {
                      || [r.season, r.year, r.retailer].filter(Boolean).join(' ')
                      || 'Sales Request';
 
-  DB.SalesRequests.convertToProgram(requestId, {
+  await API.SalesRequests.convertToProgram(requestId, {
     internalProgramId: ipId,
     name,
     targetMargin,
@@ -5531,11 +5531,11 @@ App.saveProposeProgram = async function(e, requestId) {
   });
 
   // Carry vendor pre-allocations: merge request's + any from source handoff
-  const updated = DB.SalesRequests.get(requestId);
+  const updated = API.SalesRequests.get(requestId);
   const progId  = updated?.linkedProgramId;
   if (progId) {
     const reqTCIds     = r.assignedTCIds || [];
-    const handoffTCIds = r.sourceHandoffId ? (DB.DesignHandoffs.get(r.sourceHandoffId)?.assignedTCIds || []) : [];
+    const handoffTCIds = r.sourceHandoffId ? (API.DesignHandoffs.get(r.sourceHandoffId)?.assignedTCIds || []) : [];
     const merged       = [...new Set([...reqTCIds, ...handoffTCIds])];
     if (merged.length) await API.Assignments.assign(progId, merged);
     App.closeModal();
@@ -5930,7 +5930,7 @@ App.openDesignChangeModal = function(styleId) {
   if (!style) return;
   const prog     = API.Programs.get(style.programId);
   const isLocked = prog && ['Costing','Placed'].includes(prog.status);
-  const existing = DB.DesignChanges.byStyle(styleId);
+  const existing = API.DesignChanges.byStyle(styleId);
 
   const lockBanner = isLocked ? `
     <div style="display:flex;align-items:center;gap:10px;padding:12px 16px;
@@ -5974,7 +5974,7 @@ App.openDesignChangeModal = function(styleId) {
     'modal-xl');
 };
 
-App.saveDesignChange = function(e, styleId, programId) {
+App.saveDesignChange = async function(e, styleId, programId) {
   e.preventDefault();
   const user     = App._getState()?.user || {};
   const style    = API.Styles.get(styleId);
@@ -5986,7 +5986,7 @@ App.saveDesignChange = function(e, styleId, programId) {
   const newVal   = document.getElementById('dc-new')?.value   || '';
 
   // Always log the design change
-  const changeEntry = DB.DesignChanges.log({
+  const changeEntry = await API.DesignChanges.log({
     styleId, programId: pid,
     styleNumber:   style?.styleNumber || styleId,
     description:   desc,
@@ -5999,7 +5999,7 @@ App.saveDesignChange = function(e, styleId, programId) {
 
   if (isLocked) {
     // Create a re-cost request requiring Sales → Production approval chain
-    const rcr = DB.RecostRequests.create({
+    const rcr = await API.RecostRequests.create({
       programId:   pid,
       styleId,
       styleIds:    [styleId],
@@ -6028,7 +6028,7 @@ App.openFabricRequestModal = function(tcId) {
   const tc      = API.TradingCompanies.get(tcId);
   const user    = App._getState()?.user || {};
   const allProgs= API.Assignments.all().filter(a => a.tcId === tcId).map(a => API.Programs.get(a.programId)).filter(Boolean);
-  const fabLib  = DB.FabricLibrary.all();
+  const fabLib  = API.FabricLibrary.all();
   App.showModal(`
   <div class="modal-header"><h2>🧵 Request Fabric Swatch</h2><button class="btn btn-ghost btn-icon" onclick="App.closeModal()">✕</button></div>
   <form onsubmit="App.saveFabricRequest(event,'${tcId}')">
@@ -6238,7 +6238,7 @@ App.saveTechDesignNote = function(styleId, value) {
 
 // ── Add Fabrics / Trims to existing handoff (piecemeal upload) ────────────────
 App.openAddTabModal = function(handoffId, tabType) {
-  const h   = DB.DesignHandoffs.get(handoffId);
+  const h   = API.DesignHandoffs.get(handoffId);
   if (!h) return;
   const label = tabType === 'fabrics' ? 'Fabrics' : 'Trims';
   const hdrs  = tabType === 'fabrics'
@@ -6308,13 +6308,13 @@ App._handleAddTabFile = function(e, handoffId, tabType) {
   r.readAsArrayBuffer(file);
 };
 
-App._saveAddTab = function(handoffId, tabType) {
+App._saveAddTab = async function(handoffId, tabType) {
   const rows = App._addTabParsed;
   if (!rows || !rows.length) { alert('No data to save.'); return; }
   if (tabType === 'fabrics') {
-    DB.DesignHandoffs.update(handoffId, { fabricsList: rows, fabricsUploaded: true, fabricsUploadedAt: new Date().toISOString() });
+    await API.DesignHandoffs.update(handoffId, { fabricsList: rows, fabricsUploaded: true, fabricsUploadedAt: new Date().toISOString() });
   } else {
-    DB.DesignHandoffs.update(handoffId, { trimsList: rows, trimsUploaded: true, trimsUploadedAt: new Date().toISOString() });
+    await API.DesignHandoffs.update(handoffId, { trimsList: rows, trimsUploaded: true, trimsUploadedAt: new Date().toISOString() });
   }
   App._addTabParsed = null;
   App.closeModal();
