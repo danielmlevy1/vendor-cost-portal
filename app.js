@@ -468,9 +468,9 @@ App = (() => {
         e.preventDefault(); th.classList.remove('drag-over');
         if (!dragKey || dragKey === th.dataset.colkey) return;
         // Re-order colGroups and re-render
-        const prog = DB.Programs.get(programId);
-        const styles = DB.Styles.byProgram(programId);
-        const asgns = DB.Assignments.byProgram(programId);
+        const prog = API.Programs.get(programId);
+        const styles = API.Styles.byProgram(programId);
+        const asgns = API.Assignments.byProgram(programId);
         const tcs = asgns.map(a => a.tc).filter(Boolean);
         let colGroups = tcs.flatMap(tc => tc.coos.map(coo => ({ tc, coo })));
         // Apply saved order if any
@@ -512,7 +512,7 @@ App = (() => {
 
   // ── Programs ───────────────────────────────────────────────
   function openProgramModal(id) {
-    const p = id ? DB.Programs.get(id) : null;
+    const p = id ? API.Programs.get(id) : null;
     const seasons = ['N/A', 'Q1', 'Q2', 'Q3', 'Q4'];
     const years = ['2026', '2027', '2028', '2029', '2030'];
     // Draw Brand options from distinct brands across InternalPrograms
@@ -596,7 +596,7 @@ App = (() => {
     const id = ipId || v('pm-ip'); if (!id) return;
   }
 
-  function saveProgramModal(e, id) {
+  async function saveProgramModal(e, id) {
     e.preventDefault();
     const brand    = v('pm-brand');
     const retailer = v('pm-retailer');
@@ -632,17 +632,17 @@ App = (() => {
       endDate: v('pm-end-date') || null,
       crdDate: v('pm-crd') || null,
     };
-    if (id) DB.Programs.update(id, data); else DB.Programs.create(data);
+    if (id) await API.Programs.update(id, data); else await API.Programs.create(data);
     closeModal(); navigate('programs');
   }
 
-  function updateProgramStatus(id, status) { DB.Programs.update(id, { status }); navigate('programs'); }
-  function deleteProgram(id) { if (confirm('Delete this program?')) { DB.Programs.delete(id); navigate('programs'); } }
+  async function updateProgramStatus(id, status) { await API.Programs.update(id, { status }); navigate('programs'); }
+  async function deleteProgram(id) { if (confirm('Delete this program?')) { await API.Programs.delete(id); navigate('programs'); } }
 
   // ── Styles ─────────────────────────────────────────────────
   function openStyleModal(programId, styleId) {
-    const s = styleId ? DB.Styles.get(styleId) : null;
-    const prog = DB.Programs.get(programId);
+    const s = styleId ? API.Styles.get(styleId) : null;
+    const prog = API.Programs.get(programId);
     const cooRates = DB.CooRates.all();
     showModal(`
     <div class="modal-header"><h2>${s ? 'Edit' : 'Add'} Style</h2><button class="btn btn-ghost btn-icon" onclick="App.closeModal()">✕</button></div>
@@ -676,7 +676,7 @@ App = (() => {
   }
 
   function previewTargetLDP() {
-    const sell = nv('s-sell'); const prog = DB.Programs.get(state.routeParam);
+    const sell = nv('s-sell'); const prog = API.Programs.get(state.routeParam);
     const el = $('s-ldp-preview'); if (!el) return;
     if (sell && prog?.targetMargin) {
       const ldp = (sell * prog.targetMargin).toFixed(2);
@@ -684,19 +684,19 @@ App = (() => {
     } else { el.style.display = 'none'; }
   }
 
-  function saveStyle(e, programId, styleId) {
+  async function saveStyle(e, programId, styleId) {
     e.preventDefault();
     const data = { programId, styleNumber: v('s-num'), styleName: v('s-name'), category: v('s-cat'), fabrication: v('s-fab'), projQty: nv('s-qty'), projSellPrice: nv('s-sell'), dutyRate: nv('s-duty'), specialPackaging: nv('s-spkg'), market: v('s-market') };
-    if (styleId) DB.Styles.update(styleId, data); else DB.Styles.create(data);
+    if (styleId) await API.Styles.update(styleId, data); else await API.Styles.create(data);
     closeModal(); navigate(state.route, state.routeParam);
   }
 
-  function deleteStyle(id) { if (confirm('Delete style?')) { DB.Styles.delete(id); navigate(state.route, state.routeParam); } }
+  async function deleteStyle(id) { if (confirm('Delete style?')) { await API.Styles.delete(id); navigate(state.route, state.routeParam); } }
 
   // ── Trading Company Assignment ─────────────────────────────
   function openAssignTCs(programId) {
-    const tcs = DB.TradingCompanies.all();
-    const assigned = DB.Assignments.byProgram(programId).map(a => a.tcId);
+    const tcs = API.cache.tradingCompanies;
+    const assigned = API.Assignments.byProgram(programId).map(a => a.tcId);
     showModal(`
     <div class="modal-header"><h2>🏭 Assign Trading Companies</h2><button class="btn btn-ghost btn-icon" onclick="App.closeModal()">✕</button></div>
     <p class="mb-3">Select which trading companies to share this program with. Each TC can quote from any of their COOs.</p>
@@ -730,15 +730,15 @@ App = (() => {
     </div>`);
   }
 
-  function saveAssignments(programId) {
+  async function saveAssignments(programId) {
     const tcIds = [...document.querySelectorAll('.assign-tc-chk:checked')].map(el => el.value);
-    DB.Assignments.assign(programId, tcIds);
+    await API.Assignments.assign(programId, tcIds);
     closeModal(); navigate(state.route, state.routeParam);
   }
 
   // ── Trading Company CRUD ────────────────────────────────────
   function openTCModal(id) {
-    const tc = id ? DB.TradingCompanies.get(id) : null;
+    const tc = id ? API.TradingCompanies.get(id) : null;
     const cooRates = DB.CooRates.all();
     const TERMS_LIST = ['FOB', 'CIF', 'First Sale', 'FCA', 'Duty Free', 'CPTPP'];
     showModal(`
@@ -770,15 +770,15 @@ App = (() => {
     </form>`, 'modal-lg');
   }
 
-  function saveTC(e, id) {
+  async function saveTC(e, id) {
     e.preventDefault();
     const coos = [...document.querySelectorAll('#tc-coo-chips input:checked')].map(cb => cb.value);
     const data = { code: v('tc-code'), name: v('tc-name'), email: v('tc-email'), coos, paymentTerms: v('tc-terms') || 'FOB', ...(v('tc-pwd') ? { password: v('tc-pwd') } : {}) };
-    if (id) DB.TradingCompanies.update(id, data); else DB.TradingCompanies.create(data);
+    if (id) await API.TradingCompanies.update(id, data); else await API.TradingCompanies.create(data);
     closeModal(); navigate('trading-companies');
   }
 
-  function deleteTC(id) { if (confirm('Delete trading company?')) { DB.TradingCompanies.delete(id); navigate('trading-companies'); } }
+  async function deleteTC(id) { if (confirm('Delete trading company?')) { await API.TradingCompanies.delete(id); navigate('trading-companies'); } }
 
   // ── Bulk Style Upload ──────────────────────────────────────
   function openUploadModal(programId) {
@@ -815,9 +815,9 @@ App = (() => {
     reader.readAsText(file);
   }
 
-  function confirmUpload(programId) {
+  async function confirmUpload(programId) {
     if (!_pendingRows?.length) return;
-    DB.Styles.bulkCreate(programId, _pendingRows); _pendingRows = null;
+    await API.Styles.bulkCreate(programId, _pendingRows); _pendingRows = null;
     closeModal(); navigate('styles', programId);
   }
 
@@ -940,8 +940,8 @@ App = (() => {
   function handleVendorFileUpload(e, tcId) { const file = e.target.files[0]; if (file) processVendorUpload(file, tcId); }
 
   function downloadVendorTemplate(tcId) {
-    const styles = DB.Assignments.stylesByTc(tcId);
-    const tc = DB.TradingCompanies.get(tcId);
+    const styles = API.Assignments.stylesByTc(tcId);
+    const tc = API.TradingCompanies.get(tcId);
     const hdrs = 'Style #,Style Name,COO,FOB,Factory Cost,TC Markup %,Payment Terms,MOQ,Lead Time (days),Comments';
     const rows = styles.map(s => `${s.styleNumber},${s.styleName},${(tc?.coos || [])[0] || ''},,,,,,,`);
     const blob = new Blob([hdrs + '\n' + rows.join('\n')], { type: 'text/csv' });
@@ -952,8 +952,8 @@ App = (() => {
   function processVendorUpload(file, tcId) {
     const reader = new FileReader();
     reader.onload = ev => {
-      const tc = DB.TradingCompanies.get(tcId);
-      const styles = DB.Assignments.stylesByTc(tcId);
+      const tc = API.TradingCompanies.get(tcId);
+      const styles = API.Assignments.stylesByTc(tcId);
       const csvRows = DB.parseCSV(ev.target.result);
       const el = $('vendor-upload-preview'); if (!el) return;
       if (!csvRows.length) { el.innerHTML = '<div class="alert alert-danger">No rows found.</div>'; return; }
@@ -1296,8 +1296,8 @@ App = (() => {
 
   // ── Buy Template Download ─────────────────────────────────
   function downloadBuyTemplate(programId) {
-    const prog    = DB.Programs.get(programId);
-    const styles  = DB.Styles.byProgram(programId).filter(s => s.status !== 'cancelled');
+    const prog    = API.Programs.get(programId);
+    const styles  = API.Styles.byProgram(programId).filter(s => s.status !== 'cancelled');
     const custIds = DB.CustomerAssignments.byProgram(programId);
     const custs   = custIds.map(id => DB.Customers.get(id)).filter(Boolean);
     if (!custs.length) { alert('Assign customers to this program before downloading the template.'); return; }
@@ -1358,7 +1358,7 @@ App = (() => {
   function processBuyUpload(file, programId) {
     const custIds = DB.CustomerAssignments.byProgram(programId);
     const custs   = custIds.map(id => DB.Customers.get(id)).filter(Boolean);
-    const styles  = DB.Styles.byProgram(programId);
+    const styles  = API.Styles.byProgram(programId);
 
     const reader = new FileReader();
     reader.onload = ev => {
@@ -1455,35 +1455,35 @@ App = (() => {
   function acceptSub(id) { DB.Submissions.accept(id); renderRoute(); }
 
   // ── Place/Unplace ──────────────────────────────────────────
-  function placeStyle(styleId, tcId, coo, fob) {
-    DB.Placements.place({ styleId, tcId, coo, confirmedFob: parseFloat(fob) });
-    DB.Styles.update(styleId, { status: 'placed' });
+  async function placeStyle(styleId, tcId, coo, fob) {
+    await API.Placements.place({ styleId, tcId, coo, confirmedFob: parseFloat(fob) });
+    await API.Styles.update(styleId, { status: 'placed' });
     renderRoute();
   }
-  function unplaceStyle(styleId) {
-    DB.Placements.unplace(styleId);
-    DB.Styles.update(styleId, { status: 'open' });
+  async function unplaceStyle(styleId) {
+    await API.Placements.unplace(styleId);
+    await API.Styles.update(styleId, { status: 'open' });
     renderRoute();
   }
 
   // ── Cancel / Restore Style ─────────────────────────────────
-  function cancelStyle(styleId, programId) {
-    DB.Styles.update(styleId, { status: 'cancelled' });
+  async function cancelStyle(styleId, programId) {
+    await API.Styles.update(styleId, { status: 'cancelled' });
     navigate('cost-summary', programId);
   }
 
-  function uncancelStyle(styleId, programId) {
-    DB.Styles.update(styleId, { status: 'open' });
+  async function uncancelStyle(styleId, programId) {
+    await API.Styles.update(styleId, { status: 'open' });
     navigate('cost-summary', programId);
   }
 
   // ── Remove TC from Cost Summary ────────────────────────────
-  function removeTCFromProgram(tcId, programId) {
+  async function removeTCFromProgram(tcId, programId) {
     if (!confirm('Remove this trading company from the program?')) return;
-    const remaining = DB.Assignments.byProgram(programId)
+    const remaining = API.Assignments.byProgram(programId)
       .map(a => a.tcId)
       .filter(id => id !== tcId);
-    DB.Assignments.assign(programId, remaining);
+    await API.Assignments.assign(programId, remaining);
     navigate('cost-summary', programId);
   }
 
@@ -1506,18 +1506,18 @@ App = (() => {
   }
 
   // ── Inline Style Field Save (non-formula cells) ────────────
-  function saveStyleInline(styleId, inputEl) {
+  async function saveStyleInline(styleId, inputEl) {
     const field = inputEl.dataset.field;
     const raw = inputEl.value.trim();
     const numericFields = ['projQty', 'projSellPrice', 'dutyRate', 'estFreight', 'specialPackaging'];
     let value = numericFields.includes(field) ? (raw === '' ? null : parseFloat(raw)) : raw;
     if (numericFields.includes(field) && isNaN(value)) value = null;
-    DB.Styles.update(styleId, { [field]: value });
+    await API.Styles.update(styleId, { [field]: value });
     // Update the Target LDP cell in this row — find it by data-col
     const row = inputEl.closest('tr');
     if (!row) return;
-    const prog = DB.Programs.get(state.routeParam);
-    const style = DB.Styles.get(styleId);
+    const prog = API.Programs.get(state.routeParam);
+    const style = API.Styles.get(styleId);
     if (prog && style) {
       const targetLDP = DB.computeTargetLDP(style, prog);
       const tldpCell = row.querySelector('td[data-col="tldp"]');
@@ -1540,7 +1540,7 @@ App = (() => {
         const coo  = colKey.substring(lastUnderscore + 1);
         const sub = allSubs.find(s => s.tcId === tcId && s.coo === coo);
         if (!sub || !sub.fob) return;
-        const tcObj = DB.TradingCompanies.get(tcId);
+        const tcObj = API.TradingCompanies.get(tcId);
         const effectiveTerms = tcObj?.paymentTerms || sub.paymentTerms || 'FOB';
         const r = DB.calcLDP(parseFloat(sub.fob), style, coo, style.market || 'USA', 'NY', effectiveTerms, sub.factoryCost);
         if (!r) return;
@@ -1572,12 +1572,12 @@ App = (() => {
     // Refresh calculated cells (Duty%, Duty/unit, Freight/unit, LDP/unit) in the same row
     const row = inputEl.closest('tr');
     if (!row) return;
-    const style = DB.Styles.get(styleId);
-    const prog = DB.Programs.get(state.routeParam);
+    const style = API.Styles.get(styleId);
+    const prog = API.Programs.get(state.routeParam);
     const sub = DB.Submissions.all().find(s => s.tcId === tcId && s.styleId === styleId && s.coo === coo);
     if (!sub || !sub.fob) return;
     // Use TC-level payment terms, not submission-level
-    const tc = DB.TradingCompanies.get(tcId);
+    const tc = API.TradingCompanies.get(tcId);
     const effectiveTerms = tc?.paymentTerms || sub.paymentTerms || 'FOB';
     const r = DB.calcLDP(parseFloat(sub.fob), style, coo, style.market || 'USA', 'NY', effectiveTerms, sub.factoryCost);
     if (!r) return;
@@ -1605,11 +1605,11 @@ App = (() => {
   }
 
   // ── Inline TC Terms Change (from TC column header dropdown) ─
-  function saveTCTermsInline(tcId, programId, selectEl) {
+  async function saveTCTermsInline(tcId, programId, selectEl) {
     const terms = selectEl.value;
     // Persist the TC-level payment terms
-    DB.TradingCompanies.update(tcId, { paymentTerms: terms });
-    const tc = DB.TradingCompanies.get(tcId);
+    await API.TradingCompanies.update(tcId, { paymentTerms: terms });
+    const tc = API.TradingCompanies.get(tcId);
 
     // Re-render all calculated cells for every COO this TC has in this table
     const fmt = v => (v != null && !isNaN(v)) ? '$' + parseFloat(v).toFixed(2) : '—';
@@ -1625,7 +1625,7 @@ App = (() => {
         const fobInput = row.querySelector(`input[data-tcid="${tcId}"][data-coo="${coo}"][data-field="fob"]`);
         if (!fobInput) return;
         const styleId = fobInput.dataset.sid;
-        const style = DB.Styles.get(styleId);
+        const style = API.Styles.get(styleId);
         const sub = DB.Submissions.all().find(s => s.tcId === tcId && s.styleId === styleId && s.coo === coo);
         if (!sub || !sub.fob) return;
         const r = DB.calcLDP(parseFloat(sub.fob), style, coo, style.market || 'USA', 'NY', terms, sub.factoryCost);
@@ -1657,7 +1657,7 @@ App = (() => {
 
   // Admin enters cost on behalf of TC for a specific COO
   function openAdminCostEntry(styleId, tcId, coo) {
-    const tc = DB.TradingCompanies.get(tcId);
+    const tc = API.TradingCompanies.get(tcId);
     showModal(VendorViews.quoteForm(styleId, tcId, coo), 'modal-lg');
     const h = document.querySelector('.modal h2');
     if (h) h.innerHTML = `✏ Enter Cost — <span style="color:var(--accent)">${tc?.code} (${coo})</span>`;
@@ -1700,8 +1700,8 @@ App = (() => {
   }
 
   function filterCrossProgram() {
-    const programs = DB.Programs.all().filter(p => p.status === 'Costing');
-    const allStyles = DB.Styles.all().filter(s => programs.some(p => p.id === s.programId));
+    const programs = API.cache.programs.filter(p => p.status === 'Costing');
+    const allStyles = API.Styles.all().filter(s => programs.some(p => p.id === s.programId));
     const search = $('cp-search')?.value || '', programFilter = $('cp-program')?.value || '', groupBy = $('cp-groupby')?.value || '', sortBy = $('cp-sort')?.value || '';
     const el = $('cross-program-table');
     if (el) el.innerHTML = AdminViews.crossProgramTable(allStyles, programs, search, programFilter, '', groupBy, sortBy);
@@ -1727,31 +1727,30 @@ App = (() => {
   }
 
   // Called onblur: save Qty, reformat with thousands separator
-  function fmtBlurQty(el, styleId) {
+  async function fmtBlurQty(el, styleId) {
     const raw = el.type === 'number' ? el.value.trim() : el.value.trim();
     el.type = 'text';
     const num = raw === '' ? null : parseFloat(raw);
     el.dataset.raw = num != null ? String(num) : '';
     el.value = num != null ? Number(num).toLocaleString() : '';
-    const fakeInput = { dataset: { field: 'projQty' }, value: raw, closest: el.closest.bind(el) };
-    DB.Styles.update(styleId, { projQty: num });
+    await API.Styles.update(styleId, { projQty: num });
     _refreshRowAfterStyleChange(styleId, el.closest('tr'));
   }
 
   // Called onblur: save currency field (Sell, EstFreight), reformat as $0.00
-  function fmtBlurCurrency(el, styleId, field) {
+  async function fmtBlurCurrency(el, styleId, field) {
     const raw = el.value.replace(/[^0-9.]/g, '').trim();
     el.type = 'text';
     const num = raw === '' ? null : parseFloat(raw);
     el.dataset.raw = num != null ? String(num) : '';
     el.value = num != null ? '$' + num.toFixed(2) : '';
-    DB.Styles.update(styleId, { [field]: num });
+    await API.Styles.update(styleId, { [field]: num });
     _refreshRowAfterStyleChange(styleId, el.closest('tr'));
   }
 
   // Called onblur: save duty rate, reformat as XX.X%
   // Accepts both decimal (0.282) and percent (28.2) input
-  function fmtBlurDuty(el, styleId) {
+  async function fmtBlurDuty(el, styleId) {
     const raw = el.value.replace(/[^0-9.]/g, '').trim();
     el.type = 'text';
     let num = raw === '' ? null : parseFloat(raw);
@@ -1759,15 +1758,15 @@ App = (() => {
     if (num != null && num > 1.0) num = num / 100;
     el.dataset.raw = num != null ? String(num) : '';
     el.value = num != null ? (num * 100).toFixed(1) + '%' : '';
-    DB.Styles.update(styleId, { dutyRate: num });
+    await API.Styles.update(styleId, { dutyRate: num });
     _refreshRowAfterStyleChange(styleId, el.closest('tr'));
   }
 
   // Shared: refresh Target LDP and duty/freight/ldp cells after a style field changes
   function _refreshRowAfterStyleChange(styleId, row) {
     if (!row) return;
-    const prog = DB.Programs.get(state.routeParam);
-    const style = DB.Styles.get(styleId);
+    const prog = API.Programs.get(state.routeParam);
+    const style = API.Styles.get(styleId);
     if (!prog || !style) return;
     const targetLDP = DB.computeTargetLDP(style, prog);
     const tldpCell = row.querySelector('td[data-col="tldp"]');
@@ -1783,7 +1782,7 @@ App = (() => {
       const coo  = colKey.substring(lastUnderscore + 1);
       const sub = allSubs.find(s => s.tcId === tcId && s.coo === coo);
       if (!sub || !sub.fob) return;
-      const tcObj = DB.TradingCompanies.get(tcId);
+      const tcObj = API.TradingCompanies.get(tcId);
       const effectiveTerms = tcObj?.paymentTerms || sub.paymentTerms || 'FOB';
       const r = DB.calcLDP(parseFloat(sub.fob), style, coo, style.market || 'USA', 'NY', effectiveTerms, sub.factoryCost);
       if (!r) return;
@@ -1801,9 +1800,9 @@ App = (() => {
   function refreshCostSummary(programId) {
     const sortBy  = document.getElementById('cs-sort-by')?.value  || '';
     const groupBy = document.getElementById('cs-group-by')?.value || '';
-    const prog   = DB.Programs.get(programId);
-    const styles = DB.Styles.byProgram(programId);
-    const asgns  = DB.Assignments.byProgram(programId);
+    const prog   = API.Programs.get(programId);
+    const styles = API.Styles.byProgram(programId);
+    const asgns  = API.Assignments.byProgram(programId);
     const tcs    = asgns.map(a => a.tc).filter(Boolean);
     // Apply saved TC column order
     let colGroups = tcs.flatMap(tc => tc.coos.map(coo => ({ tc, coo })));
@@ -1817,9 +1816,9 @@ App = (() => {
   }
 
   // ── Place All Styles (Admin + PC) ─────────────────────────
-  function placeAllStyles(programId) {
+  async function placeAllStyles(programId) {
     if (!confirm('Mark ALL active styles as placed and set program status to Placed?')) return;
-    DB.Programs.placeAll(programId);
+    await API.Programs.placeAll(programId);
     App.openMarginRecap(programId, true); // true = show "just placed" banner
   }
 
@@ -1895,7 +1894,7 @@ App = (() => {
 
   // ── Propose Modals (PC proposes TC / IP / COO changes) ───
   function openProposeTCModal(tcId) {
-    const tc = tcId ? DB.TradingCompanies.get(tcId) : null;
+    const tc = tcId ? API.TradingCompanies.get(tcId) : null;
     showModal(`
       <div class="modal-header"><h2>${tc ? 'Propose Edit: ' + tc.code : 'Propose New Trading Company'}</h2>
         <button class="btn btn-ghost btn-icon" onclick="App.closeModal()">✕</button></div>
@@ -1919,7 +1918,7 @@ App = (() => {
     const coos  = (document.getElementById('ptc-coos')?.value  || '').split(',').map(c => c.trim().toUpperCase()).filter(Boolean);
     if (!code || !name) return alert('Code and name are required.');
     const data = tcId ? { id: tcId, code, name, email, coos } : { code, name, email, coos };
-    proposeSetting('tc', tcId ? 'update' : 'create', data, tcId ? DB.TradingCompanies.get(tcId) : null);
+    proposeSetting('tc', tcId ? 'update' : 'create', data, tcId ? API.TradingCompanies.get(tcId) : null);
     closeModal();
     alert('✅ Proposal submitted for Admin review.');
     navigate('trading-companies');
@@ -2100,10 +2099,10 @@ App = (() => {
   // ── Revision History Modal ─────────────────────────────────
   // ── Repeat Style History Modal ────────────────────────────
   function openRepeatStyleHistory(styleNum) {
-    const allStyles  = DB.Styles.all();
+    const allStyles  = API.Styles.all();
     const allSubs    = DB.Submissions.all();
     const allPlacements = JSON.parse(localStorage.getItem('vcp_placements') || '[]');
-    const allPrograms   = DB.Programs.all();
+    const allPrograms   = API.cache.programs;
 
     // Collect all past styles (any program) matching styleNum
     const pastStyles = allStyles.filter(s => (s.styleNumber || '').trim() === styleNum.trim());
@@ -2113,7 +2112,7 @@ App = (() => {
       const prog = allPrograms.find(p => p.id === s.programId);
       const pl   = allPlacements.find(p => p.styleId === s.id);
       const subs = allSubs.filter(sub => sub.styleId === s.id);
-      const tc   = pl ? DB.TradingCompanies.get(pl.tcId) : null;
+      const tc   = pl ? API.TradingCompanies.get(pl.tcId) : null;
       const placedSub = pl ? subs.find(sub => sub.tcId === pl.tcId && sub.coo === pl.coo) : null;
       const fob  = parseFloat(pl?.confirmedFob || placedSub?.fob || 0);
       const r    = fob > 0 ? DB.calcLDP(fob, s, pl.coo, s.market || 'USA', 'NY',
@@ -2242,7 +2241,7 @@ App = (() => {
         }).join('')
       : '<tr><td colspan="5" class="text-muted text-center" style="padding:20px">No history yet.</td></tr>';
 
-    const tcName = DB.TradingCompanies.get(sub?.tcId)?.name || sub?.tcId || '?';
+    const tcName = API.TradingCompanies.get(sub?.tcId)?.name || sub?.tcId || '?';
     showModal(`
       <div class="modal-header">
         <h2>🕐 Quote History — ${label}</h2>
@@ -2340,7 +2339,7 @@ App = (() => {
       const existing = DB.Placements.get(styleId);
       if (existing?.tcId === tcId && existing?.coo === coo) DB.Placements.unplace(styleId);
     }
-    const styles = DB.Styles.byProgram ? DB.Programs.all().flatMap(p => DB.Styles.byProgram(p.id)) : [];
+    const styles = API.Styles.all();
     const styleObj = styles.find(s2 => s2.id === styleId);
     const prog = styleObj?.programId;
     if (prog) navigate('cost-summary', prog);
@@ -2396,14 +2395,14 @@ App = (() => {
   let _linkModeActive = false;
 
   function _buildStyleLinkModal(programId, linkId, preIds) {
-    const prog    = DB.Programs.get(programId);
-    const styles  = DB.Styles.byProgram(programId).filter(s => s.status !== 'cancelled');
+    const prog    = API.Programs.get(programId);
+    const styles  = API.Styles.byProgram(programId).filter(s => s.status !== 'cancelled');
     const lnk     = linkId ? DB.StyleLinks.get(linkId) : null;
     const linked  = new Set(DB.StyleLinks.linkedStyleIds(programId));
     // When editing, the group's own style IDs are not "taken" by another group
     if (lnk) (lnk.styleIds || []).forEach(id => linked.delete(id));
     const preChecked = new Set(preIds || (lnk ? lnk.styleIds : []));
-    const tcs = DB.Assignments.byProgram(programId).map(a => DB.TradingCompanies.get(a.tcId)).filter(Boolean);
+    const tcs = API.Assignments.byProgram(programId).map(a => API.TradingCompanies.get(a.tcId)).filter(Boolean);
 
     const items = styles.map(s => {
       const isLinkedElsewhere = !preChecked.has(s.id) && linked.has(s.id);
@@ -2463,7 +2462,7 @@ App = (() => {
     if (!preview) return;
     if (checked.length < 2) { preview.style.display = 'none'; return; }
     // Find the style with max projQty among checked
-    const styles = DB.Styles.all();
+    const styles = API.Styles.all();
     const members = checked.map(id => styles.find(s => s.id === id)).filter(Boolean);
     const anchor = members.reduce((best, s) => (parseFloat(s.projQty)||0) >= (parseFloat(best.projQty)||0) ? s : best, members[0]);
     const guests = members.filter(s => s.id !== anchor.id && (s.fabrication||'').trim() !== (anchor.fabrication||'').trim());
@@ -2502,9 +2501,9 @@ App = (() => {
   function openStyleLinkDetail(linkId, programId) {
     const lnk = DB.StyleLinks.get(linkId);
     if (!lnk) return;
-    const styles = DB.Styles.all();
+    const styles = API.Styles.all();
     const members = (lnk.styleIds||[]).map(id => styles.find(s => s.id === id)).filter(Boolean);
-    const prefTc  = lnk.preferredTcId ? DB.TradingCompanies.get(lnk.preferredTcId) : null;
+    const prefTc  = lnk.preferredTcId ? API.TradingCompanies.get(lnk.preferredTcId) : null;
     const color   = lnk.color || '#6366f1';
     showModal(`
       <div class="modal-header">
@@ -2790,7 +2789,7 @@ App.deleteDepartment = function(deptId) {
 // =============================================================
 
 App.openRecostRequestModal = function(styleId, programId) {
-  const s = DB.Styles.all().find(x => x.id === styleId);
+  const s = API.Styles.all().find(x => x.id === styleId);
   if (!s) return;
   App.showModal(`
     <div class="modal-header">
@@ -2852,21 +2851,17 @@ App.salesRejectRecost = function(reqId, programId) {
   App.navigate(App._stateRef?.route || 'cost-summary', programId);
 };
 
-App.releaseRecosting = function(reqId, programId) {
-  const req = DB.RecostRequests.get(reqId);
+App.releaseRecosting = async function(reqId, programId) {
+  const req = API.RecostRequests.get(reqId);
   if (!req) return;
   if (!['pending_production','pending'].includes(req.status)) {
     alert('This request must be approved by Sales before Production can release it.'); return;
   }
   if (!confirm('Release this re-cost request to Trading Companies? Existing quotes will be marked outdated.')) return;
   const user = App._stateRef?.user || {};
-  DB.RecostRequests.release(reqId, user.id, user.name || user.email);
-  // Bump program version
-  const prog = DB.Programs.get(req.programId);
-  if (prog) {
-    const newVer = (prog.version || 1) + 1;
-    DB.Programs.update(req.programId, { version: newVer });
-  }
+  await API.RecostRequests.release(reqId, user.id, user.name || user.email);
+  // Server bumps program version automatically during release
+
   App.navigate(App._stateRef?.route || 'cost-summary', programId || req.programId);
 };
 
@@ -2958,12 +2953,12 @@ App.bulkUnlinkStyles = function() {
   App.navigate(App._stateRef?.route, App._selProgramId);
 };
 
-App.bulkCancelStyles = function() {
+App.bulkCancelStyles = async function() {
   if (!App._sel.size) return;
   const count = App._sel.size;
   const pid   = App._selProgramId;
   if (!confirm(`Cancel ${count} style${count > 1 ? 's' : ''}? This cannot be undone easily.`)) return;
-  App._sel.forEach(styleId => DB.Styles.update(styleId, { status: 'cancelled' }));
+  for (const styleId of App._sel) await API.Styles.update(styleId, { status: 'cancelled' });
   App.clearStyleSelection();
   App.navigate(App._stateRef?.route, pid);
 };
@@ -2973,7 +2968,7 @@ App.bulkRequestRecost = function(programId) {
   const ids   = [...App._sel];
   const pid   = programId || App._selProgramId;
   const names = ids.map(id => {
-    const s = DB.Styles.all().find(x => x.id === id);
+    const s = API.Styles.all().find(x => x.id === id);
     return s ? `${s.styleNumber}${s.styleName ? ' — ' + s.styleName : ''}` : id;
   });
   App.showModal(`
@@ -3022,24 +3017,26 @@ App._saveBulkRecost = function(programId) {
   App.navigate(App._stateRef?.route, programId);
 };
 
-App.saveStyleDeptStatus = function(styleId, field, value, note, recostRequestId) {
-  const prev = DB.Styles.get(styleId)?.[field] || null;
-  DB.Styles.update(styleId, { [field]: value || null });
+App.saveStyleDeptStatus = async function(styleId, field, value, note, recostRequestId) {
+  const prev = API.Styles.get(styleId)?.[field] || null;
+  await API.Styles.update(styleId, { [field]: value || null });
 
-  // Append to history for techPackStatus changes
+  // Append to tech pack history via dedicated endpoint
   if (field === 'techPackStatus' && value !== prev) {
     const user = App._getState()?.user || {};
-    const style = DB.Styles.get(styleId) || {};
-    const history = style.techPackHistory || [];
-    history.push({
-      status: value || null,
-      previousStatus: prev,
-      changedBy: user.name || user.email || 'Unknown',
-      changedAt: new Date().toISOString(),
-      note: note || null,
-      recostRequestId: recostRequestId || null,
-    });
-    DB.Styles.update(styleId, { techPackHistory: history });
+    try {
+      await fetch(`/api/styles/${styleId}/tech-pack-history`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('vcp_token')}` },
+        body: JSON.stringify({
+          status: value || null,
+          previousStatus: prev,
+          changedBy: user.name || user.email || 'Unknown',
+          note: note || null,
+          recostRequestId: recostRequestId || null,
+        }),
+      });
+    } catch (_) { /* non-critical */ }
   }
 };
 
@@ -3151,7 +3148,7 @@ App._renderRecostBanner = function(programId) {
   const toShow = isSales ? forSales : isPC ? [...forSales, ...forProd] : forSales;
   if (!toShow.length) return '';
 
-  const allStyles = DB.Styles.byProgram(programId);
+  const allStyles = API.Styles.byProgram(programId);
   const stageLabel = r => ({
     pending_sales: '<span style="color:#f59e0b;font-weight:600">⏳ Awaiting Sales Approval</span>',
     pending:       '<span style="color:#f59e0b;font-weight:600">⏳ Awaiting Sales Approval</span>',
@@ -3220,9 +3217,9 @@ App._recap = {
 
 // ── Compute margin data for a program ─────────────────────────────────────────
 App._computeRecap = function(programId) {
-  const p      = DB.Programs.get(programId);
-  const styles = DB.Styles.byProgram(programId).filter(s => s.status !== 'cancelled');
-  const allTCs = DB.Assignments.byProgram(programId).map(a => DB.TradingCompanies.get(a.tcId)).filter(Boolean);
+  const p      = API.Programs.get(programId);
+  const styles = API.Styles.byProgram(programId).filter(s => s.status !== 'cancelled');
+  const allTCs = API.Assignments.byProgram(programId).map(a => API.TradingCompanies.get(a.tcId)).filter(Boolean);
   const custIds= DB.CustomerAssignments.byProgram(programId);
   const allCusts = custIds.map(id => DB.Customers.get(id)).filter(Boolean);
 
@@ -3467,7 +3464,7 @@ App._recapSetView = function(mode) {
 
 // ── Main open function ─────────────────────────────────────────────────────────
 App.openMarginRecap = function(programId, justPlaced) {
-  const p = DB.Programs.get(programId);
+  const p = API.Programs.get(programId);
   if (!p) return;
   const { allTCs, allCusts } = App._computeRecap(programId);
 
@@ -4042,7 +4039,7 @@ App.openBuildRequestFromHandoff = function(handoffId) {
 App.openAssignVendorsToHandoff = function(handoffId) {
   const h   = DB.DesignHandoffs.get(handoffId);
   if (!h) return;
-  const tcs      = DB.TradingCompanies.all();
+  const tcs      = API.cache.tradingCompanies;
   const assigned = h.assignedTCIds || [];
   const name     = [h.season, h.year, h.retailer].filter(Boolean).join(' ') || 'Design Handoff';
   App.showModal(`
@@ -4102,7 +4099,7 @@ App.saveHandoffVendors = function(handoffId) {
 App.openAssignVendorsToRequest = function(requestId) {
   const r   = DB.SalesRequests.get(requestId);
   if (!r) return;
-  const tcs      = DB.TradingCompanies.all();
+  const tcs      = API.cache.tradingCompanies;
   const assigned = r.assignedTCIds || [];
   const name     = [r.season, r.year, r.retailer].filter(Boolean).join(' ') || 'Sales Request';
   App.showModal(`
@@ -5519,7 +5516,7 @@ App.proposeProgramFromRequest = function(requestId) {
   </form>`, 'modal-lg');
 };
 
-App.saveProposeProgram = function(e, requestId) {
+App.saveProposeProgram = async function(e, requestId) {
   e.preventDefault();
   const r = DB.SalesRequests.get(requestId);
   if (!r) return;
@@ -5558,7 +5555,7 @@ App.saveProposeProgram = function(e, requestId) {
     const reqTCIds     = r.assignedTCIds || [];
     const handoffTCIds = r.sourceHandoffId ? (DB.DesignHandoffs.get(r.sourceHandoffId)?.assignedTCIds || []) : [];
     const merged       = [...new Set([...reqTCIds, ...handoffTCIds])];
-    if (merged.length) DB.Assignments.assign(progId, merged);
+    if (merged.length) await API.Assignments.assign(progId, merged);
     App.closeModal();
     App.navigate('cost-summary', progId);
   } else {
@@ -5569,9 +5566,9 @@ App.saveProposeProgram = function(e, requestId) {
 
 // ── PC acknowledges a Draft program → sets to Costing + assigns TCs ───────────
 App.acknowledgeProgram = function(programId) {
-  const p = DB.Programs.get(programId);
+  const p = API.Programs.get(programId);
   if (!p) return;
-  const tcList  = DB.TradingCompanies.all();
+  const tcList  = API.cache.tradingCompanies;
   const seasons = ['N/A','Q1','Q2','Q3','Q4'];
   const years   = ['2025','2026','2027','2028','2029','2030'];
   const genders = ['Mens','Ladies','Boys','Girls','Infant/Toddler'];
@@ -5628,7 +5625,7 @@ App.acknowledgeProgram = function(programId) {
       <label class="form-label">Assign Trading Companies</label>
       <div style="display:flex;flex-wrap:wrap;gap:8px;padding:10px;background:var(--bg-elevated);border-radius:var(--radius-sm);">
         ${tcList.map(tc => {
-          const assigned = DB.Assignments.byProgram(programId).some(a => a.tcId === tc.id);
+          const assigned = API.Assignments.byProgram(programId).some(a => a.tcId === tc.id);
           return `<label style="display:flex;align-items:center;gap:6px;cursor:pointer">
             <input type="checkbox" class="ack-tc-chk" value="${tc.id}" ${assigned ? 'checked' : ''}>
             <span>${tc.name} <span class="text-muted text-sm">(${tc.code})</span></span>
@@ -5651,7 +5648,7 @@ App.acknowledgeProgram = function(programId) {
 };
 
 
-App.saveAcknowledgeProgram = function(e, programId) {
+App.saveAcknowledgeProgram = async function(e, programId) {
   e.preventDefault();
   const brand    = (document.getElementById('ack-brand')?.value || '').trim();
   const retailer = (document.getElementById('ack-retailer')?.value || '').trim();
@@ -5664,8 +5661,8 @@ App.saveAcknowledgeProgram = function(e, programId) {
 
   // Auto-derive name from fields
   const autoName = [season, year, brand, retailer, gender].filter(Boolean).join(' · ');
-  DB.Programs.update(programId, {
-    name:         autoName || DB.Programs.get(programId)?.name || 'Program',
+  await API.Programs.update(programId, {
+    name:         autoName || API.Programs.get(programId)?.name || 'Program',
     brand, retailer, gender, season, year,
     targetMargin: margin,
     status:       'Costing',
@@ -5673,17 +5670,17 @@ App.saveAcknowledgeProgram = function(e, programId) {
   });
 
   // Assign TCs (replace all current assignments for this program)
-  DB.Assignments.assign(programId, tcIds);
+  await API.Assignments.assign(programId, tcIds);
 
   App.closeModal();
   App.navigate('programs');
 };
 
 // Allow Design or PC to manually toggle the "Pending Design Handoff" flag
-App.togglePendingHandoffFlag = function(programId) {
-  const p = DB.Programs.get(programId);
+App.togglePendingHandoffFlag = async function(programId) {
+  const p = API.Programs.get(programId);
   if (!p) return;
-  DB.Programs.update(programId, { pendingDesignHandoff: !p.pendingDesignHandoff });
+  await API.Programs.update(programId, { pendingDesignHandoff: !p.pendingDesignHandoff });
   App.navigate('programs');
 };
 
@@ -5697,7 +5694,7 @@ App.openNewSalesRequestFromHandoff = function(handoffId) {
 
 // ── Tech Pack Status History modal ────────────────────────────────────────────
 App.openTechPackHistory = function(styleId) {
-  const s = DB.Styles.get(styleId);
+  const s = API.Styles.get(styleId);
   if (!s) return;
   const history = (s.techPackHistory || []).slice().reverse();
   const labels = { not_submitted: '\u25a1 Not Submitted', submitted: '\ud83d\udce6 Submitted', changed: '\ud83d\udd04 Changed' };
@@ -5758,11 +5755,11 @@ App.openTechPackHistory = function(styleId) {
 
 // ── FOB / Quote History modal ──────────────────────────────────────────────────
 App.openFobHistory = function(styleId) {
-  const s = DB.Styles.get(styleId);
+  const s = API.Styles.get(styleId);
   if (!s) return;
   const subs  = DB.Submissions.byStyle(styleId);
-  const prog  = DB.Programs.get(s.programId);
-  const asgns = DB.Assignments.byProgram(s.programId || '');
+  const prog  = API.Programs.get(s.programId);
+  const asgns = API.Assignments.byProgram(s.programId || '');
 
   if (!subs.length) {
     App.showModal(`<div class="modal-header"><h2>\ud83d\udcca Quote History \u2014 ${s.styleNumber}</h2><button class="btn btn-ghost btn-icon" onclick="App.closeModal()">&#x2715;</button></div>
@@ -5778,7 +5775,7 @@ App.openFobHistory = function(styleId) {
   });
 
   const rows = sorted.map(sub => {
-    const tc  = DB.TradingCompanies.get(sub.tcId);
+    const tc  = API.TradingCompanies.get(sub.tcId);
     const dt  = sub.createdAt ? new Date(sub.createdAt).toLocaleString('en-US', { month:'short', day:'numeric', year:'numeric', hour:'numeric', minute:'2-digit' }) : '\u2014';
     const r   = sub.fob ? DB.calcLDP(parseFloat(sub.fob), s, sub.coo, s.market||'USA', 'NY', sub.paymentTerms, sub.factoryCost) : null;
     const ldp = r ? '$' + r.ldp.toFixed(2) : '\u2014';
@@ -5817,7 +5814,7 @@ App._inlineEdit = function(e, programId, field) {
   e.stopPropagation();
   const cell = e.currentTarget;
   if (cell.querySelector('input,select')) return; // already editing
-  const p = DB.Programs.get(programId);
+  const p = API.Programs.get(programId);
   if (!p) return;
 
   const OPTS = {
@@ -5827,7 +5824,7 @@ App._inlineEdit = function(e, programId, field) {
   };
 
   const restore = () => {
-    const fresh = DB.Programs.get(programId) || p;
+    const fresh = API.Programs.get(programId) || p;
     const v = fresh[field] || '';
     if (field === 'name') {
       cell.innerHTML = (v || 'Unnamed') + ' <span style="opacity:0.35;font-size:0.7rem">&#x270F;</span>';
@@ -5848,7 +5845,7 @@ App._inlineEdit = function(e, programId, field) {
       if ((p[field] || '') === o) opt.selected = true;
       sel.appendChild(opt);
     });
-    sel.onchange = () => { DB.Programs.update(programId, { [field]: sel.value }); restore(); };
+    sel.onchange = () => { API.Programs.update(programId, { [field]: sel.value }).then(restore); };
     sel.onblur   = restore;
     cell.innerHTML = '';
     cell.appendChild(sel);
@@ -5860,8 +5857,7 @@ App._inlineEdit = function(e, programId, field) {
     inp.value = p[field] || '';
     const save = () => {
       const v = inp.value.trim() || p[field];
-      DB.Programs.update(programId, { [field]: v });
-      restore();
+      API.Programs.update(programId, { [field]: v }).then(restore);
     };
     inp.onblur   = save;
     inp.onkeydown = ev => {
@@ -5877,7 +5873,7 @@ App._inlineEdit = function(e, programId, field) {
 // ── Inline chip edit in Cost Summary header strip ─────────────────────────────
 App._editProgHeader = function(programId, field, chipEl) {
   if (chipEl.querySelector('input,select')) return;
-  const p = DB.Programs.get(programId);
+  const p = API.Programs.get(programId);
   if (!p) return;
   const valEl = chipEl.querySelector('.chip-val');
   if (!valEl) return;
@@ -5898,7 +5894,7 @@ App._editProgHeader = function(programId, field, chipEl) {
   };
 
   const save = (val) => {
-    DB.Programs.update(programId, { [field]: val });
+    API.Programs.update(programId, { [field]: val });
     valEl.textContent = val || '—';
     if (field === 'name') {
       const h1 = document.querySelector('h1.page-title');
@@ -5919,7 +5915,7 @@ App._editProgHeader = function(programId, field, chipEl) {
     sel.onchange = () => { save(sel.value); sel.blur(); };
     sel.onblur   = () => {
       setTimeout(() => {
-        if (chipEl.contains(sel)) { valEl.textContent = DB.Programs.get(programId)?.[field] || '\u2014'; sel.remove(); }
+        if (chipEl.contains(sel)) { valEl.textContent = API.Programs.get(programId)?.[field] || '\u2014'; sel.remove(); }
       }, 100);
     };
     valEl.innerHTML = '';
@@ -5948,9 +5944,9 @@ App._editProgHeader = function(programId, field, chipEl) {
 
 // ─ Design Changes ────────────────────────────────────────────────
 App.openDesignChangeModal = function(styleId) {
-  const style   = DB.Styles.get(styleId);
+  const style   = API.Styles.get(styleId);
   if (!style) return;
-  const prog     = DB.Programs.get(style.programId);
+  const prog     = API.Programs.get(style.programId);
   const isLocked = prog && ['Costing','Placed'].includes(prog.status);
   const existing = DB.DesignChanges.byStyle(styleId);
 
@@ -5999,7 +5995,7 @@ App.openDesignChangeModal = function(styleId) {
 App.saveDesignChange = function(e, styleId, programId) {
   e.preventDefault();
   const user     = App._getState()?.user || {};
-  const style    = DB.Styles.get(styleId);
+  const style    = API.Styles.get(styleId);
   const pid      = programId || style?.programId;
   const isLocked = document.getElementById('dc-locked')?.value === '1';
   const desc     = document.getElementById('dc-desc')?.value  || '';
@@ -6047,9 +6043,9 @@ App.saveDesignChange = function(e, styleId, programId) {
 
 // ─ Fabric Standard Requests ──────────────────────────────────────
 App.openFabricRequestModal = function(tcId) {
-  const tc      = DB.TradingCompanies.get(tcId);
+  const tc      = API.TradingCompanies.get(tcId);
   const user    = App._getState()?.user || {};
-  const allProgs= DB.Assignments.all().filter(a => a.tcId === tcId).map(a => DB.Programs.get(a.programId)).filter(Boolean);
+  const allProgs= API.Assignments.all().filter(a => a.tcId === tcId).map(a => API.Programs.get(a.programId)).filter(Boolean);
   const fabLib  = DB.FabricLibrary.all();
   App.showModal(`
   <div class="modal-header"><h2>🧵 Request Fabric Swatch</h2><button class="btn btn-ghost btn-icon" onclick="App.closeModal()">✕</button></div>
@@ -6089,13 +6085,13 @@ App.openFabricRequestModal = function(tcId) {
 
 App.saveFabricRequest = async function(e, tcId) {
   e.preventDefault();
-  const tc       = DB.TradingCompanies.get(tcId);
+  const tc       = API.TradingCompanies.get(tcId);
   const user     = App._getState()?.user || {};
   const progId   = document.getElementById('fr-prog')?.value || '';
-  const prog     = progId ? DB.Programs.get(progId) : null;
+  const prog     = progId ? API.Programs.get(progId) : null;
   const styleStr = document.getElementById('fr-styles')?.value || '';
   const styleNums= styleStr.split(',').map(s=>s.trim()).filter(Boolean);
-  const styleIds = styleNums.map(sn => DB.Styles.all().find(st => st.styleNumber.trim() === sn)?.id).filter(Boolean);
+  const styleIds = styleNums.map(sn => API.Styles.all().find(st => st.styleNumber.trim() === sn)?.id).filter(Boolean);
   const payload  = {
     tcId, tcName: tc?.name||tcId, tcEmail: tc?.email||'',
     programId: progId||null, programName: prog?.name||'',
@@ -6255,7 +6251,7 @@ App._refreshStandards = function() {
 // ── Tech Design Notes — per-style save ───────────────────────────────────────
 App.saveTechDesignNote = function(styleId, value) {
   const trimmed = (value || '').trim();
-  DB.Styles.update(styleId, { techDesignNotes: trimmed });
+  API.Styles.update(styleId, { techDesignNotes: trimmed });
 };
 
 // ── Add Fabrics / Trims to existing handoff (piecemeal upload) ────────────────
