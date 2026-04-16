@@ -10,6 +10,8 @@ const fs         = require('fs');
 const cron       = require('node-cron');
 const nodemailer = require('nodemailer');
 
+const { router: authRouter } = require('./auth');
+
 const app  = express();
 const PORT = process.env.PORT || 3000;
 
@@ -51,6 +53,9 @@ function uid() {
 // ── Middleware ─────────────────────────────────────────────────
 app.use(express.json());
 app.use(express.static(path.join(__dirname)));   // serves index.html, app.js, etc.
+
+// ── Auth API ───────────────────────────────────────────────────
+app.use('/api/auth', authRouter);
 
 // ── REST API: Fabric Standard Requests ─────────────────────────
 
