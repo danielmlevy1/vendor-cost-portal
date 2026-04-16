@@ -11,6 +11,7 @@ const cron       = require('node-cron');
 const nodemailer = require('nodemailer');
 
 const { router: authRouter } = require('./auth');
+const apiRouter = require('./routes');
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
@@ -56,6 +57,9 @@ app.use(express.static(path.join(__dirname)));   // serves index.html, app.js, e
 
 // ── Auth API ───────────────────────────────────────────────────
 app.use('/api/auth', authRouter);
+
+// ── Core data API ──────────────────────────────────────────────
+app.use('/api', apiRouter);
 
 // ── REST API: Fabric Standard Requests ─────────────────────────
 

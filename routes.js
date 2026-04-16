@@ -1,0 +1,902 @@
+// =============================================================
+// VENDOR COST PORTAL — Core REST API routes
+// Mounted at /api in server.js.
+//
+// Resources covered:
+//   Reference: coo-rates, trading-companies, internal-programs,
+//              brand-tier-margins, customers, departments
+//   Programs, Styles, Assignments
+//   Submissions (with revision tracking)
+//   Placements
+//   Customer assignments & buys
+// =============================================================
+
+'use strict';
+
+const express = require('express');
+const router  = express.Router();
+const db      = require('./database');
+const { requireAuth, requireRole } = require('./auth');
+
+// ── Helpers ────────────────────────────────────────────────────
+
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+const now = () => new Date().toISOString();
+
+// Build a partial UPDATE statement from a body object + field whitelist.
+// fieldMap: { camelKey: 'snake_column' }
+// Returns the run() result or null if no recognised fields were sent.
+function applyPatch(table, id, body, fieldMap) {
+  const setClauses = [];
+  const vals = [];
+  for (const [camel, col] of Object.entries(fieldMap)) {
+    if (body[camel] !== undefined) {
+      setClauses.push(`${col} = ?`);
+      vals.push(body[camel] === '' ? null : body[camel]);
+    }
+  }
+  if (!setClauses.length) return null;
+  vals.push(id);
+  return db.prepare(`UPDATE ${table} SET ${setClauses.join(', ')} WHERE id = ?`).run(...vals);
+}
+
+// ── Row → API object mappers ───────────────────────────────────
+
+function programFromRow(r) {
+  return {
+    id:                   r.id,
+    name:                 r.name,
+    brand:                r.brand,
+    retailer:             r.retailer,
+    gender:               r.gender,
+    season:               r.season,
+    year:                 r.year,
+    status:               r.status,
+    market:               r.market,
+    targetMargin:         r.target_margin,
+    internalProgramId:    r.internal_program_id,
+    pendingDesignHandoff: !!r.pending_design_handoff,
+    startDate:            r.start_date,
+    endDate:              r.end_date,
+    crdDate:              r.crd_date,
+    version:              r.version,
+    createdAt:            r.created_at,
+  };
+}
+
+function styleFromRow(r) {
+  return {
+    id:                r.id,
+    programId:         r.program_id,
+    styleNumber:       r.style_number,
+    styleName:         r.style_name,
+    category:          r.category,
+    fabrication:       r.fabrication,
+    status:            r.status,
+    projQty:           r.proj_qty,
+    actualQty:         r.actual_qty,
+    projSellPrice:     r.proj_sell_price,
+    dutyRate:          r.duty_rate,
+    estFreight:        r.est_freight,
+    specialPackaging:  r.special_packaging,
+    techPackStatus:    r.tech_pack_status,
+    sellStatus:        r.sell_status,
+    sellStatusNote:    r.sell_status_note,
+    techDesignNotes:   r.tech_design_notes,
+    internalProgramId: r.internal_program_id,
+    recostRequestId:   r.recost_request_id,
+    createdAt:         r.created_at,
+  };
+}
+
+function submissionFromRow(r) {
+  return {
+    id:              r.id,
+    tcId:            r.tc_id,
+    styleId:         r.style_id,
+    coo:             r.coo,
+    fob:             r.fob,
+    factoryCost:     r.factory_cost,
+    tcMarkup:        r.tc_markup,
+    paymentTerms:    r.payment_terms,
+    moq:             r.moq,
+    leadTime:        r.lead_time,
+    vendorComments:  r.vendor_comments,
+    status:          r.status,
+    flagReason:      r.flag_reason,
+    skipReason:      r.skip_reason,
+    isOutdated:      !!r.is_outdated,
+    enteredByAdmin:  !!r.entered_by_admin,
+    recostRequestId: r.recost_request_id,
+    createdAt:       r.created_at,
+    updatedAt:       r.updated_at,
+  };
+}
+
+function placementFromRow(r) {
+  return {
+    id:           r.id,
+    styleId:      r.style_id,
+    tcId:         r.tc_id,
+    coo:          r.coo,
+    confirmedFob: r.confirmed_fob,
+    placedAt:     r.placed_at,
+    placedBy:     r.placed_by,
+    placedByName: r.placed_by_name,
+    notes:        r.notes,
+  };
+}
+
+function tcFromRow(r, coos = []) {
+  return {
+    id:           r.id,
+    code:         r.code,
+    name:         r.name,
+    email:        r.email,
+    paymentTerms: r.payment_terms,
+    createdAt:    r.created_at,
+    coos,
+  };
+}
+
+function cooRateFromRow(r) {
+  return {
+    id:          r.id,
+    code:        r.code,
+    country:     r.country,
+    addlDuty:    r.addl_duty,
+    usaMult:     r.usa_mult,
+    canadaMult:  r.canada_mult,
+  };
+}
+
+function deptFromRow(r) {
+  return {
+    id:                 r.id,
+    name:               r.name,
+    description:        r.description,
+    canViewFOB:         !!r.can_view_fob,
+    canViewSellPrice:   !!r.can_view_sell_price,
+    canEdit:            !!r.can_edit,
+    canEditTechPack:    !!r.can_edit_tech_pack,
+    canEditSellStatus:  !!r.can_edit_sell_status,
+    brandFilter:        JSON.parse(r.brand_filter || '[]'),
+    tierFilter:         JSON.parse(r.tier_filter  || '[]'),
+  };
+}
+
+// ── Pre-compiled statements ────────────────────────────────────
+
+const stmt = {
+  // Programs
+  allPrograms:         db.prepare('SELECT * FROM programs ORDER BY created_at DESC'),
+  programsByTc:        db.prepare(`
+    SELECT p.* FROM programs p
+    JOIN assignments a ON a.program_id = p.id
+    WHERE a.tc_id = ?
+    ORDER BY p.created_at DESC
+  `),
+  programById:         db.prepare('SELECT * FROM programs WHERE id = ?'),
+  countStyles:         db.prepare('SELECT COUNT(*) AS n FROM styles WHERE program_id = ?'),
+  countTCs:            db.prepare('SELECT COUNT(*) AS n FROM assignments WHERE program_id = ?'),
+  countQuoted:         db.prepare(`
+    SELECT COUNT(DISTINCT s.id) AS n
+    FROM styles s
+    WHERE s.program_id = ?
+      AND EXISTS (SELECT 1 FROM submissions sub WHERE sub.style_id = s.id)
+  `),
+  insertProgram:       db.prepare(`
+    INSERT INTO programs
+      (id, name, brand, retailer, gender, season, year, status, market,
+       target_margin, internal_program_id, version, created_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,1,?)
+  `),
+  deleteProgram:       db.prepare('DELETE FROM programs WHERE id = ?'),
+  placeAllStyles:      db.prepare(`UPDATE styles SET status = 'placed' WHERE program_id = ? AND status != 'cancelled'`),
+  setProgStatus:       db.prepare('UPDATE programs SET status = ? WHERE id = ?'),
+
+  // Styles
+  stylesByProgram:     db.prepare('SELECT * FROM styles WHERE program_id = ? ORDER BY created_at'),
+  stylesByTc:          db.prepare(`
+    SELECT s.* FROM styles s
+    JOIN assignments a ON a.program_id = s.program_id
+    WHERE a.tc_id = ?
+    ORDER BY s.program_id, s.created_at
+  `),
+  styleById:           db.prepare('SELECT * FROM styles WHERE id = ?'),
+  insertStyle:         db.prepare(`
+    INSERT INTO styles
+      (id, program_id, style_number, style_name, category, fabrication, status,
+       proj_qty, proj_sell_price, duty_rate, est_freight, special_packaging, created_at)
+    VALUES (?,?,?,?,?,?,'open',?,?,?,?,?,?)
+  `),
+  deleteStyle:         db.prepare('DELETE FROM styles WHERE id = ?'),
+  deleteSubsByStyle:   db.prepare('DELETE FROM submissions WHERE style_id = ?'),
+  deletePlacementByStyle: db.prepare('DELETE FROM placements WHERE style_id = ?'),
+
+  // Assignments
+  assignmentsByProgram:db.prepare(`
+    SELECT a.id, a.program_id, a.tc_id,
+           t.code, t.name, t.email, t.payment_terms
+    FROM assignments a
+    JOIN trading_companies t ON t.id = a.tc_id
+    WHERE a.program_id = ?
+    ORDER BY t.code
+  `),
+  deleteAssignmentsByProgram: db.prepare('DELETE FROM assignments WHERE program_id = ?'),
+  insertAssignment:    db.prepare('INSERT OR IGNORE INTO assignments (id, program_id, tc_id) VALUES (?,?,?)'),
+  tcIdsByProgram:      db.prepare('SELECT tc_id FROM assignments WHERE program_id = ?'),
+
+  // Submissions
+  submissionById:      db.prepare('SELECT * FROM submissions WHERE id = ?'),
+  submissionsByStyle:  db.prepare('SELECT * FROM submissions WHERE style_id = ? ORDER BY created_at'),
+  submissionsByStyleAndTc: db.prepare('SELECT * FROM submissions WHERE style_id = ? AND tc_id = ? ORDER BY created_at'),
+  submissionsByProgram:db.prepare(`
+    SELECT sub.* FROM submissions sub
+    JOIN styles s ON s.id = sub.style_id
+    WHERE s.program_id = ?
+    ORDER BY sub.created_at
+  `),
+  submissionsByProgramAndTc: db.prepare(`
+    SELECT sub.* FROM submissions sub
+    JOIN styles s ON s.id = sub.style_id
+    WHERE s.program_id = ? AND sub.tc_id = ?
+    ORDER BY sub.created_at
+  `),
+  submissionByKey:     db.prepare('SELECT * FROM submissions WHERE tc_id = ? AND style_id = ? AND coo = ?'),
+  insertSubmission:    db.prepare(`
+    INSERT INTO submissions
+      (id, tc_id, style_id, coo, fob, factory_cost, tc_markup, payment_terms,
+       moq, lead_time, vendor_comments, status, skip_reason, entered_by_admin, created_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,'submitted',?,?,?)
+  `),
+  updateSubmissionCore:db.prepare(`
+    UPDATE submissions
+    SET fob=?, factory_cost=?, tc_markup=?, payment_terms=?,
+        moq=?, lead_time=?, vendor_comments=?,
+        skip_reason=?, status=?, updated_at=?
+    WHERE id=?
+  `),
+  markSubmissionOutdated: db.prepare(`UPDATE submissions SET is_outdated = 1 WHERE style_id = ?`),
+  insertRevision:      db.prepare(`
+    INSERT INTO revisions (id, sub_id, field, old_value, new_value, submitted_by, submitted_by_name, submitted_at)
+    VALUES (?,?,?,?,?,?,?,?)
+  `),
+
+  // Placements
+  placementByStyle:    db.prepare('SELECT * FROM placements WHERE style_id = ?'),
+  placementsByProgram: db.prepare(`
+    SELECT pl.* FROM placements pl
+    JOIN styles s ON s.id = pl.style_id
+    WHERE s.program_id = ?
+  `),
+  upsertPlacement:     db.prepare(`
+    INSERT INTO placements (id, style_id, tc_id, coo, confirmed_fob, placed_at, placed_by, placed_by_name, notes)
+    VALUES (?,?,?,?,?,?,?,?,?)
+    ON CONFLICT(style_id) DO UPDATE SET
+      tc_id         = excluded.tc_id,
+      coo           = excluded.coo,
+      confirmed_fob = excluded.confirmed_fob,
+      placed_at     = excluded.placed_at,
+      placed_by     = excluded.placed_by,
+      placed_by_name= excluded.placed_by_name,
+      notes         = excluded.notes
+  `),
+  deletePlacement:     db.prepare('DELETE FROM placements WHERE style_id = ?'),
+
+  // Reference / lookups
+  allCooRates:         db.prepare('SELECT * FROM coo_rates ORDER BY code'),
+  allTCs:              db.prepare('SELECT * FROM trading_companies ORDER BY code'),
+  tcById:              db.prepare('SELECT * FROM trading_companies WHERE id = ?'),
+  coosByTc:            db.prepare('SELECT coo FROM tc_coos WHERE tc_id = ?'),
+  allCoosForTCs:       db.prepare('SELECT tc_id, coo FROM tc_coos ORDER BY tc_id'),
+  allInternalPrograms: db.prepare('SELECT * FROM internal_programs ORDER BY name'),
+  allBrandTierMargins: db.prepare('SELECT * FROM brand_tier_margins ORDER BY brand, tier'),
+  allCustomers:        db.prepare('SELECT * FROM customers ORDER BY name'),
+  allDepartments:      db.prepare('SELECT * FROM departments ORDER BY name'),
+  allUsers:            db.prepare('SELECT id, name, email, role, department_id, created_at FROM users ORDER BY name'),
+  userById:            db.prepare('SELECT id, name, email, role, department_id, created_at FROM users WHERE id = ?'),
+
+  // Customer assignments
+  custAssignsByProgram:db.prepare('SELECT customer_id FROM customer_assignments WHERE program_id = ?'),
+  deleteCustAssigns:   db.prepare('DELETE FROM customer_assignments WHERE program_id = ?'),
+  insertCustAssign:    db.prepare('INSERT OR IGNORE INTO customer_assignments (id, program_id, customer_id) VALUES (?,?,?)'),
+
+  // Customer buys
+  custBuysByProgram:   db.prepare('SELECT * FROM customer_buys WHERE program_id = ? ORDER BY style_id'),
+  custBuysByStyle:     db.prepare('SELECT * FROM customer_buys WHERE program_id = ? AND style_id = ?'),
+  upsertCustBuy:       db.prepare(`
+    INSERT INTO customer_buys (id, program_id, style_id, customer_id, qty, sell_price, notes, created_at)
+    VALUES (?,?,?,?,?,?,?,?)
+    ON CONFLICT(program_id, style_id, customer_id) DO UPDATE SET
+      qty        = excluded.qty,
+      sell_price = excluded.sell_price,
+      notes      = excluded.notes,
+      updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+  `),
+  deleteCustBuy:       db.prepare('DELETE FROM customer_buys WHERE program_id = ? AND style_id = ? AND customer_id = ?'),
+};
+
+// ── Helper: build program with computed counts ─────────────────
+
+function programWithCounts(row) {
+  return {
+    ...programFromRow(row),
+    styleCount:  stmt.countStyles.get(row.id).n,
+    tcCount:     stmt.countTCs.get(row.id).n,
+    quotedCount: stmt.countQuoted.get(row.id).n,
+  };
+}
+
+// ── Helper: check vendor is assigned to a program ──────────────
+
+function vendorAssignedTo(programId, tcId) {
+  return db.prepare('SELECT 1 FROM assignments WHERE program_id = ? AND tc_id = ?').get(programId, tcId);
+}
+
+// =============================================================
+// REFERENCE LOOKUPS
+// =============================================================
+
+// GET /api/coo-rates
+router.get('/coo-rates', requireAuth, (req, res) => {
+  res.json(stmt.allCooRates.all().map(cooRateFromRow));
+});
+
+// GET /api/trading-companies
+router.get('/trading-companies', requireAuth, (req, res) => {
+  const tcs   = stmt.allTCs.all();
+  const allCoos = stmt.allCoosForTCs.all();
+  const cooMap  = {};
+  for (const { tc_id, coo } of allCoos) {
+    if (!cooMap[tc_id]) cooMap[tc_id] = [];
+    cooMap[tc_id].push(coo);
+  }
+  res.json(tcs.map(r => tcFromRow(r, cooMap[r.id] || [])));
+});
+
+// GET /api/trading-companies/:id
+router.get('/trading-companies/:id', requireAuth, (req, res) => {
+  const row = stmt.tcById.get(req.params.id);
+  if (!row) return res.status(404).json({ error: 'Not found' });
+  const coos = stmt.coosByTc.all(row.id).map(r => r.coo);
+  res.json(tcFromRow(row, coos));
+});
+
+// GET /api/internal-programs
+router.get('/internal-programs', requireAuth, (req, res) => {
+  res.json(stmt.allInternalPrograms.all().map(r => ({
+    id: r.id, name: r.name, brand: r.brand, tier: r.tier,
+    gender: r.gender, targetMargin: r.target_margin,
+  })));
+});
+
+// GET /api/brand-tier-margins
+router.get('/brand-tier-margins', requireAuth, (req, res) => {
+  res.json(stmt.allBrandTierMargins.all().map(r => ({
+    id: r.id, brand: r.brand, tier: r.tier, targetMargin: r.target_margin,
+  })));
+});
+
+// GET /api/customers
+router.get('/customers', requireAuth, (req, res) => {
+  res.json(stmt.allCustomers.all());
+});
+
+// GET /api/departments
+router.get('/departments', requireAuth, (req, res) => {
+  res.json(stmt.allDepartments.all().map(deptFromRow));
+});
+
+// GET /api/users  (admin/pc only — staff management)
+router.get('/users', requireAuth, requireRole('admin', 'pc'), (req, res) => {
+  res.json(stmt.allUsers.all().map(r => ({
+    id: r.id, name: r.name, email: r.email, role: r.role,
+    departmentId: r.department_id, createdAt: r.created_at,
+  })));
+});
+
+// =============================================================
+// PROGRAMS
+// =============================================================
+
+const PROGRAM_FIELDS = {
+  name:                 'name',
+  brand:                'brand',
+  retailer:             'retailer',
+  gender:               'gender',
+  season:               'season',
+  year:                 'year',
+  status:               'status',
+  market:               'market',
+  targetMargin:         'target_margin',
+  internalProgramId:    'internal_program_id',
+  pendingDesignHandoff: 'pending_design_handoff',
+  startDate:            'start_date',
+  endDate:              'end_date',
+  crdDate:              'crd_date',
+  version:              'version',
+};
+
+// GET /api/programs
+router.get('/programs', requireAuth, (req, res) => {
+  const rows = req.user.role === 'vendor'
+    ? stmt.programsByTc.all(req.user.tcId)
+    : stmt.allPrograms.all();
+  res.json(rows.map(programWithCounts));
+});
+
+// GET /api/programs/:id
+router.get('/programs/:id', requireAuth, (req, res) => {
+  const row = stmt.programById.get(req.params.id);
+  if (!row) return res.status(404).json({ error: 'Not found' });
+  if (req.user.role === 'vendor' && !vendorAssignedTo(req.params.id, req.user.tcId)) {
+    return res.status(403).json({ error: 'Not assigned to this program' });
+  }
+  res.json(programWithCounts(row));
+});
+
+// POST /api/programs
+router.post('/programs', requireAuth, requireRole('admin', 'pc'), (req, res) => {
+  const b = req.body;
+  const id = uid();
+  stmt.insertProgram.run(
+    id, b.name || null, b.brand || null, b.retailer || null,
+    b.gender || null, b.season || null, b.year || null,
+    b.status || 'Draft', b.market || 'USA',
+    b.targetMargin ?? null, b.internalProgramId || null, now()
+  );
+  res.status(201).json(programWithCounts(stmt.programById.get(id)));
+});
+
+// PATCH /api/programs/:id
+router.patch('/programs/:id', requireAuth, requireRole('admin', 'pc'), (req, res) => {
+  const row = stmt.programById.get(req.params.id);
+  if (!row) return res.status(404).json({ error: 'Not found' });
+  applyPatch('programs', req.params.id, req.body, PROGRAM_FIELDS);
+  res.json(programWithCounts(stmt.programById.get(req.params.id)));
+});
+
+// DELETE /api/programs/:id  (admin only — destructive cascade)
+router.delete('/programs/:id', requireAuth, requireRole('admin'), (req, res) => {
+  const row = stmt.programById.get(req.params.id);
+  if (!row) return res.status(404).json({ error: 'Not found' });
+
+  db.transaction(() => {
+    // Get all style IDs in this program before deleting
+    const styleIds = db.prepare('SELECT id FROM styles WHERE program_id = ?').all(req.params.id).map(s => s.id);
+    for (const sid of styleIds) {
+      stmt.deleteSubsByStyle.run(sid);
+      stmt.deletePlacementByStyle.run(sid);
+    }
+    db.prepare('DELETE FROM assignments WHERE program_id = ?').run(req.params.id);
+    db.prepare('DELETE FROM style_links WHERE program_id = ?').run(req.params.id);
+    db.prepare('DELETE FROM recost_requests WHERE program_id = ?').run(req.params.id);
+    db.prepare('DELETE FROM cost_history WHERE program_id = ?').run(req.params.id);
+    db.prepare('DELETE FROM customer_assignments WHERE program_id = ?').run(req.params.id);
+    db.prepare('DELETE FROM customer_buys WHERE program_id = ?').run(req.params.id);
+    db.prepare('DELETE FROM styles WHERE program_id = ?').run(req.params.id);
+    stmt.deleteProgram.run(req.params.id);
+  })();
+
+  res.json({ ok: true });
+});
+
+// POST /api/programs/:id/place-all
+router.post('/programs/:id/place-all', requireAuth, requireRole('admin', 'pc'), (req, res) => {
+  const row = stmt.programById.get(req.params.id);
+  if (!row) return res.status(404).json({ error: 'Not found' });
+
+  db.transaction(() => {
+    stmt.placeAllStyles.run(req.params.id);
+    stmt.setProgStatus.run('Placed', req.params.id);
+  })();
+
+  res.json(programWithCounts(stmt.programById.get(req.params.id)));
+});
+
+// =============================================================
+// STYLES
+// =============================================================
+
+const STYLE_FIELDS = {
+  styleNumber:       'style_number',
+  styleName:         'style_name',
+  category:          'category',
+  fabrication:       'fabrication',
+  status:            'status',
+  projQty:           'proj_qty',
+  actualQty:         'actual_qty',
+  projSellPrice:     'proj_sell_price',
+  dutyRate:          'duty_rate',
+  estFreight:        'est_freight',
+  specialPackaging:  'special_packaging',
+  techPackStatus:    'tech_pack_status',
+  sellStatus:        'sell_status',
+  sellStatusNote:    'sell_status_note',
+  techDesignNotes:   'tech_design_notes',
+  internalProgramId: 'internal_program_id',
+  recostRequestId:   'recost_request_id',
+};
+
+// GET /api/programs/:id/styles
+router.get('/programs/:id/styles', requireAuth, (req, res) => {
+  const prog = stmt.programById.get(req.params.id);
+  if (!prog) return res.status(404).json({ error: 'Not found' });
+  if (req.user.role === 'vendor' && !vendorAssignedTo(req.params.id, req.user.tcId)) {
+    return res.status(403).json({ error: 'Not assigned to this program' });
+  }
+  res.json(stmt.stylesByProgram.all(req.params.id).map(styleFromRow));
+});
+
+// GET /api/styles/:id
+router.get('/styles/:id', requireAuth, (req, res) => {
+  const row = stmt.styleById.get(req.params.id);
+  if (!row) return res.status(404).json({ error: 'Not found' });
+  if (req.user.role === 'vendor' && !vendorAssignedTo(row.program_id, req.user.tcId)) {
+    return res.status(403).json({ error: 'Not assigned to this program' });
+  }
+  res.json(styleFromRow(row));
+});
+
+// POST /api/styles  — single style create
+router.post('/styles', requireAuth, requireRole('admin', 'pc'), (req, res) => {
+  const b = req.body;
+  if (!b.programId) return res.status(400).json({ error: 'programId required' });
+  const id = uid();
+  stmt.insertStyle.run(
+    id, b.programId,
+    b.styleNumber || null, b.styleName || null,
+    b.category || null, b.fabrication || null,
+    b.projQty ?? null, b.projSellPrice ?? null,
+    b.dutyRate ?? null, b.estFreight ?? null, b.specialPackaging ?? null,
+    now()
+  );
+  res.status(201).json(styleFromRow(stmt.styleById.get(id)));
+});
+
+// POST /api/programs/:id/styles/bulk
+router.post('/programs/:id/styles/bulk', requireAuth, requireRole('admin', 'pc'), (req, res) => {
+  const prog = stmt.programById.get(req.params.id);
+  if (!prog) return res.status(404).json({ error: 'Program not found' });
+  const rows = req.body.styles;
+  if (!Array.isArray(rows) || !rows.length) {
+    return res.status(400).json({ error: 'styles array required' });
+  }
+
+  const created = db.transaction(() => {
+    return rows.map(b => {
+      const id = uid();
+      stmt.insertStyle.run(
+        id, req.params.id,
+        b.styleNumber || null, b.styleName || null,
+        b.category || null, b.fabrication || null,
+        b.projQty ?? null, b.projSellPrice ?? null,
+        b.dutyRate ?? null, b.estFreight ?? null, b.specialPackaging ?? null,
+        now()
+      );
+      return styleFromRow(stmt.styleById.get(id));
+    });
+  })();
+
+  res.status(201).json(created);
+});
+
+// PATCH /api/styles/:id
+router.patch('/styles/:id', requireAuth, (req, res) => {
+  const row = stmt.styleById.get(req.params.id);
+  if (!row) return res.status(404).json({ error: 'Not found' });
+
+  // Vendors can't edit styles; design can edit tech fields; admin/pc can edit anything
+  const role = req.user.role;
+  if (role === 'vendor') return res.status(403).json({ error: 'Vendors cannot edit styles' });
+
+  // Design role: only tech_pack_status and tech_design_notes
+  let allowedFields = STYLE_FIELDS;
+  if (role === 'design') {
+    allowedFields = {
+      techPackStatus:  'tech_pack_status',
+      techDesignNotes: 'tech_design_notes',
+    };
+  } else if (role === 'planning') {
+    allowedFields = {
+      sellStatus:    'sell_status',
+      sellStatusNote:'sell_status_note',
+    };
+  }
+
+  applyPatch('styles', req.params.id, req.body, allowedFields);
+  res.json(styleFromRow(stmt.styleById.get(req.params.id)));
+});
+
+// DELETE /api/styles/:id
+router.delete('/styles/:id', requireAuth, requireRole('admin', 'pc'), (req, res) => {
+  const row = stmt.styleById.get(req.params.id);
+  if (!row) return res.status(404).json({ error: 'Not found' });
+
+  db.transaction(() => {
+    stmt.deleteSubsByStyle.run(req.params.id);
+    stmt.deletePlacementByStyle.run(req.params.id);
+    stmt.deleteStyle.run(req.params.id);
+  })();
+
+  res.json({ ok: true });
+});
+
+// =============================================================
+// ASSIGNMENTS (program ↔ trading company)
+// =============================================================
+
+// GET /api/programs/:id/assignments
+router.get('/programs/:id/assignments', requireAuth, requireRole('admin', 'pc'), (req, res) => {
+  const rows = stmt.assignmentsByProgram.all(req.params.id);
+  res.json(rows.map(r => ({
+    id:          r.id,
+    programId:   r.program_id,
+    tcId:        r.tc_id,
+    tc: {
+      id:           r.tc_id,
+      code:         r.code,
+      name:         r.name,
+      email:        r.email,
+      paymentTerms: r.payment_terms,
+    },
+  })));
+});
+
+// PUT /api/programs/:id/assignments  — replace the full TC list
+router.put('/programs/:id/assignments', requireAuth, requireRole('admin', 'pc'), (req, res) => {
+  const prog = stmt.programById.get(req.params.id);
+  if (!prog) return res.status(404).json({ error: 'Program not found' });
+
+  const tcIds = req.body.tcIds;
+  if (!Array.isArray(tcIds)) return res.status(400).json({ error: 'tcIds array required' });
+
+  db.transaction(() => {
+    stmt.deleteAssignmentsByProgram.run(req.params.id);
+    for (const tcId of tcIds) {
+      stmt.insertAssignment.run(uid(), req.params.id, tcId);
+    }
+  })();
+
+  res.json(stmt.assignmentsByProgram.all(req.params.id).map(r => ({
+    id: r.id, programId: r.program_id, tcId: r.tc_id,
+    tc: { id: r.tc_id, code: r.code, name: r.name, email: r.email, paymentTerms: r.payment_terms },
+  })));
+});
+
+// =============================================================
+// SUBMISSIONS
+// =============================================================
+
+// GET /api/programs/:id/submissions
+router.get('/programs/:id/submissions', requireAuth, (req, res) => {
+  const rows = req.user.role === 'vendor'
+    ? stmt.submissionsByProgramAndTc.all(req.params.id, req.user.tcId)
+    : stmt.submissionsByProgram.all(req.params.id);
+  res.json(rows.map(submissionFromRow));
+});
+
+// GET /api/styles/:id/submissions
+router.get('/styles/:id/submissions', requireAuth, (req, res) => {
+  // Vendors only see their own
+  const rows = req.user.role === 'vendor'
+    ? stmt.submissionsByStyleAndTc.all(req.params.id, req.user.tcId)
+    : stmt.submissionsByStyle.all(req.params.id);
+  res.json(rows.map(submissionFromRow));
+});
+
+// POST /api/submissions  — upsert with revision tracking
+// Vendors: tcId forced to own; admin/pc: can specify any tcId
+router.post('/submissions', requireAuth, (req, res) => {
+  const role = req.user.role;
+  if (!['admin', 'pc', 'vendor'].includes(role)) {
+    return res.status(403).json({ error: 'Not allowed to submit quotes' });
+  }
+
+  const b = req.body;
+  const tcId    = role === 'vendor' ? req.user.tcId : (b.tcId || req.user.tcId);
+  const styleId = b.styleId;
+  const coo     = b.coo;
+
+  if (!styleId || !coo) return res.status(400).json({ error: 'styleId and coo required' });
+  if (!tcId)            return res.status(400).json({ error: 'tcId required' });
+
+  const timestamp    = now();
+  const submitterName = req.user.name || req.user.email;
+
+  const result = db.transaction(() => {
+    const existing = stmt.submissionByKey.get(tcId, styleId, coo);
+
+    if (existing) {
+      // Track revisions for fob and factoryCost
+      if (b.fob !== undefined && String(b.fob) !== String(existing.fob)) {
+        stmt.insertRevision.run(uid(), existing.id, 'fob',
+          String(existing.fob ?? ''), String(b.fob ?? ''),
+          tcId, submitterName, timestamp);
+      }
+      if (b.factoryCost !== undefined && String(b.factoryCost) !== String(existing.factory_cost)) {
+        stmt.insertRevision.run(uid(), existing.id, 'factoryCost',
+          String(existing.factory_cost ?? ''), String(b.factoryCost ?? ''),
+          tcId, submitterName, timestamp);
+      }
+
+      stmt.updateSubmissionCore.run(
+        b.fob         ?? existing.fob,
+        b.factoryCost ?? existing.factory_cost,
+        b.tcMarkup    ?? existing.tc_markup,
+        b.paymentTerms ?? existing.payment_terms,
+        b.moq         ?? existing.moq,
+        b.leadTime    ?? existing.lead_time,
+        b.vendorComments ?? existing.vendor_comments,
+        b.skipReason  ?? existing.skip_reason,
+        b.status      ?? existing.status,
+        timestamp,
+        existing.id
+      );
+      return stmt.submissionByKey.get(tcId, styleId, coo);
+    } else {
+      const id = uid();
+      stmt.insertSubmission.run(
+        id, tcId, styleId, coo,
+        b.fob ?? null, b.factoryCost ?? null, b.tcMarkup ?? null,
+        b.paymentTerms || 'FOB',
+        b.moq ?? null, b.leadTime ?? null, b.vendorComments ?? null,
+        b.skipReason ?? null,
+        role !== 'vendor' ? 1 : 0,
+        timestamp
+      );
+      // Record initial revisions
+      if (b.fob != null) {
+        stmt.insertRevision.run(uid(), id, 'fob', null, String(b.fob), tcId, submitterName, timestamp);
+      }
+      if (b.factoryCost != null) {
+        stmt.insertRevision.run(uid(), id, 'factoryCost', null, String(b.factoryCost), tcId, submitterName, timestamp);
+      }
+      return stmt.submissionByKey.get(tcId, styleId, coo);
+    }
+  })();
+
+  res.status(200).json(submissionFromRow(result));
+});
+
+// PATCH /api/submissions/:id/flag
+router.patch('/submissions/:id/flag', requireAuth, requireRole('admin', 'pc'), (req, res) => {
+  const row = stmt.submissionById.get(req.params.id);
+  if (!row) return res.status(404).json({ error: 'Not found' });
+  const reason = req.body.reason || '';
+  db.prepare(`UPDATE submissions SET status = 'flagged', flag_reason = ? WHERE id = ?`).run(reason, req.params.id);
+  res.json(submissionFromRow(stmt.submissionById.get(req.params.id)));
+});
+
+// PATCH /api/submissions/:id/unflag
+router.patch('/submissions/:id/unflag', requireAuth, requireRole('admin', 'pc'), (req, res) => {
+  const row = stmt.submissionById.get(req.params.id);
+  if (!row) return res.status(404).json({ error: 'Not found' });
+  db.prepare(`UPDATE submissions SET status = 'submitted', flag_reason = NULL WHERE id = ?`).run(req.params.id);
+  res.json(submissionFromRow(stmt.submissionById.get(req.params.id)));
+});
+
+// PATCH /api/submissions/:id/accept
+router.patch('/submissions/:id/accept', requireAuth, requireRole('admin', 'pc'), (req, res) => {
+  const row = stmt.submissionById.get(req.params.id);
+  if (!row) return res.status(404).json({ error: 'Not found' });
+  db.prepare(`UPDATE submissions SET status = 'accepted' WHERE id = ?`).run(req.params.id);
+  res.json(submissionFromRow(stmt.submissionById.get(req.params.id)));
+});
+
+// =============================================================
+// PLACEMENTS
+// =============================================================
+
+// GET /api/programs/:id/placements
+router.get('/programs/:id/placements', requireAuth, (req, res) => {
+  if (req.user.role === 'vendor' && !vendorAssignedTo(req.params.id, req.user.tcId)) {
+    return res.status(403).json({ error: 'Not assigned to this program' });
+  }
+  res.json(stmt.placementsByProgram.all(req.params.id).map(placementFromRow));
+});
+
+// POST /api/placements  — upsert (place or update a style's placement)
+router.post('/placements', requireAuth, requireRole('admin', 'pc'), (req, res) => {
+  const b = req.body;
+  if (!b.styleId) return res.status(400).json({ error: 'styleId required' });
+
+  // Find existing to preserve id
+  const existing = stmt.placementByStyle.get(b.styleId);
+  const placementId = existing?.id || uid();
+
+  stmt.upsertPlacement.run(
+    placementId, b.styleId, b.tcId || null, b.coo || null,
+    b.confirmedFob ?? null,
+    b.placedAt  || now(),
+    b.placedBy  || req.user.id,
+    b.placedByName || req.user.name,
+    b.notes || null
+  );
+
+  // Also mark the style as placed
+  if (stmt.styleById.get(b.styleId)) {
+    db.prepare(`UPDATE styles SET status = 'placed' WHERE id = ?`).run(b.styleId);
+  }
+
+  res.json(placementFromRow(stmt.placementByStyle.get(b.styleId)));
+});
+
+// DELETE /api/placements/:styleId
+router.delete('/placements/:styleId', requireAuth, requireRole('admin', 'pc'), (req, res) => {
+  stmt.deletePlacement.run(req.params.styleId);
+  // Revert style to 'open' if it's currently placed
+  const s = stmt.styleById.get(req.params.styleId);
+  if (s && s.status === 'placed') {
+    db.prepare(`UPDATE styles SET status = 'open' WHERE id = ?`).run(req.params.styleId);
+  }
+  res.json({ ok: true });
+});
+
+// =============================================================
+// CUSTOMER ASSIGNMENTS
+// =============================================================
+
+// GET /api/programs/:id/customer-assignments
+router.get('/programs/:id/customer-assignments', requireAuth, (req, res) => {
+  const customerIds = stmt.custAssignsByProgram.all(req.params.id).map(r => r.customer_id);
+  res.json(customerIds);
+});
+
+// PUT /api/programs/:id/customer-assignments  — replace list
+router.put('/programs/:id/customer-assignments', requireAuth, requireRole('admin', 'pc', 'planning'), (req, res) => {
+  const customerIds = req.body.customerIds;
+  if (!Array.isArray(customerIds)) return res.status(400).json({ error: 'customerIds array required' });
+
+  db.transaction(() => {
+    stmt.deleteCustAssigns.run(req.params.id);
+    for (const cid of customerIds) {
+      stmt.insertCustAssign.run(uid(), req.params.id, cid);
+    }
+  })();
+
+  res.json(stmt.custAssignsByProgram.all(req.params.id).map(r => r.customer_id));
+});
+
+// =============================================================
+// CUSTOMER BUYS
+// =============================================================
+
+// GET /api/programs/:id/customer-buys
+router.get('/programs/:id/customer-buys', requireAuth, (req, res) => {
+  res.json(stmt.custBuysByProgram.all(req.params.id).map(r => ({
+    id: r.id, programId: r.program_id, styleId: r.style_id,
+    customerId: r.customer_id, qty: r.qty, sellPrice: r.sell_price,
+    notes: r.notes, createdAt: r.created_at, updatedAt: r.updated_at,
+  })));
+});
+
+// PUT /api/programs/:id/customer-buys/:styleId  — upsert all buys for one style
+router.put('/programs/:id/customer-buys/:styleId', requireAuth, requireRole('admin', 'pc', 'planning'), (req, res) => {
+  const buys = req.body.buys;
+  if (!Array.isArray(buys)) return res.status(400).json({ error: 'buys array required' });
+
+  db.transaction(() => {
+    for (const b of buys) {
+      if (!b.customerId) continue;
+      if (b.qty == null && b.sellPrice == null) {
+        // Delete if both are cleared
+        stmt.deleteCustBuy.run(req.params.id, req.params.styleId, b.customerId);
+      } else {
+        stmt.upsertCustBuy.run(
+          uid(), req.params.id, req.params.styleId, b.customerId,
+          b.qty ?? null, b.sellPrice ?? null, b.notes ?? null, now()
+        );
+      }
+    }
+  })();
+
+  res.json(stmt.custBuysByStyle.all(req.params.id, req.params.styleId).map(r => ({
+    id: r.id, programId: r.program_id, styleId: r.style_id,
+    customerId: r.customer_id, qty: r.qty, sellPrice: r.sell_price,
+    notes: r.notes,
+  })));
+});
+
+module.exports = router;

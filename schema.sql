@@ -142,6 +142,8 @@ CREATE TABLE IF NOT EXISTS styles (
   internal_program_id TEXT,
   -- Re-cost
   recost_request_id  TEXT,
+  -- Design / tech notes
+  tech_design_notes  TEXT,
   created_at         TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
 
@@ -177,19 +179,25 @@ CREATE INDEX IF NOT EXISTS idx_assignments_tc_id      ON assignments(tc_id);
 -- ── Submissions (TC cost quotes) ─────────────────────────────
 
 CREATE TABLE IF NOT EXISTS submissions (
-  id             TEXT PRIMARY KEY,
-  tc_id          TEXT NOT NULL,
-  style_id       TEXT NOT NULL,
-  coo            TEXT NOT NULL,
-  fob            REAL,
-  factory_cost   REAL,
-  payment_terms  TEXT DEFAULT 'FOB',
-  status         TEXT NOT NULL DEFAULT 'submitted',  -- submitted | flagged | accepted
-  flag_reason    TEXT,
-  is_outdated    INTEGER NOT NULL DEFAULT 0,
+  id                TEXT PRIMARY KEY,
+  tc_id             TEXT NOT NULL,
+  style_id          TEXT NOT NULL,
+  coo               TEXT NOT NULL,
+  fob               REAL,
+  factory_cost      REAL,
+  tc_markup         REAL,
+  payment_terms     TEXT DEFAULT 'FOB',
+  moq               REAL,
+  lead_time         REAL,
+  vendor_comments   TEXT,
+  status            TEXT NOT NULL DEFAULT 'submitted',  -- submitted | flagged | accepted | skipped
+  flag_reason       TEXT,
+  skip_reason       TEXT,
+  is_outdated       INTEGER NOT NULL DEFAULT 0,
+  entered_by_admin  INTEGER NOT NULL DEFAULT 0,
   recost_request_id TEXT,
-  created_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
-  updated_at     TEXT,
+  created_at        TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_at        TEXT,
   UNIQUE (tc_id, style_id, coo)
 );
 
@@ -215,14 +223,15 @@ CREATE INDEX IF NOT EXISTS idx_revisions_sub_id ON revisions(sub_id);
 -- ── Placements ────────────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS placements (
-  id            TEXT PRIMARY KEY,
-  style_id      TEXT NOT NULL UNIQUE,
-  tc_id         TEXT,
-  coo           TEXT,
-  placed_at     TEXT,
-  placed_by     TEXT,
+  id             TEXT PRIMARY KEY,
+  style_id       TEXT NOT NULL UNIQUE,
+  tc_id          TEXT,
+  coo            TEXT,
+  confirmed_fob  REAL,
+  placed_at      TEXT,
+  placed_by      TEXT,
   placed_by_name TEXT,
-  notes         TEXT
+  notes          TEXT
 );
 
 -- ── Cell Flags ────────────────────────────────────────────────
@@ -422,3 +431,21 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
   version    INTEGER PRIMARY KEY,
   applied_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
+
+-- ── Additive migrations (safe to re-run; ALTER TABLE fails silently in db.js) ──
+-- These ensure existing databases pick up new columns without a full recreate.
+-- database.js wraps each in try/catch and ignores "duplicate column" errors.
+
+-- v2: extended submission fields
+-- ALTER TABLE submissions ADD COLUMN tc_markup        REAL;
+-- ALTER TABLE submissions ADD COLUMN moq              REAL;
+-- ALTER TABLE submissions ADD COLUMN lead_time        REAL;
+-- ALTER TABLE submissions ADD COLUMN vendor_comments  TEXT;
+-- ALTER TABLE submissions ADD COLUMN skip_reason      TEXT;
+-- ALTER TABLE submissions ADD COLUMN entered_by_admin INTEGER NOT NULL DEFAULT 0;
+
+-- v2: confirmed_fob on placements
+-- ALTER TABLE placements ADD COLUMN confirmed_fob REAL;
+
+-- v2: tech_design_notes on styles
+-- ALTER TABLE styles ADD COLUMN tech_design_notes TEXT;

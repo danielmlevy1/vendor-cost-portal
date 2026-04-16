@@ -290,7 +290,34 @@ function seedDepartments() {
   console.log('[db] Seeded departments');
 }
 
+// ── Additive migrations (for pre-existing databases) ──────────
+// ALTER TABLE fails if the column already exists; we suppress that
+// specific error so migrations are safe to re-run on any DB state.
+
+function addColumn(table, column, definition) {
+  try {
+    db.prepare(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`).run();
+  } catch (e) {
+    if (!e.message.includes('duplicate column')) throw e;
+  }
+}
+
+function runMigrations() {
+  // v2: extended submission fields
+  addColumn('submissions', 'tc_markup',        'REAL');
+  addColumn('submissions', 'moq',              'REAL');
+  addColumn('submissions', 'lead_time',        'REAL');
+  addColumn('submissions', 'vendor_comments',  'TEXT');
+  addColumn('submissions', 'skip_reason',      'TEXT');
+  addColumn('submissions', 'entered_by_admin', 'INTEGER NOT NULL DEFAULT 0');
+  // v2: confirmed_fob on placements
+  addColumn('placements',  'confirmed_fob',    'REAL');
+  // v2: tech_design_notes on styles
+  addColumn('styles',      'tech_design_notes','TEXT');
+}
+
 // ── Run all seeders ────────────────────────────────────────────
+runMigrations();
 seedUsers();
 seedTradingCompanies();
 seedCooRates();
