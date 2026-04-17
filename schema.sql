@@ -176,6 +176,17 @@ CREATE TABLE IF NOT EXISTS assignments (
 CREATE INDEX IF NOT EXISTS idx_assignments_program_id ON assignments(program_id);
 CREATE INDEX IF NOT EXISTS idx_assignments_tc_id      ON assignments(tc_id);
 
+-- Which COOs are included for each (program, TC) assignment.
+-- Absent row for an assignment = "all of the TC's COOs" (legacy rows are
+-- backfilled at startup in database.js so this invariant always holds).
+CREATE TABLE IF NOT EXISTS assignment_coos (
+  assignment_id TEXT NOT NULL,
+  coo           TEXT NOT NULL,
+  PRIMARY KEY (assignment_id, coo)
+);
+
+CREATE INDEX IF NOT EXISTS idx_assignment_coos_assignment_id ON assignment_coos(assignment_id);
+
 -- ── Submissions (TC cost quotes) ─────────────────────────────
 
 CREATE TABLE IF NOT EXISTS submissions (

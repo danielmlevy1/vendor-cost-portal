@@ -233,8 +233,15 @@ const stmt = {
     WHERE a.program_id = ?
     ORDER BY t.code
   `),
+  coosByAssignment:    db.prepare('SELECT coo FROM assignment_coos WHERE assignment_id = ? ORDER BY coo'),
+  coosByTc:            db.prepare('SELECT coo FROM tc_coos WHERE tc_id = ? ORDER BY coo'),
   deleteAssignmentsByProgram: db.prepare('DELETE FROM assignments WHERE program_id = ?'),
+  deleteAssignmentCoosByProgram: db.prepare(`
+    DELETE FROM assignment_coos
+    WHERE assignment_id IN (SELECT id FROM assignments WHERE program_id = ?)
+  `),
   insertAssignment:    db.prepare('INSERT OR IGNORE INTO assignments (id, program_id, tc_id) VALUES (?,?,?)'),
+  insertAssignmentCoo: db.prepare('INSERT OR IGNORE INTO assignment_coos (assignment_id, coo) VALUES (?,?)'),
   tcIdsByProgram:      db.prepare('SELECT tc_id FROM assignments WHERE program_id = ?'),
 
   // Submissions
@@ -875,42 +882,76 @@ router.delete('/styles/:id', requireAuth, requireRole('admin', 'pc'), (req, res)
 // ASSIGNMENTS (program ↔ trading company)
 // =============================================================
 
-// GET /api/programs/:id/assignments
-router.get('/programs/:id/assignments', requireAuth, requireRole('admin', 'pc'), (req, res) => {
-  const rows = stmt.assignmentsByProgram.all(req.params.id);
-  res.json(rows.map(r => ({
-    id:          r.id,
-    programId:   r.program_id,
-    tcId:        r.tc_id,
+function assignmentToDto(r) {
+  const coos       = stmt.coosByAssignment.all(r.id).map(x => x.coo);
+  const tcCoos     = stmt.coosByTc.all(r.tc_id).map(x => x.coo);
+  return {
+    id:        r.id,
+    programId: r.program_id,
+    tcId:      r.tc_id,
+    coos,                         // COOs selected for this (program, TC)
     tc: {
       id:           r.tc_id,
       code:         r.code,
       name:         r.name,
       email:        r.email,
       paymentTerms: r.payment_terms,
+      coos:         tcCoos,       // TC's full master list — UI needs it to render the chip options
     },
-  })));
+  };
+}
+
+// GET /api/programs/:id/assignments
+// Admin/PC sees every TC assigned; a vendor sees only their own row.
+router.get('/programs/:id/assignments', requireAuth, (req, res) => {
+  let rows = stmt.assignmentsByProgram.all(req.params.id);
+  if (req.user.role === 'vendor') {
+    rows = rows.filter(r => r.tc_id === req.user.tcId);
+    if (!rows.length) return res.status(403).json({ error: 'Not assigned to this program' });
+  } else if (!['admin', 'pc'].includes(req.user.role)) {
+    // Design/planning can read, but no other roles. Keep it simple for now.
+    return res.status(403).json({ error: 'Insufficient permissions' });
+  }
+  res.json(rows.map(assignmentToDto));
 });
 
 // PUT /api/programs/:id/assignments  — replace the full TC list
+// Accepts either:
+//   { tcIds: [...] }                              (legacy; each TC gets all its COOs)
+//   { assignments: [{ tcId, coos: [...] }, ...] } (new; caller picks the COOs)
 router.put('/programs/:id/assignments', requireAuth, requireRole('admin', 'pc'), (req, res) => {
   const prog = stmt.programById.get(req.params.id);
   if (!prog) return res.status(404).json({ error: 'Program not found' });
 
-  const tcIds = req.body.tcIds;
-  if (!Array.isArray(tcIds)) return res.status(400).json({ error: 'tcIds array required' });
+  // Normalize input into [{ tcId, coos|null }]
+  let desired;
+  if (Array.isArray(req.body.assignments)) {
+    desired = req.body.assignments
+      .filter(a => a && typeof a.tcId === 'string')
+      .map(a => ({ tcId: a.tcId, coos: Array.isArray(a.coos) ? a.coos : null }));
+  } else if (Array.isArray(req.body.tcIds)) {
+    desired = req.body.tcIds.map(tcId => ({ tcId, coos: null }));
+  } else {
+    return res.status(400).json({ error: 'assignments[] or tcIds[] required' });
+  }
 
   db.transaction(() => {
+    // Order matters — delete child rows first since FKs aren't enforced.
+    stmt.deleteAssignmentCoosByProgram.run(req.params.id);
     stmt.deleteAssignmentsByProgram.run(req.params.id);
-    for (const tcId of tcIds) {
-      stmt.insertAssignment.run(uid(), req.params.id, tcId);
+    for (const { tcId, coos } of desired) {
+      const assignmentId = uid();
+      stmt.insertAssignment.run(assignmentId, req.params.id, tcId);
+      const finalCoos = coos !== null
+        ? coos
+        : stmt.coosByTc.all(tcId).map(x => x.coo);  // no selection → all of TC's COOs
+      for (const coo of finalCoos) {
+        stmt.insertAssignmentCoo.run(assignmentId, coo);
+      }
     }
   })();
 
-  res.json(stmt.assignmentsByProgram.all(req.params.id).map(r => ({
-    id: r.id, programId: r.program_id, tcId: r.tc_id,
-    tc: { id: r.tc_id, code: r.code, name: r.name, email: r.email, paymentTerms: r.payment_terms },
-  })));
+  res.json(stmt.assignmentsByProgram.all(req.params.id).map(assignmentToDto));
 });
 
 // =============================================================

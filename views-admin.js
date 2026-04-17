@@ -841,8 +841,9 @@ const AdminViews = (() => {
     const styles = API.Styles.byProgram(programId);
     const asgns = API.Assignments.byProgram(programId);
     const tcs = asgns.map(a => a.tc).filter(Boolean);
-    // Build (TC, COO) column list: one column group per TC×COO combination
-    const colGroups = tcs.flatMap(tc => tc.coos.map(coo => ({ tc, coo })));
+    // Build (TC, COO) column list: one column group per TC×COO combination.
+    // COOs come from the assignment (user-selected per program), not tc.coos.
+    const colGroups = asgns.flatMap(a => (a.coos || []).map(coo => ({ tc: a.tc, coo })));
 
     return `
     ${programTabBar(programId, 'cost', prog)}
@@ -1492,7 +1493,7 @@ const AdminViews = (() => {
 
     const tcCooBlocks = asgns.flatMap(a => {
       if (!a.tc) return [];
-      return a.tc.coos.map(coo => ({ tc: a.tc, coo, sub: subs.find(s => s.tcId === a.tc.id && s.coo === coo) || null }));
+      return (a.coos || []).map(coo => ({ tc: a.tc, coo, sub: subs.find(s => s.tcId === a.tc.id && s.coo === coo) || null }));
     });
 
     const styleNote = localStorage.getItem(`vcp_note_${styleId}`) || '';
@@ -2195,8 +2196,7 @@ const AdminViews = (() => {
   function collapseAllTCs(programId) {
     const prog = API.Programs.get(programId);
     const asgns = API.Assignments.byProgram(programId);
-    const tcs = asgns.map(a => a.tc).filter(Boolean);
-    tcs.forEach(tc => tc.coos.forEach(coo => _collapsedTCs.add(`${tc.id}_${coo}`)));
+    asgns.forEach(a => (a.coos || []).forEach(coo => _collapsedTCs.add(`${a.tcId}_${coo}`)));
     App.openProgram(programId);
   }
 

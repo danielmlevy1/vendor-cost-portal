@@ -69,8 +69,9 @@ App = (() => {
       else if (route === 'design-changes')
         await API.preload.programs();
       else if (route === '' || route === 'vendor-home' || route === 'vendor-program' || route === 'my-styles') {
-        // Vendor routes
-        await API.preload.programs();
+        // Vendor routes — load all assigned programs with assignments,
+        // styles, and this vendor's submissions so inline editing works.
+        await API.preload.vendorWorkspace();
         if (param) await API.preload.program(param);
       }
       else
@@ -477,7 +478,7 @@ App = (() => {
         const styles = API.Styles.byProgram(programId);
         const asgns = API.Assignments.byProgram(programId);
         const tcs = asgns.map(a => a.tc).filter(Boolean);
-        let colGroups = tcs.flatMap(tc => tc.coos.map(coo => ({ tc, coo })));
+        let colGroups = asgns.flatMap(a => (a.coos || []).map(coo => ({ tc: a.tc, coo })));
         // Apply saved order if any
         const savedOrder = state.tcColOrder[programId];
         if (savedOrder) colGroups = savedOrder.map(k => colGroups.find(g => `${g.tc.id}_${g.coo}` === k)).filter(Boolean);
@@ -701,30 +702,59 @@ App = (() => {
   // ── Trading Company Assignment ─────────────────────────────
   function openAssignTCs(programId) {
     const tcs = API.cache.tradingCompanies;
-    const assigned = API.Assignments.byProgram(programId).map(a => a.tcId);
+    // Build lookup of currently assigned (tcId -> Set of selected COOs)
+    const existing = {};
+    for (const a of API.Assignments.byProgram(programId)) {
+      existing[a.tcId] = new Set(a.coos || []);
+    }
+
+    const tcRow = tc => {
+      const isAssigned  = !!existing[tc.id];
+      const selectedSet = existing[tc.id];
+      const tcCoos      = tc.coos || [];
+      const cooChips    = tcCoos.length
+        ? tcCoos.map(coo => {
+            // Default: if this TC wasn't previously assigned, pre-check all its COOs.
+            // Otherwise, use what the existing assignment had selected.
+            const checked = isAssigned ? selectedSet.has(coo) : true;
+            return `<label class="coo-chip" style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border:1px solid var(--border);border-radius:14px;font-size:0.75rem;cursor:pointer;background:${checked ? 'rgba(99,102,241,0.12)' : 'transparent'}">
+              <input type="checkbox" class="assign-coo-chk" data-tcid="${tc.id}" value="${coo}" ${checked ? 'checked' : ''}
+                     onclick="event.stopPropagation()"
+                     onchange="this.parentElement.style.background=this.checked?'rgba(99,102,241,0.12)':'transparent'">
+              ${coo}
+            </label>`;
+          }).join(' ')
+        : '<span class="text-muted" style="font-size:0.75rem">No COOs configured</span>';
+
+      return `
+      <tr style="border-top:1px solid var(--border);cursor:pointer" onclick="App._toggleTcRow(this)">
+        <td style="padding:10px 12px;text-align:center" onclick="event.stopPropagation()">
+          <input type="checkbox" class="assign-tc-chk" data-tcid="${tc.id}" value="${tc.id}" ${isAssigned ? 'checked' : ''}
+                 onchange="App._syncTcRowCoos(this)">
+        </td>
+        <td style="padding:10px 12px;font-weight:600;font-size:0.88rem">${tc.code}</td>
+        <td style="padding:10px 12px;font-size:0.88rem">${tc.name}</td>
+        <td style="padding:10px 12px" data-tcid="${tc.id}">
+          <div style="display:flex;flex-wrap:wrap;gap:6px">${cooChips}</div>
+        </td>
+      </tr>`;
+    };
+
     showModal(`
     <div class="modal-header"><h2>🏭 Assign Trading Companies</h2><button class="btn btn-ghost btn-icon" onclick="App.closeModal()">✕</button></div>
-    <p class="mb-3">Select which trading companies to share this program with. Each TC can quote from any of their COOs.</p>
+    <p class="mb-3">Select which trading companies to share this program with, and choose which COOs each one should quote from.</p>
     <div style="border:1px solid var(--border);border-radius:var(--radius-sm);overflow:hidden;margin-bottom:20px">
       <table style="width:100%;border-collapse:collapse">
         <thead style="background:var(--bg-elevated)">
           <tr>
-            <th style="width:40px;padding:10px 12px;text-align:center"><input type="checkbox" id="tc-check-all" onchange="document.querySelectorAll('.assign-tc-chk').forEach(c=>c.checked=this.checked)" title="Select all"></th>
+            <th style="width:40px;padding:10px 12px;text-align:center"><input type="checkbox" id="tc-check-all" onchange="App._toggleAllTcRows(this.checked)" title="Select all"></th>
             <th style="padding:10px 12px;text-align:left;font-size:0.78rem;color:#94a3b8;text-transform:uppercase;letter-spacing:.05em">Code</th>
             <th style="padding:10px 12px;text-align:left;font-size:0.78rem;color:#94a3b8;text-transform:uppercase;letter-spacing:.05em">Name</th>
-            <th style="padding:10px 12px;text-align:left;font-size:0.78rem;color:#94a3b8;text-transform:uppercase;letter-spacing:.05em">COOs</th>
+            <th style="padding:10px 12px;text-align:left;font-size:0.78rem;color:#94a3b8;text-transform:uppercase;letter-spacing:.05em">COOs to include</th>
           </tr>
         </thead>
         <tbody>
-          ${tcs.map((tc, i) => `
-          <tr style="border-top:1px solid var(--border);cursor:pointer" onclick="this.querySelector('input').click()">
-            <td style="padding:10px 12px;text-align:center" onclick="event.stopPropagation()">
-              <input type="checkbox" class="assign-tc-chk" data-tcid="${tc.id}" value="${tc.id}" ${assigned.includes(tc.id) ? 'checked' : ''}>
-            </td>
-            <td style="padding:10px 12px;font-weight:600;font-size:0.88rem">${tc.code}</td>
-            <td style="padding:10px 12px;font-size:0.88rem">${tc.name}</td>
-            <td style="padding:10px 12px;font-size:0.8rem;color:#94a3b8">${(tc.coos||[]).join(', ')||'—'}</td>
-          </tr>`).join('')}
+          ${tcs.map(tcRow).join('')}
           ${tcs.length === 0 ? `<tr><td colspan="4" style="padding:24px;text-align:center;color:#94a3b8">No trading companies configured yet.</td></tr>` : ''}
         </tbody>
       </table>
@@ -736,8 +766,19 @@ App = (() => {
   }
 
   async function saveAssignments(programId) {
-    const tcIds = [...document.querySelectorAll('.assign-tc-chk:checked')].map(el => el.value);
-    await API.Assignments.assign(programId, tcIds);
+    const assignments = [];
+    for (const chk of document.querySelectorAll('.assign-tc-chk:checked')) {
+      const tcId = chk.value;
+      const coos = [...document.querySelectorAll(`.assign-coo-chk[data-tcid="${tcId}"]:checked`)].map(el => el.value);
+      // Skip TCs that have the row checked but zero COOs picked — better to
+      // surface the error than silently save an unusable assignment.
+      if (!coos.length) {
+        alert(`Pick at least one COO for ${tcId}, or uncheck the row.`);
+        return;
+      }
+      assignments.push({ tcId, coos });
+    }
+    await API.Assignments.assign(programId, assignments);
     closeModal(); navigate(state.route, state.routeParam);
   }
 
@@ -1791,7 +1832,7 @@ App = (() => {
     const asgns  = API.Assignments.byProgram(programId);
     const tcs    = asgns.map(a => a.tc).filter(Boolean);
     // Apply saved TC column order
-    let colGroups = tcs.flatMap(tc => tc.coos.map(coo => ({ tc, coo })));
+    let colGroups = asgns.flatMap(a => (a.coos || []).map(coo => ({ tc: a.tc, coo })));
     const savedOrder = state.tcColOrder ? state.tcColOrder[programId] : null;
     if (savedOrder) colGroups = savedOrder.map(k => colGroups.find(g => `${g.tc.id}_${g.coo}` === k)).filter(Boolean);
     const wrap = document.getElementById('summary-table-wrap');
@@ -6323,4 +6364,31 @@ App._saveAddTab = async function(handoffId, tabType) {
   App._addTabParsed = null;
   App.closeModal();
   App.navigate('design-handoff');
+};
+
+// ── TC assignment modal helpers ──────────────────────────────────
+// Clicking anywhere in a TC row (other than on a control) toggles the
+// row's main checkbox and auto-selects/deselects its COOs to match.
+App._toggleTcRow = function(tr) {
+  const chk = tr.querySelector('.assign-tc-chk');
+  if (!chk) return;
+  chk.checked = !chk.checked;
+  App._syncTcRowCoos(chk);
+};
+
+App._syncTcRowCoos = function(tcChk) {
+  const tcId = tcChk.dataset.tcid;
+  const cooChks = document.querySelectorAll(`.assign-coo-chk[data-tcid="${tcId}"]`);
+  cooChks.forEach(c => {
+    c.checked = tcChk.checked;
+    const label = c.parentElement;
+    if (label) label.style.background = tcChk.checked ? 'rgba(99,102,241,0.12)' : 'transparent';
+  });
+};
+
+App._toggleAllTcRows = function(checked) {
+  document.querySelectorAll('.assign-tc-chk').forEach(chk => {
+    chk.checked = checked;
+    App._syncTcRowCoos(chk);
+  });
 };

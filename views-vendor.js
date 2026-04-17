@@ -22,7 +22,10 @@ const VendorViews = (() => {
     const progStats = programs.map(prog => {
       const styles   = allStyles.filter(s => s.programId === prog.id);
       const progSubs = subs.filter(sub => styles.some(s => s.id === sub.styleId));
-      const totalRows = styles.reduce((acc) => acc + (tc?.coos?.length || 1), 0);
+      // Quote rows per program = styles × COOs selected for THIS vendor on THIS program.
+      const progAsgn = assignments.find(a => a.programId === prog.id);
+      const progCoos = progAsgn?.coos?.length ? progAsgn.coos.length : (tc?.coos?.length || 1);
+      const totalRows = styles.length * progCoos;
       const quoted   = progSubs.filter(s => s.fob || s.factoryCost).length;
       const flagged  = progSubs.filter(s => s.status === 'flagged').length;
       const skipped  = progSubs.filter(s => s.status === 'skipped').length;
@@ -96,7 +99,9 @@ const VendorViews = (() => {
     const styles = allStyles.filter(s => s.programId === programId);
     const subs = API.Submissions.all().filter(s => s.tcId === tcId);
     const flaggedSubs = subs.filter(s => s.status === 'flagged' && styles.some(st => st.id === s.styleId));
-    const coos = tc?.coos || [];
+    // COOs for this program come from the admin's assignment, not the TC's master list.
+    const asgn = API.Assignments.byProgram(programId).find(a => a.tcId === tcId);
+    const coos = (asgn?.coos?.length ? asgn.coos : (tc?.coos || []));
 
     // Build colspan for thead: Style# + Name + Fab + (FOB + FC + Action) per COO + Overall Status
     const cooColCount = coos.length * 3; // FOB, FC, Action per COO
@@ -231,11 +236,80 @@ const VendorViews = (() => {
 
 
   // ── All Styles View ────────────────────────────────────────
+  // Inline-editable across all assigned programs. Each row is one
+  // (style × COO) combination and the admin's per-program COO selection
+  // determines which COO rows show up.
   function renderMyStyles(tcId) {
     const tc = API.TradingCompanies.get(tcId);
     const styles = API.Assignments.stylesByTc(tcId);
     const subs = API.Submissions.all().filter(s => s.tcId === tcId);
     const flagged = subs.filter(s => s.status === 'flagged');
+
+    // Per-program COO selection: admin-assigned COOs for THIS vendor on
+    // each program, falling back to the TC master list if the
+    // assignment didn't specify any (shouldn't happen after backfill).
+    function coosFor(programId) {
+      const asgn = API.Assignments.byProgram(programId).find(a => a.tcId === tcId);
+      if (asgn?.coos?.length) return asgn.coos;
+      return tc?.coos || [];
+    }
+
+    // Inline editable FOB / Factory Cost cell, mirroring the per-program
+    // quote table so behavior is identical across views.
+    function inlineMoneyCell(sub, field, styleId, coo) {
+      const flag = sub ? API.CellFlags.get(sub.id, field) : null;
+      const revs = sub ? API.Revisions.byField(sub.id, field) : [];
+      const rawVal = (sub && sub[field] != null) ? parseFloat(sub[field]).toFixed(2) : '';
+      const isSkipped = sub?.status === 'skipped';
+      const dot  = flag ? `<span class="flag-dot flag-${flag.color}" style="margin-left:4px" title="${(flag.note||flag.color).replace(/"/g,'&quot;')}"></span>` : '';
+      const hist = revs.length > 1
+        ? `<span class="revision-badge vendor-hist" style="margin-left:4px" title="View revision history" onclick="App.openRevisionHistory('${sub.id}','${field}')">🕒 ${revs.length}</span>`
+        : '';
+      if (isSkipped) return `<td class="text-muted tc-skipped-cell" style="text-align:center">—</td>`;
+      return `<td class="${flag ? 'cell-flagged-tc' : ''}" style="padding:4px 6px">
+        <div style="display:flex;align-items:center;gap:4px">
+          <input class="tc-inline-input" type="text" inputmode="decimal"
+            placeholder="$0.00"
+            value="${rawVal ? '$' + rawVal : ''}"
+            onfocus="this.value=this.value.replace(/[^0-9.]/g,'')"
+            onblur="if(this.value&&!isNaN(parseFloat(this.value)))this.value='$'+parseFloat(this.value).toFixed(2);App.saveVendorCellInline('${styleId}','${tcId}','${coo}','${field}',this)"
+            onkeydown="if(event.key==='Enter'){this.blur()}"
+          >${dot}${hist}
+        </div>
+      </td>`;
+    }
+
+    // Flatten styles × their program's COOs into rows; skip any style
+    // whose program has zero COOs assigned for this vendor.
+    const rowCount = styles.reduce((n, s) => n + coosFor(s.programId).length, 0);
+
+    const bodyRows = styles.flatMap(s => {
+      const prog = API.Programs.get(s.programId);
+      const styleSubs = subs.filter(sub => sub.styleId === s.id);
+      const coos = coosFor(s.programId);
+      return coos.map(coo => {
+        const sub = styleSubs.find(x => x.coo === coo) || null;
+        const isSkipped = sub?.status === 'skipped';
+        const skipBtn = isSkipped
+          ? `<button class="btn btn-ghost btn-sm tc-skip-btn" title="Un-skip this COO" onclick="App.unskipVendorCoo('${s.id}','${tcId}','${coo}')">↩ Un-skip</button>`
+          : `<button class="btn btn-ghost btn-sm tc-skip-btn" title="Skip this COO" onclick="App.openSkipVendorCoo('${s.id}','${tcId}','${coo}')">⊘ Skip</button>`;
+        return `<tr class="${sub?.status === 'flagged' ? 'flagged-row' : isSkipped ? 'tc-skipped-row' : ''}">
+          <td class="text-sm">${prog?.name || '—'}</td>
+          <td class="primary font-bold">${s.styleNumber}</td>
+          <td>${s.styleName}</td>
+          <td class="text-sm">${(s.fabrication || '').substring(0, 30)}${(s.fabrication || '').length > 30 ? '…' : ''}</td>
+          <td><span class="badge badge-pending">${coo}</span></td>
+          ${inlineMoneyCell(sub, 'fob', s.id, coo)}
+          ${inlineMoneyCell(sub, 'factoryCost', s.id, coo)}
+          <td>${badge(sub?.status || 'pending')}</td>
+          <td style="white-space:nowrap">
+            ${skipBtn}
+            <button class="btn btn-secondary btn-sm" title="More options (payment terms, MOQ, lead time, comments)" onclick="App.openSubmitQuote('${s.id}','${tcId}','${coo}')">⋯</button>
+          </td>
+        </tr>
+        ${sub?.status === 'flagged' && sub.flagReason ? `<tr><td colspan="9"><div class="flag-comment">🚩 Feedback: ${sub.flagReason}</div></td></tr>` : ''}`;
+      });
+    }).join('');
 
     return `
     <div class="page-header">
@@ -244,7 +318,7 @@ const VendorViews = (() => {
           <button class="btn btn-ghost btn-sm" onclick="App.navigateVendorHome('${tcId}')" style="padding:4px 8px;font-size:0.8rem">← Back to Programs</button>
         </div>
         <h1 class="page-title">All Styles — ${tc?.code}</h1>
-        <p class="page-subtitle">${styles.length} styles across all programs${flagged.length ? ` · <span class="text-warning">${flagged.length} flagged for review</span>` : ''}</p>
+        <p class="page-subtitle">${styles.length} styles · ${rowCount} quote row${rowCount !== 1 ? 's' : ''} across all programs${flagged.length ? ` · <span class="text-warning">${flagged.length} flagged for review</span>` : ''}</p>
         <div style="margin-top:6px"> ${(tc?.coos || []).map(c => `<span class="badge badge-pending" style="margin:2px">${c}</span>`).join('')} </div>
       </div>
       <div style="display:flex;gap:8px">
@@ -255,45 +329,13 @@ const VendorViews = (() => {
     ${flagged.length ? `<div class="alert alert-warning">🚩 You have ${flagged.length} cost(s) flagged for review. Please revise your submissions.</div>` : ''}
     <div class="card">
       <div class="table-wrap">
-        <table>
+        <table class="tc-style-table">
           <thead><tr>
             <th>Program</th><th>Style #</th><th>Style Name</th><th>Fabrication</th>
             <th>COO</th><th>My FOB</th><th>Factory Cost</th><th>Status</th><th>Action</th>
           </tr></thead>
           <tbody>
-            ${styles.length ? styles.flatMap(s => {
-              const prog = API.Programs.get(s.programId);
-              const styleSubs = subs.filter(sub => sub.styleId === s.id);
-              const allCoos = tc?.coos || [];
-              return allCoos.map(coo => {
-                const sub = styleSubs.find(sub => sub.coo === coo) || null;
-                return `<tr class="${sub?.status === 'flagged' ? 'flagged-row' : ''}">
-                  <td class="text-sm">${prog?.name || '—'}</td>
-                  <td class="primary font-bold">${s.styleNumber}</td>
-                  <td>${s.styleName}</td>
-                  <td class="text-sm">${(s.fabrication || '').substring(0, 30)}${(s.fabrication || '').length > 30 ? '…' : ''}</td>
-                  <td><span class="badge badge-pending">${coo}</span></td>
-                  <td class="font-bold">${(() => {
-                    const flag = sub ? API.CellFlags.get(sub.id, 'fob') : null;
-                    const revs = sub ? API.Revisions.byField(sub.id, 'fob').length : 0;
-                    const dot  = flag ? `<span class="flag-dot flag-${flag.color}" title="${(flag.note||'').replace(/"/g,'&quot;') || flag.color}"></span>` : '';
-                    const hist = revs > 1 ? `<span class="revision-badge vendor-hist" title="View history (${revs})" onclick="App.openRevisionHistory('${sub?.id}','fob')">&#128338; ${revs}</span>` : '';
-                    return `${sub?.fob ? '$' + parseFloat(sub.fob).toFixed(2) : '—'}${dot}${hist}`;
-                  })()}</td>
-                  <td class="text-sm">${(() => {
-                    const flag = sub ? API.CellFlags.get(sub.id, 'factoryCost') : null;
-                    const revs = sub ? API.Revisions.byField(sub.id, 'factoryCost').length : 0;
-                    const dot  = flag ? `<span class="flag-dot flag-${flag.color}" title="${(flag.note||'').replace(/"/g,'&quot;') || flag.color}"></span>` : '';
-                    const hist = revs > 1 ? `<span class="revision-badge vendor-hist" title="View history (${revs})" onclick="App.openRevisionHistory('${sub?.id}','factoryCost')">&#128338; ${revs}</span>` : '';
-                    return `${sub?.factoryCost ? '$' + parseFloat(sub.factoryCost).toFixed(2) : '—'}${dot}${hist}`;
-                  })()}</td>
-                  <td>${badge(sub?.status || 'pending')}</td>
-                  <td><button class="btn btn-primary btn-sm" onclick="App.openSubmitQuote('${s.id}','${tcId}','${coo}')">
-                    ${sub ? (sub.status === 'flagged' ? '🚩 Revise' : '✏ Edit') : '＋ Quote'}</button></td>
-                </tr>
-                ${sub?.status === 'flagged' && sub.flagReason ? `<tr><td colspan="9"><div class="flag-comment">🚩 Feedback: ${sub.flagReason}</div></td></tr>` : ''}`;
-              });
-            }).join('') : `<tr><td colspan="9" class="text-center text-muted" style="padding:40px">No styles assigned to your company yet.</td></tr>`}
+            ${bodyRows || `<tr><td colspan="9" class="text-center text-muted" style="padding:40px">No styles assigned to your company yet.</td></tr>`}
           </tbody>
         </table>
       </div>
@@ -306,7 +348,12 @@ const VendorViews = (() => {
     const tc = API.TradingCompanies.get(tcId);
     const existing = API.Submissions.byTcAndStyle(tcId, styleId).find(s => s.coo === coo) || {};
     const cooRates = API.cache.cooRates;
-    const availCoos = (tc?.coos || []).length ? tc.coos : cooRates.map(r => r.code);
+    // Prefer the COOs the admin picked for this specific (program, TC).
+    // Fall back to the TC's master list if no assignment is known.
+    const asgn      = s ? API.Assignments.byProgram(s.programId).find(a => a.tcId === tcId) : null;
+    const availCoos = (asgn?.coos?.length ? asgn.coos
+                      : (tc?.coos || []).length ? tc.coos
+                      : cooRates.map(r => r.code));
     const v = existing;
 
     return `

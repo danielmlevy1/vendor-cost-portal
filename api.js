@@ -494,19 +494,6 @@ const API = (() => {
 
   // ── Assignments ───────────────────────────────────────────────
 
-  // The server's /assignments endpoint omits `coos` on the embedded tc
-  // (they live in a separate tc_coos table). Hydrate from the TC cache
-  // before handing the list to views — they rely on tc.coos being an array.
-  function hydrateAssignments(asgns) {
-    for (const a of asgns) {
-      if (a.tc) {
-        const full = cache.tcMap[a.tcId];
-        a.tc.coos = (full && full.coos) || [];
-      }
-    }
-    return asgns;
-  }
-
   function syncTcCount(programId, count) {
     const p = cache.programMap[programId];
     if (p) p.tcCount = count;
@@ -514,17 +501,36 @@ const API = (() => {
     if (idx >= 0) cache.programs[idx].tcCount = count;
   }
 
+  // Defensive: ensure every assignment has the expected coos arrays, in
+  // case an older server is still running.
+  function normalizeAssignments(asgns) {
+    for (const a of asgns) {
+      if (!Array.isArray(a.coos)) a.coos = [];
+      if (a.tc && !Array.isArray(a.tc.coos)) {
+        const full = cache.tcMap[a.tcId];
+        a.tc.coos = (full && full.coos) || a.coos.slice();
+      }
+    }
+    return asgns;
+  }
+
   const Assignments = {
     all()           { return Object.values(cache.assignments).flat(); },
     byProgram(pid)  { return cache.assignments[pid] || []; },
     async fetchByProgram(pid) {
-      const asgns = hydrateAssignments(await GET(`/api/programs/${pid}/assignments`));
+      const asgns = normalizeAssignments(await GET(`/api/programs/${pid}/assignments`));
       cache.assignments[pid] = asgns;
       syncTcCount(pid, asgns.length);
       return asgns;
     },
-    async assign(programId, tcIds) {
-      const asgns = hydrateAssignments(await PUT(`/api/programs/${programId}/assignments`, { tcIds }));
+    // selections: either
+    //   array of tcIds                                  (each TC gets all its COOs)
+    //   array of { tcId, coos: [...] }                  (caller picks COOs)
+    async assign(programId, selections) {
+      const body = Array.isArray(selections) && selections.length && typeof selections[0] === 'object'
+        ? { assignments: selections }
+        : { tcIds: selections };
+      const asgns = normalizeAssignments(await PUT(`/api/programs/${programId}/assignments`, body));
       cache.assignments[programId] = asgns;
       syncTcCount(programId, asgns.length);
       return asgns;
@@ -1065,6 +1071,25 @@ const API = (() => {
       // Load styles for all costing programs
       const costingProgs = cache.programs.filter(p => p.status === 'Costing');
       await Promise.all(costingProgs.map(p => Styles.fetchByProgram(p.id)));
+    },
+    // Pull everything a vendor needs to render their dashboard and all
+    // their styles across programs: assignments (filtered to self by the
+    // server), styles, submissions, cell flags. One call per program but
+    // fanned out in parallel.
+    async vendorWorkspace() {
+      await Promise.all([Programs.all(), preload.global()]);
+      await Promise.all(cache.programs.map(async p => {
+        try {
+          await Promise.all([
+            Assignments.fetchByProgram(p.id),
+            Styles.fetchByProgram(p.id),
+            Submissions.fetchByProgram(p.id),
+          ]);
+        } catch (_) { /* program the vendor isn't on will 403 — ignore */ }
+      }));
+      // Flags live on submissions — load after submissions are cached.
+      const subs = Object.values(cache.submissions).flat();
+      await Promise.all(subs.map(s => CellFlags.fetchBySubmission(s.id).catch(() => {})));
     },
   };
 

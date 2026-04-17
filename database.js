@@ -347,6 +347,32 @@ function runMigrations() {
 
   // v3: pending_changes current_data (snapshot before the proposed change)
   addColumn('pending_changes', 'current_data', 'TEXT');
+
+  // v4: assignment_coos — backfill legacy assignments with the TC's full
+  // COO list so every assignment has explicit rows. Idempotent: only
+  // touches assignments that have zero rows in assignment_coos.
+  backfillAssignmentCoos();
+}
+
+function backfillAssignmentCoos() {
+  const rows = db.prepare(`
+    SELECT a.id AS assignment_id, a.tc_id
+    FROM assignments a
+    WHERE NOT EXISTS (
+      SELECT 1 FROM assignment_coos ac WHERE ac.assignment_id = a.id
+    )
+  `).all();
+  if (!rows.length) return;
+
+  const tcCoos = db.prepare('SELECT coo FROM tc_coos WHERE tc_id = ?');
+  const insert = db.prepare('INSERT OR IGNORE INTO assignment_coos (assignment_id, coo) VALUES (?, ?)');
+  const tx = db.transaction(() => {
+    for (const r of rows) {
+      for (const { coo } of tcCoos.all(r.tc_id)) insert.run(r.assignment_id, coo);
+    }
+  });
+  tx();
+  console.log(`[db] Backfilled assignment_coos for ${rows.length} legacy assignments`);
 }
 
 // ── Run all seeders ────────────────────────────────────────────
