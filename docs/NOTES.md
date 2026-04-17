@@ -98,21 +98,43 @@ re-preloaded whenever the user navigates back to a screen that depends on
 them.
 
 ## Environment Variables
-| Var               | Default                  | Notes                              |
-| ----------------- | ------------------------ | ---------------------------------- |
-| `PORT`            | `3000`                   | HTTP port                          |
-| `DB_PATH`         | `data/portal.db`         | SQLite file path                   |
-| `JWT_SECRET`      | `dev-secret-change-in-prod` | **Set in prod**                 |
-| `JWT_EXPIRY`      | `8h`                     | jsonwebtoken format                |
-| `BCRYPT_ROUNDS`   | `10`                     | Cost factor for password hashing   |
-| `SMTP_HOST`       | `smtp.gmail.com`         |                                    |
-| `SMTP_PORT`       | `587`                    |                                    |
-| `SMTP_USER`       | _(empty)_                | Required for digest email          |
-| `SMTP_PASS`       | _(empty)_                | Required for digest email          |
-| `FROM_EMAIL`      | `SMTP_USER`              | Digest sender                      |
-| `PD_EMAIL`        | _(empty)_                | Reply-to on digest emails          |
-| `COMPANY_NAME`    | `Costing Team`           | Used in digest subject/body        |
-| `EMAIL_TIMEZONE`  | `Asia/Hong_Kong`         | Cron timezone for daily digest     |
-| `CRON_TIME`       | `0 10 * * *`             | (Currently unused — scheduler computes UTC offset itself) |
+See [.env.example](../.env.example) for a copy-paste template.
+
+| Var                    | Default                                                | Notes                                    |
+| ---------------------- | ------------------------------------------------------ | ---------------------------------------- |
+| `PORT`                 | `3000`                                                 | HTTP port (Azure App Service = `8080`)   |
+| `DB_PATH`              | `data/portal.db`                                       | SQLite file path                         |
+| `JWT_SECRET`           | `dev-secret-change-in-prod`                            | **Set in prod**                          |
+| `JWT_EXPIRY`           | `8h`                                                   | jsonwebtoken format                      |
+| `BCRYPT_ROUNDS`        | `10`                                                   | Cost factor for password hashing         |
+| `AZURE_CLIENT_ID`      | _(empty)_                                              | Entra app registration client ID         |
+| `AZURE_CLIENT_SECRET`  | _(empty)_                                              | Entra client secret                      |
+| `AZURE_AUTHORITY`      | `https://login.microsoftonline.com/organizations`      | Multi-tenant work/school accounts        |
+| `OAUTH_REDIRECT_URI`   | _(empty)_                                              | Must match Entra app registration        |
+| `SMTP_HOST`            | `smtp.gmail.com`                                       |                                          |
+| `SMTP_PORT`            | `587`                                                  |                                          |
+| `SMTP_USER`            | _(empty)_                                              | Required for digest email                |
+| `SMTP_PASS`            | _(empty)_                                              | Required for digest email                |
+| `FROM_EMAIL`           | `SMTP_USER`                                            | Digest sender                            |
+| `PD_EMAIL`             | _(empty)_                                              | Reply-to on digest emails                |
+| `COMPANY_NAME`         | `Costing Team`                                         | Used in digest subject/body              |
+| `EMAIL_TIMEZONE`       | `Asia/Hong_Kong`                                       | Cron timezone for daily digest           |
+
+## Microsoft (Entra ID) Sign-In
+See [DEPLOY.md](DEPLOY.md) for full setup.
+
+Short version: set `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET`, and
+`OAUTH_REDIRECT_URI` (plus optionally `AZURE_AUTHORITY`). The login
+screen will then show a "Sign in with Microsoft" button in addition
+to the password form. Leave any of those three unset and MS login
+is disabled — password login still works.
+
+Access control: when a user completes MS sign-in, their email is
+matched against the `users` table. If no row exists, they're
+rejected. Trading companies are **password-only** (they don't have
+Microsoft accounts).
+
+Local dev: leave the Azure env vars empty. Everything behaves
+exactly as before — password login only, no MS button on the screen.
 
 > See [Notes-original.md](Notes-original.md) for the legacy root `Notes.md` file.

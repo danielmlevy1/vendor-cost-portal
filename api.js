@@ -17,6 +17,20 @@ const API = (() => {
   'use strict';
 
   // ── Token management ──────────────────────────────────────────
+  // If we just came back from a Microsoft OIDC redirect, the token
+  // arrives in the URL fragment (#auth=...). Pick it up, store it,
+  // and strip it from the URL before the app reads the route.
+  (function pickupFragmentToken() {
+    const m = (window.location.hash || '').match(/[#&]auth=([^&]+)/);
+    if (!m) return;
+    try {
+      const token = decodeURIComponent(m[1]);
+      localStorage.setItem('vcp_token', token);
+      // Remove the fragment without triggering a reload
+      history.replaceState(null, '', window.location.pathname + window.location.search);
+    } catch (_) { /* ignore */ }
+  })();
+
   let _token = localStorage.getItem('vcp_token') || null;
 
   function authHeaders() {
@@ -103,9 +117,18 @@ const API = (() => {
     },
     async current() {
       if (!_token) return null;
-      try { return await GET('/api/auth/me'); }
+      try {
+        const r = await GET('/api/auth/me');
+        // /me returns { user }; unwrap for callers that expect the payload
+        return r && r.user ? r.user : r;
+      }
       catch (_) { _token = null; localStorage.removeItem('vcp_token'); return null; }
     },
+    async config() {
+      try { return await GET('/api/auth/config'); }
+      catch (_) { return { microsoftEnabled: false }; }
+    },
+    microsoftLoginUrl() { return '/api/auth/microsoft/login'; },
   };
 
   // DB.Session.current() was an alias — use state.user instead

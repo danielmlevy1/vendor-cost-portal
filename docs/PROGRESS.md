@@ -50,9 +50,16 @@ the old `DB` API and the new REST API, auth/role gating, etc.).
 
 ## What's Next
 1. **Fix any bugs surfaced during browser testing** — patch as found.
-2. **Hosting setup** — once the app is stable locally, deploy:
-   - Pick a host (Render / Fly.io / Railway / VPS).
-   - Persist `data/portal.db` on a mounted volume.
-   - Configure env vars: `JWT_SECRET`, `SMTP_*`, `PORT`, `DB_PATH`.
-   - Set up backups for the SQLite file.
-   - Wire up a production domain + TLS.
+2. **Deploy to Azure App Service (Linux, Node 20).** The codebase is
+   already wired for this — see [DEPLOY.md](DEPLOY.md):
+   - Microsoft Entra ID sign-in is coded up as a feature flag — dormant
+     locally (no env vars set), activates in Azure once
+     `AZURE_CLIENT_ID` / `AZURE_CLIENT_SECRET` / `OAUTH_REDIRECT_URI`
+     are set.
+     - Multi-tenant (work/school accounts from any org).
+     - Email must match a row in the `users` table — no auto-provisioning.
+     - Trading companies stay on password auth forever.
+   - SQLite persists on `/home/data/portal.db` (Azure's built-in
+     persistent volume).
+   - Pending: custom domain + managed TLS cert, daily DB backup job,
+     rotating the seed credentials before go-live.

@@ -34,6 +34,27 @@
         <button class="btn btn-primary w-full" type="submit" style="justify-content:center;margin-top:8px">Sign In
           →</button>
       </form>
+
+      <!-- Microsoft sign-in (revealed by app.js if /api/auth/config reports enabled) -->
+      <div id="ms-signin-wrap" style="display:none;margin-top:16px">
+        <div style="display:flex;align-items:center;gap:12px;color:#64748b;font-size:0.8rem;margin:8px 0 12px">
+          <div style="flex:1;height:1px;background:#1e293b"></div>
+          <span>OR</span>
+          <div style="flex:1;height:1px;background:#1e293b"></div>
+        </div>
+        <a id="ms-signin-btn" href="/api/auth/microsoft/login"
+           class="btn w-full"
+           style="justify-content:center;background:#fff;color:#1e293b;border:1px solid #cbd5e1;font-weight:600;text-decoration:none">
+          <svg width="18" height="18" viewBox="0 0 23 23" style="margin-right:8px;vertical-align:-3px" aria-hidden="true">
+            <rect x="1"  y="1"  width="10" height="10" fill="#f25022"/>
+            <rect x="12" y="1"  width="10" height="10" fill="#7fba00"/>
+            <rect x="1"  y="12" width="10" height="10" fill="#00a4ef"/>
+            <rect x="12" y="12" width="10" height="10" fill="#ffb900"/>
+          </svg>
+          Sign in with Microsoft
+        </a>
+      </div>
+
       <p class="text-center text-muted text-sm" style="margin-top:24px">
         Admin: <code>admin@company.com</code> / <code>admin123</code><br>
         Trading Co. demo: <code>shk@vendor.com</code> / <code>vendor123</code>

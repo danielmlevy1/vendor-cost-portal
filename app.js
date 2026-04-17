@@ -102,6 +102,11 @@ App = (() => {
     if (form) form.onsubmit = login;
     const err = document.getElementById('login-error');
     if (err) err.style.display = 'none';
+    // Reveal Microsoft sign-in when the server reports it's enabled.
+    API.Auth.config().then(cfg => {
+      const wrap = document.getElementById('ms-signin-wrap');
+      if (wrap && cfg && cfg.microsoftEnabled) wrap.style.display = '';
+    }).catch(() => {});
   }
 
   async function login(e) {

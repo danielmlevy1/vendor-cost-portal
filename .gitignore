@@ -14,6 +14,11 @@ npm-debug.log*
 # Build artifacts
 dist/
 
+# Environment — never commit secrets. .env.example is safe to commit.
+.env
+.env.local
+.env.*.local
+
 # Database (generated at runtime — do not commit)
 data/
 
