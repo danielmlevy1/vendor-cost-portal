@@ -494,17 +494,39 @@ const API = (() => {
 
   // ── Assignments ───────────────────────────────────────────────
 
+  // The server's /assignments endpoint omits `coos` on the embedded tc
+  // (they live in a separate tc_coos table). Hydrate from the TC cache
+  // before handing the list to views — they rely on tc.coos being an array.
+  function hydrateAssignments(asgns) {
+    for (const a of asgns) {
+      if (a.tc) {
+        const full = cache.tcMap[a.tcId];
+        a.tc.coos = (full && full.coos) || [];
+      }
+    }
+    return asgns;
+  }
+
+  function syncTcCount(programId, count) {
+    const p = cache.programMap[programId];
+    if (p) p.tcCount = count;
+    const idx = cache.programs.findIndex(x => x.id === programId);
+    if (idx >= 0) cache.programs[idx].tcCount = count;
+  }
+
   const Assignments = {
     all()           { return Object.values(cache.assignments).flat(); },
     byProgram(pid)  { return cache.assignments[pid] || []; },
     async fetchByProgram(pid) {
-      const asgns = await GET(`/api/programs/${pid}/assignments`);
+      const asgns = hydrateAssignments(await GET(`/api/programs/${pid}/assignments`));
       cache.assignments[pid] = asgns;
+      syncTcCount(pid, asgns.length);
       return asgns;
     },
     async assign(programId, tcIds) {
-      const asgns = await PUT(`/api/programs/${programId}/assignments`, { tcIds });
+      const asgns = hydrateAssignments(await PUT(`/api/programs/${programId}/assignments`, { tcIds }));
       cache.assignments[programId] = asgns;
+      syncTcCount(programId, asgns.length);
       return asgns;
     },
     stylesByTc(tcId) {

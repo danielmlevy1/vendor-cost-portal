@@ -462,7 +462,7 @@ const AdminViews = (() => {
     const dash = `<span class="text-muted">—</span>`;
     const allSubs = API.Submissions.all();
     // Role check — used to show/hide admin buttons in program rows
-    const _role = DB?.Session?.current()?.role;
+    const _role = (typeof App !== 'undefined' && App._getState && App._getState()?.user?.role) || null;
     const isAdminOrPC = _role === 'admin' || _role === 'pc';
 
     const thead = `<thead><tr>
@@ -478,11 +478,12 @@ const AdminViews = (() => {
     </tr></thead>`;
 
     // ── Design Handoff rows (not yet in a request) ────────────
+    // Column order must mirror the thead above (18 cells).
     const handoffRows = openHandoffs.map(h => {
       const sc = (h.stylesList || []).length;
       const fabBadge = !h.fabricsUploaded
         ? `<span class="badge badge-pending" style="font-size:0.68rem;margin-left:6px">No fabrics</span>` : '';
-      const name = [h.season, h.year, h.retailer].filter(Boolean).join(' ') || 'Design Handoff';
+      const brandLabel = h.retailer || [h.season, h.year].filter(Boolean).join(' ') || 'Design Handoff';
       const assignedTCIds = h.assignedTCIds || [];
       const assignedTCs   = assignedTCIds.map(id => API.TradingCompanies.get(id)).filter(Boolean);
       const tcChips = assignedTCs.length
@@ -490,12 +491,15 @@ const AdminViews = (() => {
             `<span class="tag" style="font-size:0.7rem;padding:2px 6px">${tc.code}</span>`).join('')}</div>`
         : `<span class="text-muted" style="font-size:0.75rem">None assigned</span>`;
       return `<tr style="background:rgba(124,58,237,0.03)">
-        <td>${h.season || '—'}</td>
-        <td>${h.year || '—'}</td>
-        <td><span class="text-muted">—</span></td>
-        <td class="font-bold">${name}${fabBadge}</td>
+        <td>${h.season || dash}</td>
+        <td>${h.year || dash}</td>
+        <td>${dash}</td>
+        <td class="font-bold">${brandLabel}${fabBadge}</td>
+        <td>${dash}</td>
         <td>${stageBadge('Design Submitted')}</td>
-        <td style="text-align:center"><span class="tag">${sc}</span></td>
+        <td>${dash}</td>
+        <td>${dash}</td>
+        <td style="text-align:center">${sc ? `<span class="tag">${sc}</span>` : dash}</td>
         <td style="text-align:center">${dash}</td>
         <td style="text-align:center">${dash}</td>
         <td style="text-align:center">${dash}</td>
@@ -506,7 +510,9 @@ const AdminViews = (() => {
             ${tcChips}
           </div>
         </td>
-        <td>${dash}</td><td>${dash}</td><td>${dash}</td>
+        <td class="text-sm">${fmtDate(h.startDate)}</td>
+        <td class="text-sm">${fmtDate(h.endDate)}</td>
+        <td class="text-sm">${fmtDate(h.firstCRD)}</td>
         <td onclick="event.stopPropagation()" style="white-space:nowrap">
           <div style="display:flex;gap:6px;flex-wrap:wrap">
             <button class="btn btn-sm" style="background:rgba(16,185,129,0.15);color:#10b981;border:1px solid rgba(16,185,129,0.3)"
@@ -520,10 +526,11 @@ const AdminViews = (() => {
 
 
     // ── Sales Request rows (not yet a program) ────────────────
+    // Column order must mirror the thead above (18 cells).
     const requestRows = openRequests.map(r => {
       const sc = (r.styles || []).length;
       const projQty = (r.styles || []).reduce((s, x) => s + (parseFloat(x.projQty) || 0), 0);
-      const name = r.name || [r.season, r.year, r.retailer].filter(Boolean).join(' ') || 'Sales Request';
+      const brandLabel = r.retailer || r.name || [r.season, r.year].filter(Boolean).join(' ') || 'Sales Request';
       const reqTCIds = r.assignedTCIds || [];
       const reqTCs   = reqTCIds.map(id => API.TradingCompanies.get(id)).filter(Boolean);
       const reqTCChips = reqTCs.length
@@ -531,12 +538,15 @@ const AdminViews = (() => {
             `<span class="tag" style="font-size:0.7rem;padding:2px 6px">${tc.code}</span>`).join('')}</div>`
         : `<span class="text-muted" style="font-size:0.75rem">None assigned</span>`;
       return `<tr style="background:rgba(245,158,11,0.03)">
-        <td>${r.season || '—'}</td>
-        <td>${r.year || '—'}</td>
-        <td><span class="text-muted">—</span></td>
-        <td class="font-bold">${name}</td>
+        <td>${r.season || dash}</td>
+        <td>${r.year || dash}</td>
+        <td>${dash}</td>
+        <td class="font-bold">${brandLabel}</td>
+        <td>${dash}</td>
         <td>${stageBadge('Sales Request')}</td>
-        <td style="text-align:center"><span class="tag">${sc}</span></td>
+        <td>${r.number ? `<span class="tag" style="font-family:monospace;font-size:0.78rem">${r.number}</span>` : dash}</td>
+        <td>${dash}</td>
+        <td style="text-align:center">${sc ? `<span class="tag">${sc}</span>` : dash}</td>
         <td style="text-align:center">${dash}</td>
         <td style="text-align:center">${dash}</td>
         <td style="text-align:center">${projQty > 0 ? `<span class="tag">${projQty.toLocaleString()}</span>` : dash}</td>
@@ -547,7 +557,9 @@ const AdminViews = (() => {
             ${reqTCChips}
           </div>
         </td>
-        <td>${dash}</td><td>${dash}</td><td>${dash}</td>
+        <td class="text-sm">${fmtDate(r.startDate)}</td>
+        <td class="text-sm">${fmtDate(r.endDate)}</td>
+        <td class="text-sm">${fmtDate(r.firstCRD)}</td>
         <td onclick="event.stopPropagation()" style="white-space:nowrap">
           <div style="display:flex;gap:6px;flex-wrap:wrap">
             <button class="btn btn-sm" style="background:rgba(16,185,129,0.15);color:#10b981;border:1px solid rgba(16,185,129,0.3)"
