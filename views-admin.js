@@ -116,14 +116,17 @@ const AdminViews = (() => {
     // For each TC assigned to any active program, compute what % of
     // their assigned (program, style) pairs they've quoted at least
     // once. Surfaces silent vendors before the matrix view does.
-    const tcCoverage = {};   // tcId -> { tc, assignedStyles, quotedStyles, programIds: Set }
+    // Also collects cycle-time samples: days from program createdAt
+    // (proxy for assignment time) to that TC's first submission on
+    // the program — a vendor responsiveness signal.
+    const tcCoverage = {};   // tcId -> { tc, assigned, quoted, programIds, cycleSamples }
     for (const prog of programs) {
       if (prog.status !== 'Costing') continue;
       const progStyles = allStylesDB.filter(s => s.programId === prog.id && s.status !== 'cancelled');
       const asgns = API.Assignments.byProgram(prog.id);
       for (const a of asgns) {
         if (!a.tcId) continue;
-        tcCoverage[a.tcId] ||= { tc: a.tc || API.TradingCompanies.get(a.tcId), assigned: 0, quoted: 0, programIds: new Set() };
+        tcCoverage[a.tcId] ||= { tc: a.tc || API.TradingCompanies.get(a.tcId), assigned: 0, quoted: 0, programIds: new Set(), cycleSamples: [] };
         const slot = tcCoverage[a.tcId];
         slot.programIds.add(prog.id);
         for (const s of progStyles) {
@@ -131,10 +134,31 @@ const AdminViews = (() => {
           const hasQuote = allSubs.some(sub => sub.styleId === s.id && sub.tcId === a.tcId && sub.fob != null);
           if (hasQuote) slot.quoted += 1;
         }
+        // Cycle-time sample for this (program, TC): earliest submission
+        // with FOB, measured from the program's createdAt.
+        if (prog.createdAt) {
+          const subsOnProg = allSubs.filter(sub => sub.tcId === a.tcId && sub.fob != null && progStyles.some(s => s.id === sub.styleId));
+          if (subsOnProg.length) {
+            const earliest = subsOnProg.reduce((min, s) => {
+              const t = new Date(s.createdAt || s.updatedAt || 0).getTime();
+              return t && t < min ? t : min;
+            }, Infinity);
+            if (earliest !== Infinity) {
+              const days = Math.max(0, Math.round((earliest - new Date(prog.createdAt).getTime()) / 86400000));
+              slot.cycleSamples.push(days);
+            }
+          }
+        }
       }
     }
     const tcCoverageRows = Object.values(tcCoverage)
-      .map(x => ({ ...x, pct: x.assigned > 0 ? Math.round((x.quoted / x.assigned) * 100) : 0 }))
+      .map(x => ({
+        ...x,
+        pct: x.assigned > 0 ? Math.round((x.quoted / x.assigned) * 100) : 0,
+        avgCycle: x.cycleSamples.length
+          ? Math.round(x.cycleSamples.reduce((a, b) => a + b, 0) / x.cycleSamples.length)
+          : null,
+      }))
       .sort((a, b) => a.pct - b.pct);  // worst first — that's what needs attention
 
     // ── At-risk programs: CRD ≤ 14 days AND <100% costed ──────
@@ -448,13 +472,17 @@ const AdminViews = (() => {
       <div class="card" style="padding:0">
         <div class="table-wrap"><table>
           <thead><tr>
-            <th>TC</th><th>Programs</th><th>Quoted / Assigned</th><th>Coverage</th>
+            <th>TC</th><th>Programs</th><th>Quoted / Assigned</th><th>Coverage</th><th title="Average days from program creation to first quote">Avg cycle</th>
           </tr></thead>
           <tbody>
             ${tcCoverageRows.map(x => {
               const code = x.tc?.code || x.tc?.id || '—';
               const name = x.tc?.name || '';
               const color = x.pct >= 80 ? '#22c55e' : x.pct >= 50 ? '#f59e0b' : '#ef4444';
+              const cycleColor = x.avgCycle == null ? '#94a3b8'
+                : x.avgCycle <= 5 ? '#22c55e'
+                : x.avgCycle <= 10 ? '#f59e0b'
+                : '#ef4444';
               return `<tr>
                 <td>
                   <div class="font-bold">${code}</div>
@@ -470,6 +498,7 @@ const AdminViews = (() => {
                     <span style="font-weight:600;color:${color};white-space:nowrap">${x.pct}%</span>
                   </div>
                 </td>
+                <td><span class="tag" style="color:${cycleColor};font-weight:600">${x.avgCycle == null ? '—' : x.avgCycle + 'd'}</span></td>
               </tr>`;
             }).join('')}
           </tbody>
@@ -1950,6 +1979,58 @@ const AdminViews = (() => {
     const dlBtn     = custs.length > 0 && canEdit ? `<button class="btn btn-secondary btn-sm" onclick="App.downloadBuyTemplate('${programId}')">⬇ Template</button>` : '';
     const upBtn     = custs.length > 0 && canEdit ? `<button class="btn btn-primary btn-sm" onclick="App.openBuyUploadModal('${programId}')">📤 Upload</button>` : '';
 
+    // ── Rollup tiles + customer concentration ─────────────────
+    // Rollups at the top so planners don't have to eye-ball the matrix.
+    let totalQtyAll = 0, totalRevenueAll = 0;
+    const qtyByCust = {};
+    custs.forEach(c => { qtyByCust[c.id] = 0; });
+    for (const b of allBuys) {
+      const q = parseFloat(b.qty) || 0;
+      const sell = parseFloat(b.sellPrice) || 0;
+      totalQtyAll += q;
+      totalRevenueAll += q * sell;
+      if (qtyByCust[b.customerId] !== undefined) qtyByCust[b.customerId] += q;
+    }
+    const blendedSell = totalQtyAll > 0 ? totalRevenueAll / totalQtyAll : 0;
+    const concentrationRows = custs
+      .map(c => ({ code: c.code, name: c.name, qty: qtyByCust[c.id] || 0 }))
+      .filter(x => x.qty > 0)
+      .sort((a, b) => b.qty - a.qty);
+    const topShare = concentrationRows[0] && totalQtyAll > 0
+      ? Math.round((concentrationRows[0].qty / totalQtyAll) * 100)
+      : 0;
+    const tile = (label, value, sub, color) => `
+      <div class="kpi-card-wide" style="border-left:3px solid ${color}">
+        <div class="kpi-wide-title">${label}</div>
+        <div class="kpi-wide-big">${value}</div>
+        ${sub ? `<div class="text-sm text-muted" style="margin-top:4px">${sub}</div>` : ''}
+      </div>`;
+    const headerTiles = custs.length > 0 ? `
+      <div class="kpi-grid" style="grid-template-columns:repeat(auto-fill,minmax(220px,1fr));margin-bottom:16px">
+        ${tile('Total actual QTY', totalQtyAll > 0 ? totalQtyAll.toLocaleString() : '—', `${concentrationRows.length} customer${concentrationRows.length !== 1 ? 's' : ''} buying`, '#6366f1')}
+        ${tile('Blended avg sell', blendedSell > 0 ? `$${blendedSell.toFixed(2)}` : '—', 'Weighted across all customers', '#22c55e')}
+        ${tile('Est. revenue', totalRevenueAll > 0 ? `$${totalRevenueAll.toLocaleString(undefined,{maximumFractionDigits:0})}` : '—', 'QTY × sell price', '#f59e0b')}
+        ${tile('Top customer share', concentrationRows[0] ? `${topShare}%` : '—', concentrationRows[0] ? `${concentrationRows[0].code} · ${concentrationRows[0].qty.toLocaleString()} units` : 'No buys yet', topShare >= 70 ? '#ef4444' : topShare >= 50 ? '#f59e0b' : '#a855f7')}
+      </div>` : '';
+
+    // Concentration mini-bar — visual breakdown of who's buying.
+    const concentrationBar = concentrationRows.length > 1 ? `
+      <div class="card mb-3" style="padding:12px 16px">
+        <div class="text-sm text-muted mb-2">Customer concentration</div>
+        <div style="display:flex;flex-direction:column;gap:6px">
+          ${concentrationRows.map(c => {
+            const pct = Math.round((c.qty / totalQtyAll) * 100);
+            return `<div style="display:flex;align-items:center;gap:10px">
+              <div style="min-width:120px;font-size:0.85rem"><strong>${c.code}</strong> <span class="text-muted">${c.name}</span></div>
+              <div style="flex:1;height:8px;border-radius:4px;background:rgba(255,255,255,0.06)">
+                <div style="height:8px;border-radius:4px;background:#6366f1;width:${pct}%"></div>
+              </div>
+              <div class="text-sm" style="min-width:120px;text-align:right;color:#94a3b8">${c.qty.toLocaleString()} (${pct}%)</div>
+            </div>`;
+          }).join('')}
+        </div>
+      </div>` : '';
+
     return `
     ${programTabBar(programId, 'buys', prog)}
     <div class="page-header" style="margin-top:12px">
@@ -1957,6 +2038,8 @@ const AdminViews = (() => {
         <p class="page-subtitle">${prog.season || ''} ${prog.year || ''}${prog.gender ? ' · ' + prog.gender : ''}${prog.retailer ? ' · ' + prog.retailer : ''}</p></div>
       <div style="display:flex;gap:8px">${assignBtn}${dlBtn}${upBtn}</div>
     </div>
+    ${headerTiles}
+    ${concentrationBar}
     ${noCusts}
     ${custs.length > 0 ? `<div class="card" style="padding:0"><div class="table-wrap">
       <table id="buy-summary-table">
@@ -2873,6 +2956,34 @@ const AdminViews = (() => {
         </div>
       </div>`;
 
+    // ── Reason breakdown (why are TCs being asked to re-quote?) ──
+    // Helps PC see whether change requests cluster on a few categories
+    // (e.g. fabric changes, qty changes) that point at upstream data
+    // quality issues. Counts every non-dismissed request.
+    const reasonCounts = {};
+    for (const r of all.filter(x => x.status !== 'dismissed')) {
+      const cat = (r.category || 'Other').trim() || 'Other';
+      reasonCounts[cat] = (reasonCounts[cat] || 0) + 1;
+    }
+    const reasonRows = Object.entries(reasonCounts).sort((a, b) => b[1] - a[1]);
+    const reasonTotal = reasonRows.reduce((s, [, v]) => s + v, 0);
+    const reasonBreakdown = reasonRows.length ? `
+      <div class="card mb-4" style="padding:14px 16px">
+        <div class="font-bold mb-2">📊 Reason breakdown <span class="text-muted text-sm" style="font-weight:400">(${reasonTotal} request${reasonTotal !== 1 ? 's' : ''})</span></div>
+        <div style="display:flex;flex-direction:column;gap:6px">
+          ${reasonRows.map(([cat, n]) => {
+            const pct = Math.round((n / reasonTotal) * 100);
+            return `<div style="display:flex;align-items:center;gap:10px">
+              <div style="min-width:140px;font-size:0.85rem">${cat}</div>
+              <div style="flex:1;height:8px;border-radius:4px;background:rgba(255,255,255,0.06)">
+                <div style="height:8px;border-radius:4px;background:#6366f1;width:${pct}%"></div>
+              </div>
+              <div class="text-sm" style="min-width:80px;text-align:right;color:#94a3b8">${n} (${pct}%)</div>
+            </div>`;
+          }).join('')}
+        </div>
+      </div>` : '';
+
     return `
       <div class="page-header">
         <div>
@@ -2881,6 +2992,7 @@ const AdminViews = (() => {
         </div>
       </div>
       ${statsBar}
+      ${reasonBreakdown}
       ${queueSection}
       ${allSection}`;
   }
@@ -2925,6 +3037,11 @@ const AdminViews = (() => {
     const packaged    = myReqs.filter(r => r.status === 'packaged').length;
     const sent        = myReqs.filter(r => r.status === 'sent').length;
     const received    = myReqs.filter(r => r.status === 'received').length;
+    // Fulfillment rate = received / non-cancelled. Tells the vendor (and
+    // PD via the same view) what % of the vendor's asks have actually
+    // landed, separate from "in flight".
+    const fulfillable = outstanding + packaged + sent + received;
+    const fulfillPct  = fulfillable > 0 ? Math.round((received / fulfillable) * 100) : 0;
 
     const catalogHtml = !groups.length
       ? `<div class="empty-state" style="padding:40px"><div class="icon">🧵</div><h3>No fabrics available yet</h3><p class="text-muted">Fabrics appear here once Design submits a handoff linked to a program you're assigned to.</p></div>`
@@ -3015,6 +3132,7 @@ const AdminViews = (() => {
       <div class="fabric-kpi fabric-kpi-pending"><span class="fabric-kpi-num">${outstanding}</span><span class="fabric-kpi-label">Requested</span></div>
       <div class="fabric-kpi fabric-kpi-sent"><span class="fabric-kpi-num">${packaged + sent}</span><span class="fabric-kpi-label">Packaged / Sent</span></div>
       <div class="fabric-kpi fabric-kpi-received"><span class="fabric-kpi-num">${received}</span><span class="fabric-kpi-label">Received</span></div>
+      <div class="fabric-kpi fabric-kpi-received"><span class="fabric-kpi-num">${fulfillPct}%</span><span class="fabric-kpi-label">Fulfilled (${received}/${fulfillable})</span></div>
     </div>
 
     <h3 style="margin:20px 0 10px">Available fabrics</h3>
