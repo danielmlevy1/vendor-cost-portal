@@ -95,15 +95,17 @@
     <div id="modal-box" class="modal hidden"></div>
   </div>
 
-  <!-- SheetJS: client-side Excel (.xlsx / .xls) parser -->
-  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+  <!-- SheetJS: client-side Excel (.xlsx / .xls) parser.
+       Vendored to /vendor so downloads/uploads work when the CDN is
+       blocked (corp firewall, ad-blocker, offline). -->
+  <script src="vendor/xlsx.full.min.js"></script>
 
   <!-- Scripts -->
-  <script src="db.js?v=97"></script>
-  <script src="api.js?v=97"></script>
-  <script src="views-admin.js?v=97"></script>
-  <script src="views-vendor.js?v=97"></script>
-  <script src="app.js?v=97"></script>
+  <script src="db.js?v=98"></script>
+  <script src="api.js?v=98"></script>
+  <script src="views-admin.js?v=98"></script>
+  <script src="views-vendor.js?v=98"></script>
+  <script src="app.js?v=98"></script>
 
   <!-- ── Inline login: works even if app.js fails to init ──────── -->
   <script>
