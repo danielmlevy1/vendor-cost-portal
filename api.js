@@ -91,6 +91,9 @@ const API = (() => {
     salesRequests:       [],
     srMap:               {},
     fabricLibrary:       [],
+    fabricRequests:      [],
+    fabricPackages:      [],
+    availableFabrics:    [],   // vendor only: [{programId, fabrics[]}]
     recostByProgram:     {},   // programId -> [rcrs]
     recostPendingSales:      [],
     recostPendingProduction: [],
@@ -920,6 +923,98 @@ const API = (() => {
     },
   };
 
+  // ── Fabric Standards Requests ────────────────────────────────
+
+  const FabricRequests = {
+    all() { return cache.fabricRequests || []; },
+    byTc(tcId) { return (cache.fabricRequests || []).filter(r => r.tcId === tcId); },
+    byStatus(s) { return (cache.fabricRequests || []).filter(r => r.status === s); },
+    byPackage(pid) { return (cache.fabricRequests || []).filter(r => r.packageId === pid); },
+    async fetchAll() {
+      cache.fabricRequests = await GET('/api/fabric-requests');
+      return cache.fabricRequests;
+    },
+    // Create many in one round-trip. `items` is an array of {tcId?, programId,
+    // handoffId, fabricCode, fabricName, content, swatchQty, styleIds, styleNumbers}.
+    async createMany(items) {
+      const created = await POST('/api/fabric-requests', { requests: items });
+      cache.fabricRequests = (cache.fabricRequests || []).concat(created);
+      return created;
+    },
+    async create(data) {
+      const created = await POST('/api/fabric-requests', data);
+      // Server returns array for bulk OR single object for single
+      const list = Array.isArray(created) ? created : [created];
+      cache.fabricRequests = (cache.fabricRequests || []).concat(list);
+      return list[0];
+    },
+    async update(id, patch) {
+      const r = await PATCH(`/api/fabric-requests/${id}`, patch);
+      _replaceFabricRequest(r);
+      return r;
+    },
+    async cancel(id, reason) {
+      return this.update(id, { status: 'cancelled', cancelReason: reason || null });
+    },
+    async delete(id) {
+      await DEL(`/api/fabric-requests/${id}`);
+      cache.fabricRequests = (cache.fabricRequests || []).filter(r => r.id !== id);
+    },
+  };
+
+  function _replaceFabricRequest(r) {
+    cache.fabricRequests = cache.fabricRequests || [];
+    const i = cache.fabricRequests.findIndex(x => x.id === r.id);
+    if (i >= 0) cache.fabricRequests[i] = r; else cache.fabricRequests.push(r);
+  }
+
+  const FabricPackages = {
+    all() { return cache.fabricPackages || []; },
+    byTc(tcId) { return (cache.fabricPackages || []).filter(p => p.tcId === tcId); },
+    get(id) { return (cache.fabricPackages || []).find(p => p.id === id) || null; },
+    async fetchAll() {
+      cache.fabricPackages = await GET('/api/fabric-packages');
+      return cache.fabricPackages;
+    },
+    async create({ tcId, awbNumber, carrier, notes, requestIds, markSent }) {
+      const pkg = await POST('/api/fabric-packages', { tcId, awbNumber, carrier, notes, requestIds, markSent });
+      cache.fabricPackages = (cache.fabricPackages || []).concat(pkg);
+      // Re-fetch requests — their package_id/status changed server-side
+      await FabricRequests.fetchAll();
+      return pkg;
+    },
+    async update(id, patch) {
+      const pkg = await PATCH(`/api/fabric-packages/${id}`, patch);
+      const i = (cache.fabricPackages || []).findIndex(x => x.id === id);
+      if (i >= 0) cache.fabricPackages[i] = pkg; else (cache.fabricPackages ||= []).push(pkg);
+      await FabricRequests.fetchAll();
+      return pkg;
+    },
+    async markSent(id, awbNumber, carrier) {
+      return this.update(id, { status: 'sent', awbNumber, carrier });
+    },
+    async markReceived(id) {
+      return this.update(id, { status: 'received' });
+    },
+    async delete(id) {
+      await DEL(`/api/fabric-packages/${id}`);
+      cache.fabricPackages = (cache.fabricPackages || []).filter(p => p.id !== id);
+      await FabricRequests.fetchAll();
+    },
+  };
+
+  // Vendor-only: available fabrics across all their assigned programs,
+  // sourced from design handoffs. Each entry is annotated with the
+  // vendor's existing request (if any) so the UI can disable already-
+  // requested rows.
+  const AvailableFabrics = {
+    all() { return cache.availableFabrics || []; },
+    async fetch() {
+      cache.availableFabrics = await GET('/api/vendor/available-fabrics');
+      return cache.availableFabrics;
+    },
+  };
+
   // ── Sales Requests ────────────────────────────────────────────
 
   const SalesRequests = {
@@ -993,6 +1088,17 @@ const API = (() => {
 
   let _globalLoaded = false;
 
+  // Read the current user's role from the JWT the API client is holding.
+  // Preload paths need to pick vendor vs admin data sets without the view
+  // layer having to pass it in.
+  function _userRole() {
+    try {
+      if (!_token) return null;
+      const payload = JSON.parse(atob(_token.split('.')[1]));
+      return payload.role || null;
+    } catch (_) { return null; }
+  }
+
   const preload = {
     async global() {
       if (_globalLoaded) return;
@@ -1058,7 +1164,19 @@ const API = (() => {
       await Promise.all([SalesRequests.fetchAll(), DesignHandoffs.fetchAll(), InternalPrograms.all(), BrandTierMargins.all(), TradingCompanies.all(), preload.nav()]);
     },
     async fabricStandards() {
-      await Promise.all([FabricLibrary.fetchAll(), preload.nav()]);
+      // Both sides (vendor + PD/admin) need the requests+packages list.
+      // Vendors additionally need the available-fabrics catalog so they
+      // can request new standards; PD doesn't.
+      const isVendor = _userRole() === 'vendor';
+      await Promise.all([
+        FabricLibrary.fetchAll(),
+        FabricRequests.fetchAll(),
+        FabricPackages.fetchAll(),
+        TradingCompanies.all(),
+        Programs.all().catch(() => {}),
+        isVendor ? AvailableFabrics.fetch().catch(() => {}) : Promise.resolve(),
+        preload.nav(),
+      ]);
     },
     async recostQueue() {
       await Promise.all([RecostRequests.fetchQueues(), Programs.all(), preload.global()]);
@@ -1101,7 +1219,8 @@ const API = (() => {
     Programs, Styles, TradingCompanies, Assignments,
     Submissions, Placements, CustomerAssignments, CustomerBuys,
     StyleLinks, DesignChanges, RecostRequests, CellFlags, Revisions,
-    PendingChanges, DesignHandoffs, FabricLibrary, SalesRequests, CostHistory,
+    PendingChanges, DesignHandoffs, FabricLibrary, FabricRequests, FabricPackages, AvailableFabrics,
+    SalesRequests, CostHistory,
     calcLDP, computeTargetLDP, parseCSV, csvRowToStyle,
     cache, preload,
   };

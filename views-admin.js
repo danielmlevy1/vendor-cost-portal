@@ -2695,144 +2695,281 @@ const AdminViews = (() => {
       ${allSection}`;
   }
 
+  // Kept async for call-site compatibility; reads from API cache populated
+  // by preload.fabricStandards().
   async function renderFabricStandards(role, tcId) {
-    let allRequests = [];
-    try {
-      const res = await fetch('/api/fabric-requests');
-      allRequests = await res.json();
-    } catch { allRequests = []; }
+    const isVendor = role === 'vendor';
+    const isPD     = role === 'prod_dev';
+    const isAdmin  = role === 'admin' || role === 'pc';
+    const canAction = isPD || isAdmin;
 
-    const isVendor  = role === 'vendor';
-    const isPD      = role === 'prod_dev';
-    const isAdmin   = role === 'admin' || role === 'pc';
-    const canAction = isPD || isAdmin;  // PD + Admin can mark sent/received
-
-    const myReqs    = isVendor ? allRequests.filter(r => r.tcId === tcId) : allRequests;
-    const pending   = myReqs.filter(r => r.status === 'pending');
-    const sent      = myReqs.filter(r => r.status === 'sent');
-    const received  = myReqs.filter(r => r.status === 'received');
-
+    const allRequests = API.FabricRequests.all();
+    const allPackages = API.FabricPackages.all();
     const fmtDate = d => d ? new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
+    const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
 
-    const statusChip = s => ({
-      pending:  '<span class="badge badge-pending">🔴 Pending</span>',
-      sent:     '<span class="badge badge-costing">🟡 Sent</span>',
-      received: '<span class="badge badge-placed">✅ Received</span>',
-    }[s] || '<span class="badge">—</span>');
+    const statusBadge = s => ({
+      outstanding: '<span class="badge badge-pending">⏳ Requested</span>',
+      packaged:    '<span class="badge badge-costing">📦 In Package</span>',
+      sent:        '<span class="badge badge-costing">✈ Sent</span>',
+      received:    '<span class="badge badge-placed">✅ Received</span>',
+      cancelled:   '<span class="badge" style="background:rgba(100,116,139,0.2);color:#94a3b8">✕ Cancelled</span>',
+    }[s] || `<span class="badge">${s}</span>`);
 
-    // Group by TC for internal view
-    const byTC = {};
-    myReqs.forEach(r => {
-      const key = r.tcName || r.tcId || 'Unknown TC';
-      if (!byTC[key]) byTC[key] = [];
-      byTC[key].push(r);
-    });
+    if (isVendor) return renderVendorFabricStandards({ tcId, allRequests, allPackages, fmtDate, esc, statusBadge });
+    return renderPDFabricStandards({ allRequests, allPackages, canAction, fmtDate, esc, statusBadge });
+  }
 
-    const actionBtns = r => {
-      if (isVendor) {
-        return r.status === 'pending'  ? `<button class="btn btn-danger btn-sm" onclick="App.deleteFabricRequest('${r.id}')">Cancel</button>` :
-               r.status === 'sent'    ? `<button class="btn btn-success btn-sm" onclick="App.markFabricReceived('${r.id}')">✅ Mark Received</button>` : '';
-      }
-      if (canAction) {
-        return `<div style="display:flex;gap:6px;flex-wrap:wrap">
-          ${r.status === 'pending' ? `<button class="btn btn-primary btn-sm" onclick="App.markFabricSent('${r.id}')">📤 Mark Sent</button>` : ''}
-          ${r.status === 'sent'   ? `<button class="btn btn-success btn-sm" onclick="App.markFabricReceived('${r.id}')">✅ Received</button>` : ''}
-          ${r.status !== 'received' ? `<button class="btn btn-danger btn-sm" onclick="App.deleteFabricRequest('${r.id}')">🗑</button>` : ''}
-        </div>`;
-      }
-      return ''; // read-only for other roles
-    };
+  // ── Vendor side ────────────────────────────────────────────────
+  // Catalog of fabrics pulled from design handoffs for every program
+  // this vendor is assigned to. Check rows → enter qty inline → click
+  // Request Selected. Below the catalog, a history table shows the
+  // vendor's existing requests with tracking status.
+  function renderVendorFabricStandards({ tcId, allRequests, allPackages, fmtDate, esc, statusBadge }) {
+    const myReqs = allRequests.filter(r => r.tcId === tcId);
+    const groups = API.AvailableFabrics.all();
 
-    // Build rows (grouped by TC for internal, flat for vendor)
-    let rows = '';
-    if (isVendor) {
-      rows = myReqs.length ? myReqs.slice().sort((a,b) => {
-        const o = { pending:0, sent:1, received:2 };
-        return (o[a.status]??3) - (o[b.status]??3);
-      }).map(r => `<tr>
-        <td class="font-bold primary">${r.fabricCode || r.trimCode || '—'}</td>
-        <td>${r.fabricName || r.trimName || '—'}</td>
-        <td class="text-sm text-muted">${r.content || r.description || '—'}</td>
-        <td class="text-center font-bold">${r.quantityRequested || r.swatchQty || '—'}</td>
+    // KPIs
+    const outstanding = myReqs.filter(r => r.status === 'outstanding').length;
+    const packaged    = myReqs.filter(r => r.status === 'packaged').length;
+    const sent        = myReqs.filter(r => r.status === 'sent').length;
+    const received    = myReqs.filter(r => r.status === 'received').length;
+
+    const catalogHtml = !groups.length
+      ? `<div class="empty-state" style="padding:40px"><div class="icon">🧵</div><h3>No fabrics available yet</h3><p class="text-muted">Fabrics appear here once Design submits a handoff linked to a program you're assigned to.</p></div>`
+      : groups.map(g => {
+          const rows = g.fabrics.map(f => {
+            const already = f.existing;  // { id, status, requestedAt } or null
+            const disabled = !!already && already.status !== 'cancelled';
+            const badge = already ? ` ${statusBadge(already.status)}` : '';
+            const stylesChip = (f.styleNumbers || []).length
+              ? `<span class="tag" style="font-size:0.7rem;margin-left:6px" title="Styles using this fabric">${f.styleNumbers.length} style${f.styleNumbers.length!==1?'s':''}</span>`
+              : '';
+            return `<tr data-prog="${esc(g.programId)}" data-code="${esc(f.fabricCode)}" class="fabric-avail-row ${disabled ? 'fabric-avail-row-disabled' : ''}">
+              <td style="text-align:center;padding:8px 12px">
+                <input type="checkbox" class="fabric-pick"
+                  data-prog="${esc(g.programId)}"
+                  data-handoff="${esc(g.handoffId)}"
+                  data-code="${esc(f.fabricCode)}"
+                  data-name="${esc(f.fabricName)}"
+                  data-content="${esc(f.content)}"
+                  data-styles="${esc(JSON.stringify(f.styleNumbers || []))}"
+                  ${disabled ? 'disabled' : ''}>
+              </td>
+              <td class="font-bold primary">${esc(f.fabricCode || '—')}${badge}</td>
+              <td>${esc(f.fabricName || '—')}${stylesChip}</td>
+              <td class="text-sm text-muted">${esc(f.content || '—')}</td>
+              <td style="text-align:center">
+                <input type="text" inputmode="numeric" class="form-input fabric-qty-input"
+                  placeholder="Qty"
+                  data-prog="${esc(g.programId)}" data-code="${esc(f.fabricCode)}"
+                  style="width:70px;padding:4px 8px;font-size:0.85rem;text-align:center"
+                  ${disabled ? 'disabled' : ''}>
+              </td>
+            </tr>`;
+          }).join('');
+
+          const meta = [g.season, g.year, g.retailer].filter(Boolean).join(' · ');
+          return `
+          <div class="card" style="padding:0;margin-bottom:16px">
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:var(--bg-elevated);border-bottom:1px solid var(--border)">
+              <div>
+                <div class="font-bold">${esc(g.programName)}</div>
+                <div class="text-sm text-muted">${esc(meta || '—')} · ${g.fabrics.length} fabric${g.fabrics.length!==1?'s':''}</div>
+              </div>
+              <div>
+                <button class="btn btn-ghost btn-sm" onclick="App._fabricToggleGroup('${esc(g.programId)}', true)">Select all</button>
+                <button class="btn btn-ghost btn-sm" onclick="App._fabricToggleGroup('${esc(g.programId)}', false)">Clear</button>
+              </div>
+            </div>
+            <div class="table-wrap"><table>
+              <thead><tr>
+                <th style="width:40px"></th>
+                <th>Code</th><th>Name</th><th>Content</th><th style="text-align:center">Qty</th>
+              </tr></thead>
+              <tbody>${rows}</tbody>
+            </table></div>
+          </div>`;
+        }).join('');
+
+    const historyRows = myReqs.length ? myReqs.slice().sort((a,b) => {
+      const o = { outstanding:0, packaged:1, sent:2, received:3, cancelled:4 };
+      return (o[a.status]??9) - (o[b.status]??9);
+    }).map(r => {
+      const pkg = r.packageId ? allPackages.find(p => p.id === r.packageId) : null;
+      return `<tr>
+        <td class="font-bold primary">${esc(r.fabricCode || '—')}</td>
+        <td>${esc(r.fabricName || '—')}</td>
+        <td class="text-center">${r.swatchQty ?? '—'}</td>
         <td class="text-sm text-muted">${fmtDate(r.requestedAt)}</td>
-        <td>${r.awbNumber ? `<span class="tag" style="font-family:monospace;font-size:0.75rem">${r.awbNumber}</span>` : '—'}</td>
-        <td>${statusChip(r.status)}</td>
-        <td>${actionBtns(r)}</td>
-      </tr>`).join('') : `<tr><td colspan="8" class="text-center text-muted" style="padding:40px">No requests yet. Click "+ Request Standard" to submit one.</td></tr>`;
-    } else {
-      // Internal: group by TC
-      Object.entries(byTC).forEach(([tcName, reqs]) => {
-        reqs.sort((a,b) => { const o={pending:0,sent:1,received:2}; return (o[a.status]??3)-(o[b.status]??3); });
-        rows += `<tr style="background:var(--bg-elevated)"><td colspan="10" style="padding:8px 14px;font-weight:700;font-size:0.82rem;color:var(--accent)">🏭 ${tcName} (${reqs.length})</td></tr>`;
-        rows += reqs.map(r => `<tr>
-          ${canAction ? `<td style="text-align:center;padding:8px"><input type="checkbox" class="fab-req-chk" value="${r.id}" style="width:14px;height:14px;accent-color:var(--accent)"></td>` : '<td></td>'}
-          <td class="font-bold primary">${r.fabricCode || r.trimCode || '—'}</td>
-          <td>${r.fabricName || r.trimName || '—'}</td>
-          <td class="text-sm text-muted">${r.content || r.description || '—'}</td>
-          <td class="text-center">${r.quantityRequested || r.swatchQty || '—'}</td>
-          <td class="text-sm">${r.programName || '—'}</td>
-          <td class="text-sm text-muted">${fmtDate(r.requestedAt)}</td>
-          <td>${r.sentAt ? `<div class="text-sm">${fmtDate(r.sentAt)}</div>${r.awbNumber ? `<div style="font-family:monospace;font-size:0.72rem;color:#6366f1">${r.awbNumber}</div>` : ''}` : '—'}</td>
-          <td>${statusChip(r.status)}</td>
-          <td>${actionBtns(r)}</td>
-        </tr>`).join('');
-      });
-      if (!myReqs.length) rows = `<tr><td colspan="10" class="text-center text-muted" style="padding:40px">No fabric/trim standard requests yet.</td></tr>`;
-    }
-
-    const colCount = isVendor ? 8 : 10;
+        <td>${pkg?.awbNumber ? `<span class="tag" style="font-family:monospace;font-size:0.75rem">${esc(pkg.awbNumber)}</span>` : '—'}</td>
+        <td>${statusBadge(r.status)}</td>
+        <td>${r.status === 'outstanding' ? `<button class="btn btn-danger btn-sm" onclick="App.cancelFabricRequest('${r.id}')">Cancel</button>` : ''}</td>
+      </tr>`;
+    }).join('') : `<tr><td colspan="7" class="text-center text-muted" style="padding:24px">No requests yet.</td></tr>`;
 
     return `
     <div class="page-header">
-      <div><h1 class="page-title">🧵 Standards Requests</h1>
-        <p class="page-subtitle">${isVendor ? 'Request fabric or trim standards for your programs' : isPD ? 'Manage all fabric and trim standard requests' : 'Read-only view of standards requests'}</p>
+      <div><h1 class="page-title">🧵 Fabric Standards</h1>
+        <p class="page-subtitle">Pick the fabrics you'd like Product Development to send you a swatch of, then click Request Selected.</p>
       </div>
-      <div style="display:flex;gap:8px">
-        ${canAction ? `<button class="btn btn-warning" onclick="App.createShipmentPackage()" id="pkg-btn" style="display:none">📦 Create Shipment Package</button>` : ''}
-        ${canAction && !isVendor ? `<button class="btn btn-ghost btn-sm" onclick="App.sendFabricDigestNow()">📧 Send Digest</button>` : ''}
-        ${isVendor ? `<button class="btn btn-primary" onclick="App.openFabricRequestModal('${tcId}')">＋ Request Standard</button>` : ''}
+      <div style="display:flex;gap:8px;align-items:center">
+        <span class="text-sm text-muted" id="fabric-selected-count">0 selected</span>
+        <button class="btn btn-primary" id="fabric-submit-btn" disabled onclick="App.submitFabricRequests('${tcId}')">📬 Request Selected</button>
       </div>
     </div>
     <div class="fabric-kpi-row">
-      <div class="fabric-kpi fabric-kpi-pending"><span class="fabric-kpi-num">${pending.length}</span><span class="fabric-kpi-label">Pending</span></div>
-      <div class="fabric-kpi fabric-kpi-sent"><span class="fabric-kpi-num">${sent.length}</span><span class="fabric-kpi-label">Sent</span></div>
-      <div class="fabric-kpi fabric-kpi-received"><span class="fabric-kpi-num">${received.length}</span><span class="fabric-kpi-label">Received</span></div>
+      <div class="fabric-kpi fabric-kpi-pending"><span class="fabric-kpi-num">${outstanding}</span><span class="fabric-kpi-label">Requested</span></div>
+      <div class="fabric-kpi fabric-kpi-sent"><span class="fabric-kpi-num">${packaged + sent}</span><span class="fabric-kpi-label">Packaged / Sent</span></div>
+      <div class="fabric-kpi fabric-kpi-received"><span class="fabric-kpi-num">${received}</span><span class="fabric-kpi-label">Received</span></div>
     </div>
-    <div class="card" style="padding:0;margin-top:20px">
-      <div class="cs-filter-bar" id="fabric-filter-bar">
-        <label class="cs-filter-label">Filter</label>
-        <select class="form-select cs-select" id="fabric-status-filter" onchange="App.filterFabricRequests()">
-          <option value="">All Statuses</option>
-          <option>pending</option><option>sent</option><option>received</option>
-        </select>
-        ${!isVendor ? `
-        <label class="cs-filter-label" style="margin-left:12px">TC</label>
-        <select class="form-select cs-select" id="fabric-tc-filter" onchange="App.filterFabricRequests()">
-          <option value="">All TCs</option>
-          ${[...new Set(allRequests.map(r => r.tcName || r.tcId).filter(Boolean))].map(n => `<option>${n}</option>`).join('')}
-        </select>` : ''}
-      </div>
-      <div class="table-wrap" id="fabric-requests-table-wrap"><table id="fabric-requests-table">
+
+    <h3 style="margin:20px 0 10px">Available fabrics</h3>
+    ${catalogHtml}
+
+    <h3 style="margin:24px 0 10px">Your requests</h3>
+    <div class="card" style="padding:0">
+      <div class="table-wrap"><table>
         <thead><tr>
-          ${!isVendor ? '<th style="width:40px"></th>' : ''}
-          <th>Code</th><th>Name / Description</th><th>Content</th>
-          <th style="text-align:center">Qty</th>
-          ${!isVendor ? '<th>Program</th>' : ''}
-          <th>Requested</th><th>Sent / AWB</th><th>Status</th><th>Actions</th>
+          <th>Code</th><th>Name</th><th style="text-align:center">Qty</th>
+          <th>Requested</th><th>Tracking</th><th>Status</th><th></th>
         </tr></thead>
-        <tbody id="fabric-requests-tbody">${rows}</tbody>
+        <tbody>${historyRows}</tbody>
       </table></div>
     </div>
     <script>
-    // Show/hide Package button when checkboxes are selected
-    document.querySelectorAll('.fab-req-chk').forEach(chk => {
-      chk.addEventListener('change', () => {
-        const anyChecked = document.querySelectorAll('.fab-req-chk:checked').length > 0;
-        const btn = document.getElementById('pkg-btn');
-        if (btn) btn.style.display = anyChecked ? '' : 'none';
-      });
-    });
+      // Wire checkboxes and qty inputs to the submit-button enabled state.
+      (function(){
+        const update = () => {
+          const checked = document.querySelectorAll('.fabric-pick:checked').length;
+          const el = document.getElementById('fabric-selected-count');
+          const btn = document.getElementById('fabric-submit-btn');
+          if (el) el.textContent = checked + ' selected';
+          if (btn) btn.disabled = checked === 0;
+        };
+        document.querySelectorAll('.fabric-pick').forEach(c => c.addEventListener('change', update));
+        update();
+      })();
     </script>`;
+  }
+
+  // ── PD / Admin side ────────────────────────────────────────────
+  // Three lanes: Outstanding (not yet in a package) → In Package (draft
+  // packages still being built) → Sent/Received.
+  function renderPDFabricStandards({ allRequests, allPackages, canAction, fmtDate, esc, statusBadge }) {
+    const tcMap = {};
+    (API.cache.tradingCompanies || []).forEach(t => { tcMap[t.id] = t; });
+    const tcLabel = id => tcMap[id]?.code || id;
+
+    const outstanding = allRequests.filter(r => r.status === 'outstanding');
+    const packageRequests = id => allRequests.filter(r => r.packageId === id);
+    const draftPkgs    = allPackages.filter(p => p.status === 'draft');
+    const shippedPkgs  = allPackages.filter(p => p.status === 'sent' || p.status === 'received');
+
+    // Group outstanding requests by TC
+    const outstandingByTc = {};
+    outstanding.forEach(r => { (outstandingByTc[r.tcId] ||= []).push(r); });
+
+    const outstandingHtml = !Object.keys(outstandingByTc).length
+      ? `<div class="empty-state" style="padding:24px"><div class="icon">📭</div><h3>No outstanding requests</h3></div>`
+      : Object.entries(outstandingByTc).map(([tcId, reqs]) => `
+        <div class="card" style="padding:0;margin-bottom:12px">
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:var(--bg-elevated);border-bottom:1px solid var(--border)">
+            <div class="font-bold">🏭 ${esc(tcLabel(tcId))} <span class="text-muted text-sm">· ${reqs.length} request${reqs.length!==1?'s':''}</span></div>
+            ${canAction ? `
+              <div style="display:flex;gap:6px">
+                <button class="btn btn-ghost btn-sm" onclick="App._fabricPdSelectTc('${esc(tcId)}', true)">Select all</button>
+                <button class="btn btn-ghost btn-sm" onclick="App._fabricPdSelectTc('${esc(tcId)}', false)">Clear</button>
+                <button class="btn btn-primary btn-sm" onclick="App.openCreateFabricPackage('${esc(tcId)}')">📦 Create package</button>
+              </div>` : ''}
+          </div>
+          <div class="table-wrap"><table>
+            <thead><tr>
+              ${canAction ? '<th style="width:36px"></th>' : ''}
+              <th>Code</th><th>Name</th><th>Content</th>
+              <th style="text-align:center">Qty</th>
+              <th>Program</th><th>Requested</th><th></th>
+            </tr></thead>
+            <tbody>
+              ${reqs.map(r => `<tr>
+                ${canAction ? `<td style="text-align:center"><input type="checkbox" class="fab-pd-chk" data-tc="${esc(tcId)}" value="${esc(r.id)}"></td>` : ''}
+                <td class="font-bold primary">${esc(r.fabricCode)}</td>
+                <td>${esc(r.fabricName || '—')}</td>
+                <td class="text-sm text-muted">${esc(r.content || '—')}</td>
+                <td class="text-center">${r.swatchQty ?? '—'}</td>
+                <td class="text-sm">${esc((API.Programs.get(r.programId)?.name) || '—')}</td>
+                <td class="text-sm text-muted">${fmtDate(r.requestedAt)}</td>
+                <td>${canAction ? `<button class="btn btn-danger btn-sm" onclick="App.deleteFabricRequest('${esc(r.id)}')" title="Remove">🗑</button>` : ''}</td>
+              </tr>`).join('')}
+            </tbody>
+          </table></div>
+        </div>`).join('');
+
+    const pkgCard = (pkg, shipped) => {
+      const reqs = packageRequests(pkg.id);
+      return `<div class="card" style="padding:0;margin-bottom:12px">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:var(--bg-elevated);border-bottom:1px solid var(--border);flex-wrap:wrap;gap:8px">
+          <div>
+            <div class="font-bold">📦 ${esc(tcLabel(pkg.tcId))} ${statusBadge(pkg.status)}</div>
+            <div class="text-sm text-muted">${reqs.length} fabric${reqs.length!==1?'s':''} · ${pkg.awbNumber ? `AWB <span class="tag" style="font-family:monospace;font-size:0.72rem">${esc(pkg.awbNumber)}</span>` : 'no tracking yet'} · created ${fmtDate(pkg.createdAt)}</div>
+          </div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            ${!shipped && canAction ? `
+              <button class="btn btn-primary btn-sm" onclick="App.openShipFabricPackage('${esc(pkg.id)}')">✈ Mark sent</button>
+              <button class="btn btn-danger btn-sm" onclick="App.deleteFabricPackage('${esc(pkg.id)}')" title="Delete package and return requests to outstanding">🗑 Delete</button>
+            ` : ''}
+            ${shipped && pkg.status === 'sent' && canAction ? `
+              <button class="btn btn-success btn-sm" onclick="App.markFabricPackageReceived('${esc(pkg.id)}')">✅ Mark received</button>
+            ` : ''}
+          </div>
+        </div>
+        ${pkg.notes ? `<div class="text-sm text-muted" style="padding:8px 14px;border-bottom:1px solid var(--border)">📝 ${esc(pkg.notes)}</div>` : ''}
+        <div class="table-wrap"><table>
+          <thead><tr>
+            <th>Code</th><th>Name</th><th>Content</th><th style="text-align:center">Qty</th><th>Program</th>
+          </tr></thead>
+          <tbody>
+            ${reqs.length ? reqs.map(r => `<tr>
+              <td class="font-bold primary">${esc(r.fabricCode)}</td>
+              <td>${esc(r.fabricName || '—')}</td>
+              <td class="text-sm text-muted">${esc(r.content || '—')}</td>
+              <td class="text-center">${r.swatchQty ?? '—'}</td>
+              <td class="text-sm">${esc((API.Programs.get(r.programId)?.name) || '—')}</td>
+            </tr>`).join('') : `<tr><td colspan="5" class="text-center text-muted" style="padding:16px">No requests in this package.</td></tr>`}
+          </tbody>
+        </table></div>
+      </div>`;
+    };
+
+    const draftHtml = draftPkgs.length
+      ? draftPkgs.map(p => pkgCard(p, false)).join('')
+      : `<div class="empty-state" style="padding:20px"><div class="text-muted">No draft packages.</div></div>`;
+    const shippedHtml = shippedPkgs.length
+      ? shippedPkgs.map(p => pkgCard(p, true)).join('')
+      : `<div class="empty-state" style="padding:20px"><div class="text-muted">No packages sent yet.</div></div>`;
+
+    return `
+    <div class="page-header">
+      <div><h1 class="page-title">🧵 Fabric Standards — Queue</h1>
+        <p class="page-subtitle">Review vendor requests, group them into shipment packages, and track delivery.</p>
+      </div>
+      ${canAction ? `<div style="display:flex;gap:8px"><button class="btn btn-ghost btn-sm" onclick="App.sendFabricDigestNow()">📧 Send digest</button></div>` : ''}
+    </div>
+
+    <div class="fabric-kpi-row">
+      <div class="fabric-kpi fabric-kpi-pending"><span class="fabric-kpi-num">${outstanding.length}</span><span class="fabric-kpi-label">Outstanding</span></div>
+      <div class="fabric-kpi fabric-kpi-sent"><span class="fabric-kpi-num">${draftPkgs.length}</span><span class="fabric-kpi-label">Draft packages</span></div>
+      <div class="fabric-kpi fabric-kpi-received"><span class="fabric-kpi-num">${shippedPkgs.length}</span><span class="fabric-kpi-label">Sent / Received</span></div>
+    </div>
+
+    <h3 style="margin:20px 0 10px">1. Outstanding requests</h3>
+    ${outstandingHtml}
+
+    <h3 style="margin:20px 0 10px">2. Draft packages (not shipped yet)</h3>
+    ${draftHtml}
+
+    <h3 style="margin:20px 0 10px">3. Sent / received</h3>
+    ${shippedHtml}`;
   }
 
 

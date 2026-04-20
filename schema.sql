@@ -360,6 +360,54 @@ CREATE TABLE IF NOT EXISTS fabric_library (
   updated_at   TEXT
 );
 
+-- ── Fabric Standards Requests ────────────────────────────────
+-- A request is: a vendor asking PD to supply a physical swatch of
+-- a specific fabric tied to a costing program. PD groups outstanding
+-- requests into a package (see fabric_packages), ships it, and marks
+-- the package received.
+
+CREATE TABLE IF NOT EXISTS fabric_requests (
+  id                TEXT PRIMARY KEY,
+  tc_id             TEXT NOT NULL,
+  program_id        TEXT,                          -- program the request is tied to
+  handoff_id        TEXT,                          -- source design handoff (fabric came from its fabrics_list)
+  fabric_code       TEXT NOT NULL,
+  fabric_name       TEXT,
+  content           TEXT,
+  swatch_qty        INTEGER,
+  style_ids         TEXT,                          -- JSON array (styles using this fabric; for PD context)
+  style_numbers     TEXT,                          -- JSON array (display copy — kept for email body)
+  status            TEXT NOT NULL DEFAULT 'outstanding',
+    -- outstanding | packaged | sent | received | cancelled
+  package_id        TEXT,                          -- FK fabric_packages.id (nullable until grouped)
+  requested_by      TEXT,                          -- vendor user name for audit
+  requested_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  sent_at           TEXT,
+  received_at       TEXT,
+  cancel_reason     TEXT,
+  notes             TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_fabric_requests_tc_id     ON fabric_requests(tc_id);
+CREATE INDEX IF NOT EXISTS idx_fabric_requests_status    ON fabric_requests(status);
+CREATE INDEX IF NOT EXISTS idx_fabric_requests_package   ON fabric_requests(package_id);
+
+CREATE TABLE IF NOT EXISTS fabric_packages (
+  id            TEXT PRIMARY KEY,
+  tc_id         TEXT NOT NULL,                    -- one package ships to one TC
+  awb_number    TEXT,                              -- tracking / AWB number
+  carrier       TEXT,
+  notes         TEXT,
+  created_by    TEXT,
+  created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  shipped_at    TEXT,
+  received_at   TEXT,
+  status        TEXT NOT NULL DEFAULT 'draft'      -- draft | sent | received | cancelled
+);
+
+CREATE INDEX IF NOT EXISTS idx_fabric_packages_tc_id  ON fabric_packages(tc_id);
+CREATE INDEX IF NOT EXISTS idx_fabric_packages_status ON fabric_packages(status);
+
 -- ── Sales Requests ────────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS sales_requests (

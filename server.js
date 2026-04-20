@@ -6,13 +6,13 @@
 
 const express    = require('express');
 const path       = require('path');
-const fs         = require('fs');
 const cron       = require('node-cron');
 const nodemailer = require('nodemailer');
 
 const { router: authRouter } = require('./auth');
 const apiRouter            = require('./routes');
 const apiSupportingRouter  = require('./routes-supporting');
+const db                   = require('./database');
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
@@ -28,30 +28,6 @@ const PD_EMAIL      = process.env.PD_EMAIL      || '';          // PD team reply
 const TZ            = process.env.EMAIL_TIMEZONE || 'Asia/Hong_Kong';
 const CRON_TIME     = process.env.CRON_TIME      || '0 10 * * *'; // 10:00am daily
 
-// ── Data file ──────────────────────────────────────────────────
-const DATA_DIR  = path.join(__dirname, 'data');
-const REQ_FILE  = path.join(DATA_DIR, 'fabric-requests.json');
-
-function ensureDataDir() {
-  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-  if (!fs.existsSync(REQ_FILE)) fs.writeFileSync(REQ_FILE, '[]', 'utf8');
-}
-
-function readRequests() {
-  ensureDataDir();
-  try { return JSON.parse(fs.readFileSync(REQ_FILE, 'utf8')); }
-  catch { return []; }
-}
-
-function writeRequests(data) {
-  ensureDataDir();
-  fs.writeFileSync(REQ_FILE, JSON.stringify(data, null, 2), 'utf8');
-}
-
-function uid() {
-  return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
-}
-
 // ── Middleware ─────────────────────────────────────────────────
 app.use(express.json());
 app.use(express.static(path.join(__dirname)));   // serves index.html, app.js, etc.
@@ -63,55 +39,35 @@ app.use('/api/auth', authRouter);
 app.use('/api', apiRouter);
 app.use('/api', apiSupportingRouter);
 
-// ── REST API: Fabric Standard Requests ─────────────────────────
-
-// GET /api/fabric-requests — all requests (optionally filter by status or tcId)
-app.get('/api/fabric-requests', (req, res) => {
-  let data = readRequests();
-  if (req.query.status) data = data.filter(r => r.status === req.query.status);
-  if (req.query.tcId)   data = data.filter(r => r.tcId   === req.query.tcId);
-  res.json(data);
-});
-
-// POST /api/fabric-requests — TC submits a new swatch request
-app.post('/api/fabric-requests', (req, res) => {
-  const data = readRequests();
-  const entry = {
-    id:          uid(),
-    requestedAt: new Date().toISOString(),
-    status:      'pending',
-    ...req.body,
-  };
-  data.push(entry);
-  writeRequests(data);
-  res.status(201).json(entry);
-});
-
-// PATCH /api/fabric-requests/:id — update status, sentAt, receivedAt, notes
-app.patch('/api/fabric-requests/:id', (req, res) => {
-  const data = readRequests();
-  const idx  = data.findIndex(r => r.id === req.params.id);
-  if (idx < 0) return res.status(404).json({ error: 'Not found' });
-  data[idx] = { ...data[idx], ...req.body };
-  // Auto-stamp timestamps
-  if (req.body.status === 'sent'     && !data[idx].sentAt)     data[idx].sentAt     = new Date().toISOString();
-  if (req.body.status === 'received' && !data[idx].receivedAt) data[idx].receivedAt = new Date().toISOString();
-  // Persist awbNumber + additional fields from PD
-  if (req.body.awbNumber !== undefined)    data[idx].awbNumber    = req.body.awbNumber;
-  if (req.body.quantityRequested !== undefined) data[idx].quantityRequested = req.body.quantityRequested;
-  writeRequests(data);
-  res.json(data[idx]);
-});
-
-// DELETE /api/fabric-requests/:id — TC cancels a request
-app.delete('/api/fabric-requests/:id', (req, res) => {
-  let data = readRequests();
-  const idx = data.findIndex(r => r.id === req.params.id);
-  if (idx < 0) return res.status(404).json({ error: 'Not found' });
-  data.splice(idx, 1);
-  writeRequests(data);
-  res.json({ ok: true });
-});
+// Pull pending fabric requests from the DB, joined with the TC.
+// Used by both the daily digest and any manual /send-digest trigger.
+function loadPendingRequestsForDigest() {
+  const rows = db.prepare(`
+    SELECT r.id, r.tc_id, r.program_id, r.fabric_code, r.fabric_name,
+           r.content, r.swatch_qty, r.style_numbers, r.requested_at,
+           t.code AS tc_code, t.name AS tc_name, t.email AS tc_email,
+           p.name AS program_name
+    FROM fabric_requests r
+    JOIN trading_companies t ON t.id = r.tc_id
+    LEFT JOIN programs p     ON p.id = r.program_id
+    WHERE r.status = 'outstanding'
+    ORDER BY r.requested_at
+  `).all();
+  return rows.map(r => ({
+    id:           r.id,
+    tcId:         r.tc_id,
+    tcName:       r.tc_name,
+    tcEmail:      r.tc_email,
+    programId:    r.program_id,
+    programName:  r.program_name,
+    fabricCode:   r.fabric_code,
+    fabricName:   r.fabric_name,
+    content:      r.content,
+    swatchQty:    r.swatch_qty,
+    styleNumbers: (() => { try { return JSON.parse(r.style_numbers || '[]'); } catch { return []; } })(),
+    requestedAt:  r.requested_at,
+  }));
+}
 
 // POST /api/send-digest — manually trigger the daily email digest
 app.post('/api/send-digest', async (req, res) => {
@@ -126,7 +82,7 @@ app.post('/api/send-digest', async (req, res) => {
 
 // ── Email: Daily Digest ────────────────────────────────────────
 async function sendDailyDigest() {
-  const allRequests = readRequests().filter(r => r.status === 'pending');
+  const allRequests = loadPendingRequestsForDigest();
 
   if (!allRequests.length) {
     console.log('[digest] No pending requests — skipping email send.');
@@ -267,11 +223,9 @@ app.get('*', (req, res) => {
 });
 
 // ── Start ──────────────────────────────────────────────────────
-ensureDataDir();
 scheduleCron();
 app.listen(PORT, () => {
   console.log(`\n🚀 Vendor Cost Portal running at http://localhost:${PORT}`);
-  console.log(`   Fabric requests stored in: ${REQ_FILE}`);
   console.log(`   Daily email digest: 10:00am ${TZ}`);
   console.log(`   SMTP: ${SMTP_USER || '(not configured — set SMTP_USER and SMTP_PASS env vars)'}\n`);
 });

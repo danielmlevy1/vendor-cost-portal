@@ -106,6 +106,365 @@ router.delete('/fabric-library/:id', requireAuth, requireRole('admin', 'pc'), (r
 });
 
 // =============================================================
+// FABRIC STANDARDS REQUESTS + PACKAGES
+// =============================================================
+
+function fabricReqFromRow(r) {
+  return {
+    id:           r.id,
+    tcId:         r.tc_id,
+    programId:    r.program_id,
+    handoffId:    r.handoff_id,
+    fabricCode:   r.fabric_code,
+    fabricName:   r.fabric_name,
+    content:      r.content,
+    swatchQty:    r.swatch_qty,
+    styleIds:     JSON.parse(r.style_ids || '[]'),
+    styleNumbers: JSON.parse(r.style_numbers || '[]'),
+    status:       r.status,
+    packageId:    r.package_id,
+    requestedBy:  r.requested_by,
+    requestedAt:  r.requested_at,
+    sentAt:       r.sent_at,
+    receivedAt:   r.received_at,
+    cancelReason: r.cancel_reason,
+    notes:        r.notes,
+  };
+}
+
+function fabricPkgFromRow(r) {
+  return {
+    id:         r.id,
+    tcId:       r.tc_id,
+    awbNumber:  r.awb_number,
+    carrier:    r.carrier,
+    notes:      r.notes,
+    createdBy:  r.created_by,
+    createdAt:  r.created_at,
+    shippedAt:  r.shipped_at,
+    receivedAt: r.received_at,
+    status:     r.status,
+  };
+}
+
+// GET /api/fabric-requests
+// Vendors see their own requests. PD/admin/pc see everything.
+router.get('/fabric-requests', requireAuth, (req, res) => {
+  let rows;
+  if (req.user.role === 'vendor') {
+    rows = db.prepare('SELECT * FROM fabric_requests WHERE tc_id = ? ORDER BY requested_at DESC').all(req.user.tcId);
+  } else if (['admin', 'pc', 'prod_dev'].includes(req.user.role)) {
+    rows = db.prepare('SELECT * FROM fabric_requests ORDER BY requested_at DESC').all();
+  } else {
+    return res.status(403).json({ error: 'Insufficient permissions' });
+  }
+  res.json(rows.map(fabricReqFromRow));
+});
+
+// POST /api/fabric-requests
+// Vendors submit one at a time OR in bulk ({ requests: [...] }).
+// PD/admin can also create on behalf of a vendor (tcId in body).
+router.post('/fabric-requests', requireAuth, (req, res) => {
+  const inputs = Array.isArray(req.body.requests) ? req.body.requests : [req.body];
+  const isVendor = req.user.role === 'vendor';
+  if (!isVendor && !['admin', 'pc', 'prod_dev'].includes(req.user.role)) {
+    return res.status(403).json({ error: 'Insufficient permissions' });
+  }
+
+  const insert = db.prepare(`
+    INSERT INTO fabric_requests
+      (id, tc_id, program_id, handoff_id, fabric_code, fabric_name, content,
+       swatch_qty, style_ids, style_numbers, status, requested_by, requested_at, notes)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+  `);
+  const created = [];
+  const tx = db.transaction(() => {
+    for (const b of inputs) {
+      if (!b || !b.fabricCode) throw new Error('fabricCode required');
+      const tcId = isVendor ? req.user.tcId : (b.tcId || null);
+      if (!tcId) throw new Error('tcId required');
+      const id = uid();
+      insert.run(
+        id, tcId,
+        b.programId || null,
+        b.handoffId || null,
+        b.fabricCode,
+        b.fabricName || null,
+        b.content || null,
+        b.swatchQty != null ? Number(b.swatchQty) : null,
+        JSON.stringify(Array.isArray(b.styleIds) ? b.styleIds : []),
+        JSON.stringify(Array.isArray(b.styleNumbers) ? b.styleNumbers : []),
+        'outstanding',
+        b.requestedBy || req.user.name || req.user.email || null,
+        now(),
+        b.notes || null
+      );
+      created.push(id);
+    }
+  });
+  try { tx(); }
+  catch (err) { return res.status(400).json({ error: err.message }); }
+
+  const rows = db.prepare(
+    `SELECT * FROM fabric_requests WHERE id IN (${created.map(() => '?').join(',')})`
+  ).all(...created);
+  res.status(201).json(rows.map(fabricReqFromRow));
+});
+
+// PATCH /api/fabric-requests/:id — status or notes updates
+// Vendors can only cancel/uncancel their own outstanding requests.
+router.patch('/fabric-requests/:id', requireAuth, (req, res) => {
+  const row = db.prepare('SELECT * FROM fabric_requests WHERE id = ?').get(req.params.id);
+  if (!row) return res.status(404).json({ error: 'Not found' });
+
+  const isVendor = req.user.role === 'vendor';
+  if (isVendor && row.tc_id !== req.user.tcId) return res.status(403).json({ error: 'Forbidden' });
+  if (!isVendor && !['admin', 'pc', 'prod_dev'].includes(req.user.role)) {
+    return res.status(403).json({ error: 'Insufficient permissions' });
+  }
+
+  const b = req.body;
+  const sets = [];
+  const vals = [];
+  const accept = (cond, col, val) => { if (cond) { sets.push(`${col} = ?`); vals.push(val); } };
+
+  if (isVendor) {
+    // Vendor can only cancel their own still-outstanding request
+    if (b.status === 'cancelled' && row.status === 'outstanding') {
+      accept(true, 'status', 'cancelled');
+      accept(true, 'cancel_reason', b.cancelReason || null);
+    } else {
+      return res.status(403).json({ error: 'Vendors can only cancel outstanding requests' });
+    }
+  } else {
+    accept(b.status         !== undefined, 'status',        b.status);
+    accept(b.notes          !== undefined, 'notes',         b.notes);
+    accept(b.swatchQty      !== undefined, 'swatch_qty',    b.swatchQty != null ? Number(b.swatchQty) : null);
+    accept(b.sentAt         !== undefined, 'sent_at',       b.sentAt);
+    accept(b.receivedAt     !== undefined, 'received_at',   b.receivedAt);
+    accept(b.cancelReason   !== undefined, 'cancel_reason', b.cancelReason);
+    if (b.status === 'sent'     && row.sent_at     == null) accept(true, 'sent_at',     now());
+    if (b.status === 'received' && row.received_at == null) accept(true, 'received_at', now());
+  }
+
+  if (!sets.length) return res.json(fabricReqFromRow(row));
+  vals.push(req.params.id);
+  db.prepare(`UPDATE fabric_requests SET ${sets.join(', ')} WHERE id = ?`).run(...vals);
+  res.json(fabricReqFromRow(db.prepare('SELECT * FROM fabric_requests WHERE id = ?').get(req.params.id)));
+});
+
+// DELETE /api/fabric-requests/:id
+router.delete('/fabric-requests/:id', requireAuth, (req, res) => {
+  const row = db.prepare('SELECT * FROM fabric_requests WHERE id = ?').get(req.params.id);
+  if (!row) return res.status(404).json({ error: 'Not found' });
+  const isVendor = req.user.role === 'vendor';
+  if (isVendor && (row.tc_id !== req.user.tcId || row.status !== 'outstanding')) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+  if (!isVendor && !['admin', 'pc', 'prod_dev'].includes(req.user.role)) {
+    return res.status(403).json({ error: 'Insufficient permissions' });
+  }
+  db.prepare('DELETE FROM fabric_requests WHERE id = ?').run(req.params.id);
+  res.json({ ok: true });
+});
+
+// GET /api/fabric-packages
+router.get('/fabric-packages', requireAuth, (req, res) => {
+  let rows;
+  if (req.user.role === 'vendor') {
+    rows = db.prepare('SELECT * FROM fabric_packages WHERE tc_id = ? ORDER BY created_at DESC').all(req.user.tcId);
+  } else if (['admin', 'pc', 'prod_dev'].includes(req.user.role)) {
+    rows = db.prepare('SELECT * FROM fabric_packages ORDER BY created_at DESC').all();
+  } else {
+    return res.status(403).json({ error: 'Insufficient permissions' });
+  }
+  res.json(rows.map(fabricPkgFromRow));
+});
+
+// POST /api/fabric-packages — PD creates a package and (optionally)
+// attaches outstanding requests to it. Body:
+//   { tcId, awbNumber?, carrier?, notes?, requestIds: [...], markSent?: bool }
+router.post('/fabric-packages', requireAuth, requireRole('admin', 'pc', 'prod_dev'), (req, res) => {
+  const b = req.body;
+  if (!b.tcId) return res.status(400).json({ error: 'tcId required' });
+
+  const id = uid();
+  const tx = db.transaction(() => {
+    db.prepare(`
+      INSERT INTO fabric_packages (id, tc_id, awb_number, carrier, notes, created_by, created_at, status)
+      VALUES (?,?,?,?,?,?,?,?)
+    `).run(id, b.tcId, b.awbNumber || null, b.carrier || null, b.notes || null,
+           req.user.name || req.user.email || req.user.id, now(),
+           b.markSent ? 'sent' : 'draft');
+
+    if (Array.isArray(b.requestIds) && b.requestIds.length) {
+      const attach = db.prepare(`
+        UPDATE fabric_requests SET package_id = ?, status = ?, sent_at = COALESCE(sent_at, ?)
+        WHERE id = ? AND tc_id = ?
+      `);
+      const sentAt = b.markSent ? now() : null;
+      const newStatus = b.markSent ? 'sent' : 'packaged';
+      for (const rid of b.requestIds) {
+        attach.run(id, newStatus, sentAt, rid, b.tcId);
+      }
+    }
+    if (b.markSent) {
+      db.prepare('UPDATE fabric_packages SET shipped_at = ? WHERE id = ?').run(now(), id);
+    }
+  });
+  tx();
+
+  res.status(201).json(fabricPkgFromRow(db.prepare('SELECT * FROM fabric_packages WHERE id = ?').get(id)));
+});
+
+// PATCH /api/fabric-packages/:id — update status, tracking, etc.
+// Transitions cascade to the requests attached to the package.
+router.patch('/fabric-packages/:id', requireAuth, requireRole('admin', 'pc', 'prod_dev'), (req, res) => {
+  const row = db.prepare('SELECT * FROM fabric_packages WHERE id = ?').get(req.params.id);
+  if (!row) return res.status(404).json({ error: 'Not found' });
+  const b = req.body;
+
+  const sets = [];
+  const vals = [];
+  const accept = (cond, col, val) => { if (cond) { sets.push(`${col} = ?`); vals.push(val); } };
+
+  accept(b.awbNumber !== undefined, 'awb_number', b.awbNumber);
+  accept(b.carrier   !== undefined, 'carrier',    b.carrier);
+  accept(b.notes     !== undefined, 'notes',      b.notes);
+
+  let cascadeStatus = null, cascadeTimestampCol = null;
+  if (b.status === 'sent' && row.status !== 'sent') {
+    accept(true, 'status', 'sent'); accept(true, 'shipped_at', now());
+    cascadeStatus = 'sent'; cascadeTimestampCol = 'sent_at';
+  } else if (b.status === 'received' && row.status !== 'received') {
+    accept(true, 'status', 'received'); accept(true, 'received_at', now());
+    cascadeStatus = 'received'; cascadeTimestampCol = 'received_at';
+  } else if (b.status === 'cancelled' && row.status !== 'cancelled') {
+    accept(true, 'status', 'cancelled');
+    cascadeStatus = 'outstanding'; // detach-like behavior: requests flip back to outstanding
+  } else if (b.status !== undefined) {
+    accept(true, 'status', b.status);
+  }
+
+  const tx = db.transaction(() => {
+    if (sets.length) {
+      vals.push(req.params.id);
+      db.prepare(`UPDATE fabric_packages SET ${sets.join(', ')} WHERE id = ?`).run(...vals);
+    }
+    if (cascadeStatus === 'outstanding') {
+      db.prepare(`UPDATE fabric_requests SET package_id = NULL, status = 'outstanding' WHERE package_id = ?`)
+        .run(req.params.id);
+    } else if (cascadeStatus) {
+      if (cascadeTimestampCol) {
+        db.prepare(`UPDATE fabric_requests SET status = ?, ${cascadeTimestampCol} = COALESCE(${cascadeTimestampCol}, ?) WHERE package_id = ?`)
+          .run(cascadeStatus, now(), req.params.id);
+      } else {
+        db.prepare(`UPDATE fabric_requests SET status = ? WHERE package_id = ?`)
+          .run(cascadeStatus, req.params.id);
+      }
+    }
+  });
+  tx();
+
+  res.json(fabricPkgFromRow(db.prepare('SELECT * FROM fabric_packages WHERE id = ?').get(req.params.id)));
+});
+
+// DELETE /api/fabric-packages/:id — detaches all its requests back to outstanding
+router.delete('/fabric-packages/:id', requireAuth, requireRole('admin', 'pc'), (req, res) => {
+  const row = db.prepare('SELECT * FROM fabric_packages WHERE id = ?').get(req.params.id);
+  if (!row) return res.status(404).json({ error: 'Not found' });
+
+  db.transaction(() => {
+    db.prepare(`UPDATE fabric_requests SET package_id = NULL, status = 'outstanding' WHERE package_id = ?`)
+      .run(req.params.id);
+    db.prepare('DELETE FROM fabric_packages WHERE id = ?').run(req.params.id);
+  })();
+  res.json({ ok: true });
+});
+
+// GET /api/vendor/available-fabrics
+// Returns the fabric catalog the calling vendor can request standards for:
+// every fabric in design handoffs whose linked program they are assigned
+// to. Each entry is annotated with already-requested status so the UI
+// can disable rows that are already outstanding/packaged/sent/received.
+router.get('/vendor/available-fabrics', requireAuth, (req, res) => {
+  if (req.user.role !== 'vendor') {
+    return res.status(403).json({ error: 'Vendors only' });
+  }
+  const tcId = req.user.tcId;
+
+  // Programs the vendor is assigned to (live programs only — skip draft/cancelled)
+  const programs = db.prepare(`
+    SELECT p.*
+    FROM programs p
+    JOIN assignments a ON a.program_id = p.id
+    WHERE a.tc_id = ? AND p.status NOT IN ('Draft', 'Cancelled')
+    ORDER BY p.created_at DESC
+  `).all(tcId);
+
+  // Index existing requests by (program, fabric_code) so the UI can
+  // tell the vendor which fabrics they've already requested.
+  const existing = db.prepare(`
+    SELECT id, program_id, fabric_code, status, requested_at, package_id, sent_at, received_at
+    FROM fabric_requests
+    WHERE tc_id = ? AND status != 'cancelled'
+  `).all(tcId);
+  const existingMap = new Map();
+  for (const r of existing) {
+    existingMap.set(`${r.program_id || ''}::${r.fabric_code}`, r);
+  }
+
+  const result = [];
+  for (const p of programs) {
+    // Handoff linked to this program is the source of the fabrics_list.
+    const handoff = db.prepare(
+      `SELECT id, fabrics_list, styles_list FROM design_handoffs WHERE linked_program_id = ?`
+    ).get(p.id);
+    if (!handoff) continue;
+    const fabricsList = JSON.parse(handoff.fabrics_list || '[]');
+    if (!fabricsList.length) continue;
+
+    const stylesList = JSON.parse(handoff.styles_list || '[]');
+    // Map fabric_code -> list of style numbers using it
+    const fabricToStyles = {};
+    for (const s of stylesList) {
+      const code = s.fabricCode || s.fabric_code || null;
+      if (!code) continue;
+      (fabricToStyles[code] ||= []).push(s.styleNumber || s.style_number || s.styleNum || '');
+    }
+
+    const fabrics = fabricsList.map(f => {
+      const code = f.code || f.fabricCode || '';
+      const key = `${p.id}::${code}`;
+      const already = existingMap.get(key);
+      return {
+        fabricCode:   code,
+        fabricName:   f.name || f.fabricName || '',
+        content:      f.content || '',
+        styleNumbers: fabricToStyles[code] || [],
+        existing:     already ? {
+          id:     already.id,
+          status: already.status,
+          requestedAt: already.requested_at,
+        } : null,
+      };
+    });
+
+    result.push({
+      programId:   p.id,
+      programName: p.name,
+      season:      p.season,
+      year:        p.year,
+      retailer:    p.retailer,
+      handoffId:   handoff.id,
+      fabrics,
+    });
+  }
+
+  res.json(result);
+});
+
+// =============================================================
 // DESIGN HANDOFFS
 // =============================================================
 

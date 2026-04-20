@@ -6068,139 +6068,181 @@ App.saveDesignChange = async function(e, styleId, programId) {
   App.navigate(st?.route, st?.routeParam);
 };
 
-// ─ Fabric Standard Requests ──────────────────────────────────────
-App.openFabricRequestModal = function(tcId) {
-  const tc      = API.TradingCompanies.get(tcId);
-  const user    = App._getState()?.user || {};
-  const allProgs= API.Assignments.all().filter(a => a.tcId === tcId).map(a => API.Programs.get(a.programId)).filter(Boolean);
-  const fabLib  = API.FabricLibrary.all();
-  App.showModal(`
-  <div class="modal-header"><h2>🧵 Request Fabric Swatch</h2><button class="btn btn-ghost btn-icon" onclick="App.closeModal()">✕</button></div>
-  <form onsubmit="App.saveFabricRequest(event,'${tcId}')">
-    <div class="form-group"><label class="form-label">Program</label>
-      <select class="form-select" id="fr-prog">
-        <option value="">— General Request —</option>
-        ${allProgs.map(p => `<option value="${p.id}">${p.name} ${p.season||''} ${p.year||''}</option>`).join('')}
-      </select>
-    </div>
-    <div class="form-row form-row-2">
-      <div class="form-group"><label class="form-label">Fabric Code *</label>
-        <input class="form-input" id="fr-code" list="fr-code-dl" placeholder="e.g. FAB001" required>
-        <datalist id="fr-code-dl">${fabLib.map(f => `<option value="${f.fabricCode}">${f.fabricCode} — ${f.fabricName}</option>`).join('')}</datalist>
-      </div>
-      <div class="form-group"><label class="form-label">Fabric Name</label>
-        <input class="form-input" id="fr-name" placeholder="e.g. Woven Tech Pique">
-      </div>
-    </div>
-    <div class="form-row form-row-2">
-      <div class="form-group"><label class="form-label">Content</label>
-        <input class="form-input" id="fr-content" placeholder="e.g. 88% Poly 12% Spandex">
-      </div>
-      <div class="form-group"><label class="form-label">Swatch Qty *</label>
-        <input class="form-input" id="fr-qty" type="number" min="1" placeholder="e.g. 3" required>
-      </div>
-    </div>
-    <div class="form-group"><label class="form-label">Style Numbers (comma-separated, optional)</label>
-      <input class="form-input" id="fr-styles" placeholder="e.g. HEW243, HEW244">
-    </div>
-    <div class="modal-footer">
-      <button type="button" class="btn btn-secondary" onclick="App.closeModal()">Cancel</button>
-      <button type="submit" class="btn btn-primary">Submit Request</button>
-    </div>
-  </form>`, 'modal-lg');
+// ── Fabric Standard Requests ─────────────────────────────────────
+// Vendors pick fabrics from the design-handoff catalog (grouped by
+// program) and submit multiple at once. PD groups outstanding requests
+// into a fabric_package, marks sent with one tracking number, then
+// received. No more per-fabric popup form.
+
+// ── Vendor: bulk-select helpers ─────────────────────────────────
+App._fabricToggleGroup = function(programId, checked) {
+  document.querySelectorAll(`.fabric-pick[data-prog="${programId}"]`).forEach(c => {
+    if (!c.disabled) c.checked = checked;
+  });
+  document.querySelectorAll('.fabric-pick').forEach(() => {}); // no-op; the inline wire in the view refreshes count
+  // Trigger change event so the count refresh in the view runs
+  const evt = new Event('change', { bubbles: true });
+  document.querySelectorAll(`.fabric-pick[data-prog="${programId}"]`).forEach(c => c.dispatchEvent(evt));
 };
 
-App.saveFabricRequest = async function(e, tcId) {
-  e.preventDefault();
-  const tc       = API.TradingCompanies.get(tcId);
-  const user     = App._getState()?.user || {};
-  const progId   = document.getElementById('fr-prog')?.value || '';
-  const prog     = progId ? API.Programs.get(progId) : null;
-  const styleStr = document.getElementById('fr-styles')?.value || '';
-  const styleNums= styleStr.split(',').map(s=>s.trim()).filter(Boolean);
-  const styleIds = styleNums.map(sn => API.Styles.all().find(st => st.styleNumber.trim() === sn)?.id).filter(Boolean);
-  const payload  = {
-    tcId, tcName: tc?.name||tcId, tcEmail: tc?.email||'',
-    programId: progId||null, programName: prog?.name||'',
-    fabricCode:  document.getElementById('fr-code')?.value    || '',
-    fabricName:  document.getElementById('fr-name')?.value    || '',
-    content:     document.getElementById('fr-content')?.value || '',
-    swatchQty:   parseInt(document.getElementById('fr-qty')?.value)||1,
-    styleNumbers: styleNums, styleIds, requestedBy: user?.name||user?.email||tcId,
-  };
-  try {
-    await fetch('/api/fabric-requests', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
-  } catch {
-    const local = JSON.parse(localStorage.getItem('vcp_fabric_req_local')||'[]');
-    local.push({ ...payload, id: Date.now().toString(36), requestedAt: new Date().toISOString(), status: 'pending' });
-    localStorage.setItem('vcp_fabric_req_local', JSON.stringify(local));
+App.submitFabricRequests = async function(tcId) {
+  const picks = [...document.querySelectorAll('.fabric-pick:checked')];
+  if (!picks.length) return;
+
+  const items = picks.map(c => {
+    const prog = c.dataset.prog;
+    const qtyInput = document.querySelector(`.fabric-qty-input[data-prog="${prog}"][data-code="${c.dataset.code}"]`);
+    const qtyRaw = (qtyInput?.value || '').trim();
+    const qty = qtyRaw === '' ? null : Number(qtyRaw);
+    let styleNumbers = [];
+    try { styleNumbers = JSON.parse(c.dataset.styles || '[]'); } catch (_) {}
+    return {
+      programId:    prog,
+      handoffId:    c.dataset.handoff || null,
+      fabricCode:   c.dataset.code,
+      fabricName:   c.dataset.name || null,
+      content:      c.dataset.content || null,
+      swatchQty:    (qty && !isNaN(qty)) ? qty : null,
+      styleNumbers,
+    };
+  });
+
+  // Warn if any picked row has no quantity — easy mistake
+  const missingQty = items.filter(it => it.swatchQty == null).length;
+  if (missingQty) {
+    const proceed = confirm(`${missingQty} row(s) don't have a quantity. Submit anyway?`);
+    if (!proceed) return;
   }
+
+  const btn = document.getElementById('fabric-submit-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Submitting…'; }
+  try {
+    await API.FabricRequests.createMany(items);
+  } catch (err) {
+    alert('Could not submit: ' + (err.message || 'unknown error'));
+    if (btn) { btn.disabled = false; btn.textContent = '📬 Request Selected'; }
+    return;
+  }
+  App.navigate('fabric-standards');
+};
+
+App.cancelFabricRequest = async function(id) {
+  if (!confirm('Cancel this request?')) return;
+  try { await API.FabricRequests.cancel(id); }
+  catch (err) { alert('Could not cancel: ' + (err.message || 'unknown')); return; }
+  App.navigate('fabric-standards');
+};
+
+// ── PD side: select helpers + package flows ─────────────────────
+App._fabricPdSelectTc = function(tcId, checked) {
+  document.querySelectorAll(`.fab-pd-chk[data-tc="${tcId}"]`).forEach(c => { c.checked = checked; });
+};
+
+App.openCreateFabricPackage = function(tcId) {
+  const selected = [...document.querySelectorAll(`.fab-pd-chk[data-tc="${tcId}"]:checked`)].map(c => c.value);
+  if (!selected.length) { alert('Select at least one request to include in this package.'); return; }
+
+  const tc = API.TradingCompanies.get(tcId);
+  App.showModal(`
+    <div class="modal-header"><h2>📦 Create fabric package</h2><button class="btn btn-ghost btn-icon" onclick="App.closeModal()">✕</button></div>
+    <p class="mb-3">Bundle <strong>${selected.length}</strong> outstanding request${selected.length!==1?'s':''} for <strong>${tc?.code || tcId}</strong> into one package.</p>
+    <div class="form-row form-row-2">
+      <div class="form-group">
+        <label class="form-label">AWB / Tracking number (optional)</label>
+        <input class="form-input" id="fp-awb" placeholder="e.g. DHL 1234567890">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Carrier (optional)</label>
+        <input class="form-input" id="fp-carrier" placeholder="e.g. DHL, FedEx">
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Notes (optional)</label>
+      <textarea class="form-input" id="fp-notes" rows="2" placeholder="e.g. Bundled with sales samples"></textarea>
+    </div>
+    <div class="form-group">
+      <label style="display:flex;align-items:center;gap:8px">
+        <input type="checkbox" id="fp-mark-sent">
+        <span>Mark as sent now (otherwise saved as draft)</span>
+      </label>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="App.closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick='App._createFabricPackage(${JSON.stringify(tcId)}, ${JSON.stringify(selected)})'>Create package</button>
+    </div>`);
+};
+
+App._createFabricPackage = async function(tcId, requestIds) {
+  const awb     = document.getElementById('fp-awb')?.value.trim() || null;
+  const carrier = document.getElementById('fp-carrier')?.value.trim() || null;
+  const notes   = document.getElementById('fp-notes')?.value.trim() || null;
+  const markSent = !!document.getElementById('fp-mark-sent')?.checked;
+  try {
+    await API.FabricPackages.create({ tcId, awbNumber: awb, carrier, notes, requestIds, markSent });
+  } catch (err) { alert('Could not create package: ' + (err.message || 'unknown')); return; }
   App.closeModal();
   App.navigate('fabric-standards');
 };
 
-App.markFabricSent = async function(id) {
-  const awb = prompt('AWB / Tracking Number (optional):', '');
-  if (awb === null) return; // user cancelled
-  try {
-    await fetch(`/api/fabric-requests/${id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status: 'sent', awbNumber: awb.trim(), sentAt: new Date().toISOString() }),
-    });
-  } catch { alert('Could not update — server not reachable.'); return; }
-  App._refreshStandards();
+App.openShipFabricPackage = function(packageId) {
+  const pkg = API.FabricPackages.get(packageId);
+  App.showModal(`
+    <div class="modal-header"><h2>✈ Mark package sent</h2><button class="btn btn-ghost btn-icon" onclick="App.closeModal()">✕</button></div>
+    <div class="form-row form-row-2">
+      <div class="form-group">
+        <label class="form-label">AWB / Tracking number</label>
+        <input class="form-input" id="fp-awb-ship" value="${pkg?.awbNumber || ''}" placeholder="Tracking #">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Carrier</label>
+        <input class="form-input" id="fp-carrier-ship" value="${pkg?.carrier || ''}" placeholder="DHL, FedEx, etc.">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="App.closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="App._markFabricPackageSent('${packageId}')">✈ Mark sent</button>
+    </div>`);
 };
 
-App.markFabricReceived = async function(id) {
-  try {
-    await fetch(`/api/fabric-requests/${id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status: 'received', receivedAt: new Date().toISOString() }),
-    });
-  } catch { alert('Could not update — server not reachable.'); return; }
-  App._refreshStandards();
-};
-
-
-App.deleteFabricRequest = async function(id) {
-  if (!confirm('Cancel this fabric request?')) return;
-  try { await fetch(`/api/fabric-requests/${id}`, { method:'DELETE' }); }
-  catch { alert('Could not delete — server not reachable.'); return; }
+App._markFabricPackageSent = async function(packageId) {
+  const awb     = document.getElementById('fp-awb-ship')?.value.trim() || null;
+  const carrier = document.getElementById('fp-carrier-ship')?.value.trim() || null;
+  try { await API.FabricPackages.markSent(packageId, awb, carrier); }
+  catch (err) { alert('Could not mark sent: ' + (err.message || 'unknown')); return; }
+  App.closeModal();
   App.navigate('fabric-standards');
 };
 
-App.filterFabricRequests = async function() {
-  const statusF = document.getElementById('fabric-status-filter')?.value || '';
-  const tcF     = document.getElementById('fabric-tc-filter')?.value     || '';
-  let all = [];
-  try { all = await (await fetch('/api/fabric-requests')).json(); } catch { return; }
-  let rows = all;
-  if (statusF) rows = rows.filter(r => r.status === statusF);
-  if (tcF)     rows = rows.filter(r => (r.tcName||r.tcId) === tcF);
-  const tbody = document.getElementById('fabric-requests-tbody');
-  if (!tbody) return;
-  const isVendor = !['admin','pc','planning','design'].includes(App._getState()?.user?.role);
-  const fd = d => d ? new Date(d).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : '—';
-  const sc = s => ({pending:'<span class="badge badge-pending">🟡 Pending</span>',sent:'<span class="badge badge-costing">🔵 Sent</span>',received:'<span class="badge badge-placed">✅ Received</span>'}[s]||'<span class="badge">—</span>');
-  tbody.innerHTML = rows.map(r => {
-    const styles = Array.isArray(r.styleNumbers) ? r.styleNumbers.join(', ') : (r.styleNumbers||'—');
-    const adminBtns = `<div style="display:flex;gap:6px">${r.status==='pending'?`<button class="btn btn-primary btn-sm" onclick="App.markFabricSent('${r.id}')">📤 Sent</button>`:''}${r.status==='sent'?`<button class="btn btn-success btn-sm" onclick="App.markFabricReceived('${r.id}')">✅ Rcvd</button>`:''}${r.status!=='received'?`<button class="btn btn-danger btn-sm" onclick="App.deleteFabricRequest('${r.id}')">🗑</button>`:''}</div>`;
-    const tcBtns   = r.status==='pending' ? `<button class="btn btn-danger btn-sm" onclick="App.deleteFabricRequest('${r.id}')">Cancel</button>` : '';
-    return `<tr>${!isVendor?`<td class="font-bold">${r.tcName||'—'}</td>`:''}<td class="font-bold primary">${r.fabricCode||'—'}</td><td>${r.fabricName||'—'}</td><td class="text-sm text-muted">${r.content||'—'}</td><td class="text-center font-bold">${r.swatchQty||'—'}</td><td class="text-sm">${styles}</td><td class="text-sm">${r.programName||'—'}</td><td class="text-sm text-muted">${fd(r.requestedAt)}</td><td>${r.sentAt?fd(r.sentAt):'—'}</td><td>${sc(r.status)}</td><td>${isVendor?tcBtns:adminBtns}</td></tr>`;
-  }).join('') || `<tr><td colspan="${isVendor?10:11}" class="text-center text-muted" style="padding:40px">No results.</td></tr>`;
+App.markFabricPackageReceived = async function(packageId) {
+  if (!confirm('Mark this package as received?')) return;
+  try { await API.FabricPackages.markReceived(packageId); }
+  catch (err) { alert('Could not mark received: ' + (err.message || 'unknown')); return; }
+  App.navigate('fabric-standards');
+};
+
+App.deleteFabricPackage = async function(packageId) {
+  if (!confirm('Delete this package? Attached requests will return to Outstanding.')) return;
+  try { await API.FabricPackages.delete(packageId); }
+  catch (err) { alert('Could not delete: ' + (err.message || 'unknown')); return; }
+  App.navigate('fabric-standards');
+};
+
+App.deleteFabricRequest = async function(id) {
+  if (!confirm('Delete this fabric request?')) return;
+  try { await API.FabricRequests.delete(id); }
+  catch (err) { alert('Could not delete: ' + (err.message || 'unknown')); return; }
+  App.navigate('fabric-standards');
 };
 
 App.sendFabricDigestNow = async function() {
   const btn = event?.currentTarget || event?.target;
-  if (btn) { btn.disabled=true; btn.textContent='📧 Sending…'; }
+  if (btn) { btn.disabled = true; btn.textContent = '📧 Sending…'; }
   try {
-    const res  = await fetch('/api/send-digest', { method:'POST' });
+    const res  = await fetch('/api/send-digest', { method: 'POST' });
     const data = await res.json();
-    alert(data.ok ? `✅ Digest sent to ${data.sent} TC(s).` : `⚠ ${data.error||data.skipped||'Unknown'}`);
+    alert(data.ok ? `✅ Digest sent to ${data.sent} TC(s).` : `⚠ ${data.error || data.skipped || 'Unknown'}`);
   } catch { alert('⚠ Could not reach server — is it running?'); }
-  finally { if (btn) { btn.disabled=false; btn.textContent='📧 Send Digest Now'; } }
+  finally { if (btn) { btn.disabled = false; btn.textContent = '📧 Send digest'; } }
 };
 
 } catch (_appInitErr) {
@@ -6230,49 +6272,6 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 });
 
-
-// Generic PATCH helper for fabric requests
-App._patchFabricRequest = async function(id, data) {
-  try {
-    const res = await fetch('/api/fabric-requests/' + id, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
-    });
-    return res.json();
-  } catch(e) { console.error('patch failed', e); }
-};
-
-// Multi-select create shipment package
-App.createShipmentPackage = async function() {
-  const checked = [...document.querySelectorAll('.fab-req-chk:checked')];
-  if (!checked.length) { alert('Select at least one item.'); return; }
-  const awb = prompt('AWB / Tracking Number for this package:');
-  if (!awb) return;
-  const sentDate = new Date().toISOString();
-  for (const chk of checked) {
-    await App._patchFabricRequest(chk.value, {
-      status: 'sent', awbNumber: awb.trim(), sentAt: sentDate,
-    });
-  }
-  if (typeof App._refreshStandards === 'function') App._refreshStandards();
-  else location.reload();
-};
-
-// TC marks received
-App.markFabricReceived = async function(id) {
-  await App._patchFabricRequest(id, { status: 'received', receivedAt: new Date().toISOString() });
-  if (typeof App._refreshStandards === 'function') App._refreshStandards();
-  else location.reload();
-};
-
-App._refreshStandards = function() {
-  const user = App._getState()?.user || {};
-  AdminViews.renderFabricStandards(user.role, user.tcId).then(html => {
-    const mc = document.getElementById('content');
-    if (mc) mc.innerHTML = html;
-  });
-};
 
 
 // ── Tech Design Notes — per-style save ───────────────────────────────────────

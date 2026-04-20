@@ -352,6 +352,54 @@ function runMigrations() {
   // COO list so every assignment has explicit rows. Idempotent: only
   // touches assignments that have zero rows in assignment_coos.
   backfillAssignmentCoos();
+
+  // v5: migrate legacy JSON-file fabric requests (data/fabric-requests.json)
+  // into the new DB-backed fabric_requests table. One-shot; guarded by
+  // "is table empty?" so reruns are no-ops. Leaves the file in place.
+  importLegacyFabricRequests();
+}
+
+function importLegacyFabricRequests() {
+  if (count('fabric_requests') > 0) return;
+  const file = path.join(__dirname, 'data', 'fabric-requests.json');
+  if (!fs.existsSync(file)) return;
+  let rows;
+  try { rows = JSON.parse(fs.readFileSync(file, 'utf8')); }
+  catch (err) { console.warn('[db] fabric-requests.json unreadable, skipping:', err.message); return; }
+  if (!Array.isArray(rows) || !rows.length) return;
+
+  const insert = db.prepare(`
+    INSERT INTO fabric_requests
+      (id, tc_id, program_id, handoff_id, fabric_code, fabric_name, content,
+       swatch_qty, style_ids, style_numbers, status, package_id,
+       requested_by, requested_at, sent_at, received_at, notes)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+  `);
+  const tx = db.transaction(() => {
+    for (const r of rows) {
+      insert.run(
+        r.id || (Date.now().toString(36) + Math.random().toString(36).slice(2, 7)),
+        r.tcId || '',
+        r.programId || null,
+        r.handoffId || null,
+        r.fabricCode || '',
+        r.fabricName || null,
+        r.content || null,
+        r.swatchQty != null ? Number(r.swatchQty) : null,
+        JSON.stringify(Array.isArray(r.styleIds) ? r.styleIds : []),
+        JSON.stringify(Array.isArray(r.styleNumbers) ? r.styleNumbers : []),
+        r.status || 'outstanding',
+        null,
+        r.requestedBy || null,
+        r.requestedAt || new Date().toISOString(),
+        r.sentAt || null,
+        r.receivedAt || null,
+        r.notes || null
+      );
+    }
+  });
+  tx();
+  console.log(`[db] Imported ${rows.length} legacy fabric requests from JSON`);
 }
 
 function backfillAssignmentCoos() {
