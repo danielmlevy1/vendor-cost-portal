@@ -769,11 +769,15 @@ App = (() => {
     const assignments = [];
     for (const chk of document.querySelectorAll('.assign-tc-chk:checked')) {
       const tcId = chk.value;
+      const tc = API.TradingCompanies.get(tcId);
+      const tcHasCoos = (tc?.coos || []).length > 0;
       const coos = [...document.querySelectorAll(`.assign-coo-chk[data-tcid="${tcId}"]:checked`)].map(el => el.value);
-      // Skip TCs that have the row checked but zero COOs picked — better to
-      // surface the error than silently save an unusable assignment.
-      if (!coos.length) {
-        alert(`Pick at least one COO for ${tcId}, or uncheck the row.`);
+      // Only enforce "pick at least one COO" when the TC actually has COOs
+      // configured. TCs with no COO master list are allowed through with
+      // an empty array (won't add cost-matrix columns until COOs are
+      // configured on the trading-companies page).
+      if (tcHasCoos && !coos.length) {
+        alert(`Pick at least one COO for ${tc?.code || tcId}, or uncheck the row.`);
         return;
       }
       assignments.push({ tcId, coos });

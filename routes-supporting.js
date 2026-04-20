@@ -416,10 +416,26 @@ router.get('/vendor/available-fabrics', requireAuth, (req, res) => {
 
   const result = [];
   for (const p of programs) {
-    // Handoff linked to this program is the source of the fabrics_list.
-    const handoff = db.prepare(
+    // Source of fabrics for a program: a design handoff explicitly linked
+    // to it. If the program was created without going through the handoff
+    // workflow (so linked_program_id was never set), fall back to a
+    // metadata match on season/year/brand/tier — that's good enough to
+    // surface the right catalog without forcing a manual link step.
+    let handoff = db.prepare(
       `SELECT id, fabrics_list, styles_list FROM design_handoffs WHERE linked_program_id = ?`
     ).get(p.id);
+    if (!handoff) {
+      handoff = db.prepare(`
+        SELECT id, fabrics_list, styles_list FROM design_handoffs
+        WHERE (linked_program_id IS NULL OR linked_program_id = '')
+          AND COALESCE(season,'') = COALESCE(?, '')
+          AND COALESCE(year,'')   = COALESCE(?, '')
+          AND COALESCE(brand,'')  = COALESCE(?, '')
+          AND COALESCE(tier,'')   = COALESCE(?, '')
+        ORDER BY created_at DESC
+        LIMIT 1
+      `).get(p.season, p.year, p.brand, p.retailer);
+    }
     if (!handoff) continue;
     const fabricsList = JSON.parse(handoff.fabrics_list || '[]');
     if (!fabricsList.length) continue;
@@ -433,15 +449,23 @@ router.get('/vendor/available-fabrics', requireAuth, (req, res) => {
       (fabricToStyles[code] ||= []).push(s.styleNumber || s.style_number || s.styleNum || '');
     }
 
+    // Some uploads only populate `content` (Design recorded fabrics by
+    // composition, not by SKU). Fall back so the row is still requestable
+    // and identifies itself in the request history. The fabric_code field
+    // is non-null in the requests table, so we MUST emit something.
     const fabrics = fabricsList.map(f => {
-      const code = f.code || f.fabricCode || '';
-      const key = `${p.id}::${code}`;
+      const rawCode    = f.code || f.fabricCode || f.fabricRef || f.ref || '';
+      const rawName    = f.name || f.fabricName || f.description || '';
+      const content    = f.content || f.composition || '';
+      const fabricCode = rawCode || rawName || content || 'unspecified';
+      const fabricName = rawName || content || rawCode || '—';
+      const key = `${p.id}::${fabricCode}`;
       const already = existingMap.get(key);
       return {
-        fabricCode:   code,
-        fabricName:   f.name || f.fabricName || '',
-        content:      f.content || '',
-        styleNumbers: fabricToStyles[code] || [],
+        fabricCode,
+        fabricName,
+        content,
+        styleNumbers: fabricToStyles[rawCode] || [],
         existing:     already ? {
           id:     already.id,
           status: already.status,
