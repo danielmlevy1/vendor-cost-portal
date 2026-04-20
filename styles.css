@@ -3306,3 +3306,36 @@ tr.style-row-selected .sel-col {
   opacity: 0.38;
   cursor: not-allowed;
 }
+
+/* ── Print: Fabric Standards matrix → PDF ──────────────────────────
+   App.printFabricMatrix() adds .printing-fabric-matrix to <body>
+   right before window.print(). Only this rule set takes effect
+   during print, leaving the on-screen UI alone. */
+body.printing-fabric-matrix #sidebar,
+body.printing-fabric-matrix #sidebar-toggle,
+body.printing-fabric-matrix .page-header,
+body.printing-fabric-matrix .fabric-kpi-row,
+body.printing-fabric-matrix .cs-filter-bar,
+body.printing-fabric-matrix .modal-overlay,
+body.printing-fabric-matrix #content > *:not(#fabric-matrix-print-area):not(.text-sm) {
+  display: none !important;
+}
+
+@media print {
+  body { background: #fff !important; color: #000 !important; }
+  #fabric-matrix-print-area { box-shadow: none !important; border: 1px solid #999 !important; overflow: visible !important; }
+  #fabric-matrix-print-area .print-only { display: block !important; }
+  #fabric-matrix-print-area table { width: 100% !important; border-collapse: collapse !important; }
+  #fabric-matrix-print-area th,
+  #fabric-matrix-print-area td {
+    border: 1px solid #ccc !important;
+    color: #000 !important;
+    background: #fff !important;
+    padding: 4px 6px !important;
+    font-size: 10px !important;
+    position: static !important;          /* drop the sticky-left positioning for print */
+  }
+  #fabric-matrix-print-area thead th { background: #f3f4f6 !important; font-weight: 700 !important; }
+  #fabric-matrix-print-area .badge { background: transparent !important; color: #555 !important; border: 1px solid #ccc !important; }
+  @page { size: landscape; margin: 12mm; }
+}

@@ -2955,20 +2955,39 @@ const AdminViews = (() => {
       ? shippedPkgs.map(p => pkgCard(p, true)).join('')
       : `<div class="empty-state" style="padding:20px"><div class="text-muted">No packages sent yet.</div></div>`;
 
-    return `
-    <div class="page-header">
-      <div><h1 class="page-title">🧵 Fabric Standards — Queue</h1>
-        <p class="page-subtitle">Review vendor requests, group them into shipment packages, and track delivery.</p>
+    // View toggle: queue (3-lane workflow) vs matrix (fabric × vendor pivot).
+    const viewMode = localStorage.getItem('vcp_fabric_view') || 'queue';
+    const tabBtn = (key, label) => `
+      <button class="btn ${viewMode === key ? 'btn-primary' : 'btn-secondary'} btn-sm"
+        onclick="App._fabricSetView('${key}')">${label}</button>`;
+    const toolbar = `
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        ${tabBtn('queue', 'Queue')}
+        ${tabBtn('matrix', 'Matrix')}
+        ${canAction ? `<button class="btn btn-ghost btn-sm" onclick="App.sendFabricDigestNow()">📧 Send digest</button>` : ''}
+      </div>`;
+
+    const header = `
+      <div class="page-header">
+        <div><h1 class="page-title">🧵 Fabric Standards${viewMode === 'matrix' ? ' — Matrix' : ' — Queue'}</h1>
+          <p class="page-subtitle">${viewMode === 'matrix'
+            ? 'Cross-tab of fabrics and vendors so you can see totals at a glance.'
+            : 'Review vendor requests, group them into shipment packages, and track delivery.'}</p>
+        </div>
+        ${toolbar}
       </div>
-      ${canAction ? `<div style="display:flex;gap:8px"><button class="btn btn-ghost btn-sm" onclick="App.sendFabricDigestNow()">📧 Send digest</button></div>` : ''}
-    </div>
+      <div class="fabric-kpi-row">
+        <div class="fabric-kpi fabric-kpi-pending"><span class="fabric-kpi-num">${outstanding.length}</span><span class="fabric-kpi-label">Outstanding</span></div>
+        <div class="fabric-kpi fabric-kpi-sent"><span class="fabric-kpi-num">${draftPkgs.length}</span><span class="fabric-kpi-label">Awaiting production</span></div>
+        <div class="fabric-kpi fabric-kpi-received"><span class="fabric-kpi-num">${shippedPkgs.length}</span><span class="fabric-kpi-label">Sent / Received</span></div>
+      </div>`;
 
-    <div class="fabric-kpi-row">
-      <div class="fabric-kpi fabric-kpi-pending"><span class="fabric-kpi-num">${outstanding.length}</span><span class="fabric-kpi-label">Outstanding</span></div>
-      <div class="fabric-kpi fabric-kpi-sent"><span class="fabric-kpi-num">${draftPkgs.length}</span><span class="fabric-kpi-label">Awaiting production</span></div>
-      <div class="fabric-kpi fabric-kpi-received"><span class="fabric-kpi-num">${shippedPkgs.length}</span><span class="fabric-kpi-label">Sent / Received</span></div>
-    </div>
+    if (viewMode === 'matrix') {
+      return header + renderFabricMatrix({ allRequests, esc, tcLabel, pdStatusBadge });
+    }
 
+    return `
+    ${header}
     <h3 style="margin:20px 0 10px">1. Outstanding requests</h3>
     ${outstandingHtml}
 
@@ -2977,6 +2996,155 @@ const AdminViews = (() => {
 
     <h3 style="margin:20px 0 10px">3. Sent / received</h3>
     ${shippedHtml}`;
+  }
+
+  // ── Fabric × Vendor matrix view ─────────────────────────────────
+  // Pivot of in-flight fabric standard requests so PD can see, per
+  // fabric, how many swatches each vendor needs and the totals.
+  function renderFabricMatrix({ allRequests, esc, tcLabel, pdStatusBadge }) {
+    // Filters (status scope + qty source) persisted in localStorage.
+    const scope    = localStorage.getItem('vcp_fabric_matrix_scope')  || 'open';   // open | outstanding | all
+    const qtySource = localStorage.getItem('vcp_fabric_matrix_qty')   || 'send';    // ask (vendor's request) | send (PD's qty, falls back to ask)
+
+    const inScope = r => {
+      if (scope === 'outstanding') return r.status === 'outstanding';
+      if (scope === 'all')         return r.status !== 'cancelled';
+      return r.status !== 'received' && r.status !== 'cancelled'; // 'open' = active pipeline
+    };
+    const reqs = allRequests.filter(inScope);
+
+    if (!reqs.length) {
+      return `
+        <div style="display:flex;gap:8px;margin:16px 0">${matrixToolbar(scope, qtySource)}</div>
+        <div class="empty-state" style="padding:40px"><div class="icon">📭</div><h3>Nothing to show</h3>
+          <p class="text-muted">No requests match the current filter.</p></div>`;
+    }
+
+    // Pick the qty source for a given request.
+    const pickQty = r => {
+      const ask  = r.swatchQty != null ? Number(r.swatchQty) : null;
+      const send = r.pdQty     != null ? Number(r.pdQty)     : null;
+      if (qtySource === 'ask')  return ask  != null ? ask  : 0;
+      // 'send' falls back to ask when PD hasn't set pdQty
+      return send != null ? send : (ask != null ? ask : 0);
+    };
+
+    // Build a key for each unique fabric. Code first (preserves SKU
+    // identity), else content (Designed-by-composition fallback).
+    const fabricKey  = r => (r.fabricCode || r.content || '—').trim();
+    const fabricRow  = {};   // key -> { code, name, content, byTc: {tcId: qty}, total, statuses: Set }
+    const tcSet      = new Set();
+    for (const r of reqs) {
+      const k = fabricKey(r);
+      const row = fabricRow[k] ||= {
+        code:     r.fabricCode || '—',
+        name:     r.fabricName || '—',
+        content:  r.content    || '—',
+        byTc:     {},
+        total:    0,
+        statuses: new Set(),
+      };
+      const q = pickQty(r);
+      row.byTc[r.tcId] = (row.byTc[r.tcId] || 0) + q;
+      row.total += q;
+      row.statuses.add(r.status);
+      tcSet.add(r.tcId);
+    }
+
+    // Sort TCs alphabetically by code, fabrics by code.
+    const tcIds = [...tcSet].sort((a, b) => tcLabel(a).localeCompare(tcLabel(b)));
+    const fabricKeys = Object.keys(fabricRow).sort((a, b) => fabricRow[a].code.localeCompare(fabricRow[b].code));
+
+    const tcTotals = {};
+    let grandTotal = 0;
+    for (const k of fabricKeys) {
+      const row = fabricRow[k];
+      for (const tcId of tcIds) {
+        const v = row.byTc[tcId] || 0;
+        tcTotals[tcId] = (tcTotals[tcId] || 0) + v;
+        grandTotal += v;
+      }
+    }
+
+    // Status colour for the total cell — outstanding shown warm, fully shipped cool.
+    const rowStatusBadge = statuses => {
+      if (statuses.has('outstanding')) return '<span class="badge badge-pending" style="font-size:0.65rem">open</span>';
+      if (statuses.has('packaged'))    return '<span class="badge badge-costing" style="font-size:0.65rem">w/ Prod</span>';
+      if (statuses.has('sent'))        return '<span class="badge badge-costing" style="font-size:0.65rem">sent</span>';
+      return '';
+    };
+
+    const scopeLabel = { outstanding: 'Outstanding only', open: 'All open', all: 'All (incl. received)' }[scope] || scope;
+    const qtyLabel   = { send: "PD's send qty", ask: "Vendor's request" }[qtySource] || qtySource;
+    const printedAt  = new Date().toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' });
+
+    return `
+      <div style="display:flex;gap:8px;margin:16px 0;flex-wrap:wrap;align-items:center">
+        ${matrixToolbar(scope, qtySource)}
+        <div style="margin-left:auto">
+          <button class="btn btn-secondary btn-sm" onclick="App.printFabricMatrix()" title="Open the print dialog — choose 'Save as PDF' there">🖨 Print / Save as PDF</button>
+        </div>
+      </div>
+      <div id="fabric-matrix-print-area" class="card" style="padding:0;overflow:hidden">
+        <div class="print-only" style="display:none;padding:14px 16px;border-bottom:1px solid #ccc">
+          <div style="font-size:1.1rem;font-weight:700">Fabric Standards Matrix</div>
+          <div style="font-size:0.8rem;color:#555">${esc(scopeLabel)} · ${esc(qtyLabel)} · printed ${esc(printedAt)}</div>
+        </div>
+        <div class="table-wrap">
+          <table style="min-width:100%">
+            <thead>
+              <tr>
+                <th style="position:sticky;left:0;background:var(--bg-elevated);z-index:1">Fabric</th>
+                <th class="text-sm text-muted" style="position:sticky;left:0;background:var(--bg-elevated);z-index:1"></th>
+                ${tcIds.map(t => `<th class="text-center" style="white-space:nowrap">${esc(tcLabel(t))}</th>`).join('')}
+                <th class="text-center">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${fabricKeys.map(k => {
+                const row = fabricRow[k];
+                return `<tr>
+                  <td class="font-bold primary" style="position:sticky;left:0;background:var(--bg-surface);white-space:nowrap">
+                    ${esc(row.code)} ${rowStatusBadge(row.statuses)}
+                  </td>
+                  <td class="text-sm text-muted" style="max-width:280px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(row.content)}">${esc(row.content)}</td>
+                  ${tcIds.map(tcId => {
+                    const v = row.byTc[tcId] || 0;
+                    return `<td class="text-center ${v ? 'font-bold' : 'text-muted'}">${v || '—'}</td>`;
+                  }).join('')}
+                  <td class="text-center font-bold" style="background:rgba(99,102,241,0.05)">${row.total}</td>
+                </tr>`;
+              }).join('')}
+              <tr style="background:var(--bg-elevated)">
+                <td class="font-bold" style="position:sticky;left:0;background:var(--bg-elevated)">Total</td>
+                <td style="position:sticky;left:0;background:var(--bg-elevated)"></td>
+                ${tcIds.map(tcId => `<td class="text-center font-bold">${tcTotals[tcId] || 0}</td>`).join('')}
+                <td class="text-center font-bold" style="background:rgba(99,102,241,0.1)">${grandTotal}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="text-sm text-muted" style="margin-top:8px">
+        ${fabricKeys.length} fabric${fabricKeys.length!==1?'s':''} · ${tcIds.length} vendor${tcIds.length!==1?'s':''} · grand total <strong>${grandTotal}</strong> swatches
+      </div>`;
+  }
+
+  function matrixToolbar(scope, qtySource) {
+    const scopeOpt = (val, label) => `<option value="${val}" ${scope === val ? 'selected' : ''}>${label}</option>`;
+    const qtyOpt   = (val, label) => `<option value="${val}" ${qtySource === val ? 'selected' : ''}>${label}</option>`;
+    return `
+      <label class="cs-filter-label">Show</label>
+      <select class="form-select cs-select" onchange="App._fabricMatrixSet('scope', this.value)">
+        ${scopeOpt('outstanding', 'Outstanding only')}
+        ${scopeOpt('open',        'All open (default)')}
+        ${scopeOpt('all',         'All (incl. received)')}
+      </select>
+      <label class="cs-filter-label" style="margin-left:8px">Qty</label>
+      <select class="form-select cs-select" onchange="App._fabricMatrixSet('qty', this.value)">
+        ${qtyOpt('send', "PD's send qty")}
+        ${qtyOpt('ask',  "Vendor's request")}
+      </select>`;
   }
 
 

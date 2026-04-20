@@ -6299,6 +6299,37 @@ App.deleteFabricRequest = async function(id) {
   App.navigate('fabric-standards');
 };
 
+// ── PD Fabric Standards: view toggles ───────────────────────────
+App._fabricSetView = function(mode) {
+  // 'queue' or 'matrix' — persisted so the choice survives navigation.
+  if (mode !== 'queue' && mode !== 'matrix') return;
+  localStorage.setItem('vcp_fabric_view', mode);
+  App.navigate('fabric-standards');
+};
+
+App._fabricMatrixSet = function(key, val) {
+  if (key === 'scope') localStorage.setItem('vcp_fabric_matrix_scope', val);
+  else if (key === 'qty') localStorage.setItem('vcp_fabric_matrix_qty', val);
+  App.navigate('fabric-standards');
+};
+
+// Tag the body so the print stylesheet only kicks in for this page,
+// then trigger the browser's print dialog. macOS / Windows let the
+// user pick "Save as PDF" from there.
+App.printFabricMatrix = function() {
+  document.body.classList.add('printing-fabric-matrix');
+  // Some browsers print synchronously, others fire afterprint.
+  const cleanup = () => {
+    document.body.classList.remove('printing-fabric-matrix');
+    window.removeEventListener('afterprint', cleanup);
+  };
+  window.addEventListener('afterprint', cleanup);
+  // Defer one tick so the class change is applied before print.
+  setTimeout(() => window.print(), 0);
+  // Fallback: ensure the class is removed even if afterprint never fires.
+  setTimeout(cleanup, 5000);
+};
+
 App.sendFabricDigestNow = async function() {
   const btn = event?.currentTarget || event?.target;
   if (btn) { btn.disabled = true; btn.textContent = '📧 Sending…'; }
