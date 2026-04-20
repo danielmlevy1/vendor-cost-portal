@@ -112,6 +112,43 @@ const AdminViews = (() => {
     const avgFOB     = placedSubs.length ? placedSubs.reduce((s, x) => s + x.fob, 0) / placedSubs.length : 0;
     const totalSpend = placedSubs.reduce((s, x) => s + x.fob * x.qty, 0);
 
+    // ── Quote coverage by TC (across active programs) ──────────
+    // For each TC assigned to any active program, compute what % of
+    // their assigned (program, style) pairs they've quoted at least
+    // once. Surfaces silent vendors before the matrix view does.
+    const tcCoverage = {};   // tcId -> { tc, assignedStyles, quotedStyles, programIds: Set }
+    for (const prog of programs) {
+      if (prog.status !== 'Costing') continue;
+      const progStyles = allStylesDB.filter(s => s.programId === prog.id && s.status !== 'cancelled');
+      const asgns = API.Assignments.byProgram(prog.id);
+      for (const a of asgns) {
+        if (!a.tcId) continue;
+        tcCoverage[a.tcId] ||= { tc: a.tc || API.TradingCompanies.get(a.tcId), assigned: 0, quoted: 0, programIds: new Set() };
+        const slot = tcCoverage[a.tcId];
+        slot.programIds.add(prog.id);
+        for (const s of progStyles) {
+          slot.assigned += 1;
+          const hasQuote = allSubs.some(sub => sub.styleId === s.id && sub.tcId === a.tcId && sub.fob != null);
+          if (hasQuote) slot.quoted += 1;
+        }
+      }
+    }
+    const tcCoverageRows = Object.values(tcCoverage)
+      .map(x => ({ ...x, pct: x.assigned > 0 ? Math.round((x.quoted / x.assigned) * 100) : 0 }))
+      .sort((a, b) => a.pct - b.pct);  // worst first — that's what needs attention
+
+    // ── At-risk programs: CRD ≤ 14 days AND <100% costed ──────
+    const in14 = new Date(today); in14.setDate(in14.getDate() + 14);
+    const atRiskProgs = programs.filter(p => {
+      if (p.status !== 'Costing' || !p.crdDate) return false;
+      const d = new Date(p.crdDate + 'T00:00:00');
+      if (d < today || d > in14) return false;
+      const ps = allStylesDB.filter(s => s.programId === p.id && s.status !== 'cancelled');
+      if (!ps.length) return false;
+      const quoted = ps.filter(s => allSubs.some(sub => sub.styleId === s.id && sub.fob != null)).length;
+      return quoted < ps.length;  // not fully costed
+    });
+
     // ── UI helpers ────────────────────────────────────────────
     const bar = (val, total, color = '#6366f1') => {
       const pct = total > 0 ? Math.round((val / total) * 100) : 0;
@@ -335,12 +372,72 @@ const AdminViews = (() => {
 
       ${sec('⚡ Action Items')}
       <div class="kpi-alerts">
+        ${alertKpi('🔥', 'At-risk programs (CRD ≤ 14d, not fully costed)', atRiskProgs.length, '#ef4444', 'programs')}
         ${alertKpi('↩', 'Re-costs Ready to Release to TC', recostForProd, '#f59e0b', 'recost-queue')}
         ${alertKpi('↩', 'Re-costs Awaiting Sales (visibility)', recostForSales, '#3b82f6', 'recost-queue')}
         ${alertKpi('🚩', 'Flagged Prices', flagCount, '#ef4444', '')}
         ${alertKpi('📅', 'CRDs Within 30 Days', upcomingCRDs, '#6366f1', 'programs')}
         ${isAdmin ? alertKpi('⏳', 'Pending Approvals', pendingCount, '#a855f7', 'pending-changes') : ''}
       </div>
+
+      ${atRiskProgs.length ? `
+      ${sec('🔥 At-risk programs')}
+      <div class="card" style="padding:0">
+        <div class="table-wrap"><table>
+          <thead><tr>
+            <th>Program</th><th>CRD</th><th>Days left</th><th>Coverage</th>
+          </tr></thead>
+          <tbody>
+            ${atRiskProgs.sort((a,b) => (a.crdDate||'').localeCompare(b.crdDate||'')).map(p => {
+              const d = new Date(p.crdDate + 'T00:00:00');
+              const daysLeft = Math.ceil((d - today) / 86400000);
+              const ps = allStylesDB.filter(s => s.programId === p.id && s.status !== 'cancelled');
+              const quoted = ps.filter(s => allSubs.some(sub => sub.styleId === s.id && sub.fob != null)).length;
+              const pct = ps.length ? Math.round((quoted / ps.length) * 100) : 0;
+              const urgent = daysLeft <= 7;
+              return `<tr style="cursor:pointer" onclick="App.navigate('cost-summary','${p.id}')">
+                <td class="font-bold">${p.name}</td>
+                <td class="text-sm">${d.toLocaleDateString('en-US',{month:'short',day:'numeric'})}</td>
+                <td><span class="tag" style="background:${urgent?'rgba(239,68,68,.15)':'rgba(245,158,11,.15)'};color:${urgent?'#ef4444':'#f59e0b'}">${daysLeft}d</span></td>
+                <td><span class="badge ${pct >= 80 ? 'badge-costing' : 'badge-pending'}">${quoted}/${ps.length} (${pct}%)</span></td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table></div>
+      </div>` : ''}
+
+      ${tcCoverageRows.length ? `
+      ${sec('🏭 Quote coverage by TC (active programs)')}
+      <div class="card" style="padding:0">
+        <div class="table-wrap"><table>
+          <thead><tr>
+            <th>TC</th><th>Programs</th><th>Quoted / Assigned</th><th>Coverage</th>
+          </tr></thead>
+          <tbody>
+            ${tcCoverageRows.map(x => {
+              const code = x.tc?.code || x.tc?.id || '—';
+              const name = x.tc?.name || '';
+              const color = x.pct >= 80 ? '#22c55e' : x.pct >= 50 ? '#f59e0b' : '#ef4444';
+              return `<tr>
+                <td>
+                  <div class="font-bold">${code}</div>
+                  <div class="text-sm text-muted">${name}</div>
+                </td>
+                <td><span class="tag">${x.programIds.size}</span></td>
+                <td class="text-sm">${x.quoted} / ${x.assigned}</td>
+                <td>
+                  <div style="display:flex;align-items:center;gap:8px;min-width:140px">
+                    <div style="flex:1;height:6px;border-radius:3px;background:rgba(255,255,255,0.08)">
+                      <div style="height:6px;border-radius:3px;background:${color};width:${x.pct}%"></div>
+                    </div>
+                    <span style="font-weight:600;color:${color};white-space:nowrap">${x.pct}%</span>
+                  </div>
+                </td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table></div>
+      </div>` : ''}
 
       ${urgentProgs.length > 0 ? `${sec('📅 Upcoming CRDs')}<div class="card" style="padding:16px">${crdRows}</div>` : ''}
 
@@ -845,6 +942,41 @@ const AdminViews = (() => {
     // COOs come from the assignment (user-selected per program), not tc.coos.
     const colGroups = asgns.flatMap(a => (a.coos || []).map(coo => ({ tc: a.tc, coo })));
 
+    // ── Header KPI tiles ────────────────────────────────────────
+    // Aggregate the data the matrix shows so users see context
+    // before scrolling. costed = at least one quote with FOB; placed
+    // = a placement row exists; spend = sum of placed (FOB × projQty).
+    const allSubs = API.Submissions.all();
+    const liveStyles = styles.filter(s => s.status !== 'cancelled');
+    const totalStyles  = liveStyles.length;
+    const costedCount  = liveStyles.filter(s => allSubs.some(sub => sub.styleId === s.id && sub.fob != null)).length;
+    const placedCount  = liveStyles.filter(s => API.Placements.get(s.id) != null).length;
+    const placedDetail = liveStyles.map(s => {
+      const pl = API.Placements.get(s.id);
+      if (!pl) return null;
+      const sub = allSubs.find(x => x.styleId === s.id && x.tcId === pl.tcId && x.coo === pl.coo);
+      const fob = parseFloat(sub?.fob || pl.confirmedFob || 0);
+      const qty = parseFloat(s.projQty || 0);
+      return fob > 0 ? { fob, qty } : null;
+    }).filter(Boolean);
+    const avgPlacedFob = placedDetail.length ? (placedDetail.reduce((s,x) => s + x.fob, 0) / placedDetail.length) : 0;
+    const totalSpend   = placedDetail.reduce((s,x) => s + x.fob * x.qty, 0);
+    const costedPct    = totalStyles ? Math.round((costedCount / totalStyles) * 100) : 0;
+    const placedPct    = totalStyles ? Math.round((placedCount / totalStyles) * 100) : 0;
+    const tile = (label, value, sub, color) => `
+      <div class="kpi-card-wide" style="border-left:3px solid ${color}">
+        <div class="kpi-wide-title">${label}</div>
+        <div class="kpi-wide-big">${value}</div>
+        ${sub ? `<div class="text-sm text-muted" style="margin-top:4px">${sub}</div>` : ''}
+      </div>`;
+    const headerTiles = totalStyles > 0 ? `
+      <div class="kpi-grid" style="grid-template-columns:repeat(auto-fill,minmax(220px,1fr));margin-bottom:16px">
+        ${tile('Costed',  `${costedCount} <span class="kpi-wide-of">/ ${totalStyles}</span>`, `${costedPct}% with at least one quote`, '#6366f1')}
+        ${tile('Placed',  `${placedCount} <span class="kpi-wide-of">/ ${totalStyles}</span>`, `${placedPct}% awarded to a vendor`, '#22c55e')}
+        ${tile('Avg FOB (placed)', avgPlacedFob > 0 ? `$${avgPlacedFob.toFixed(2)}` : '—', placedDetail.length ? `Across ${placedDetail.length} placement${placedDetail.length!==1?'s':''}` : 'No placements yet', '#f59e0b')}
+        ${tile('Est. spend', totalSpend > 0 ? `$${totalSpend.toLocaleString(undefined,{maximumFractionDigits:0})}` : '—', 'FOB × projected qty', '#a855f7')}
+      </div>` : '';
+
     return `
     ${programTabBar(programId, 'cost', prog)}
     <div class="page-header" style="margin-top:12px">
@@ -868,6 +1000,7 @@ const AdminViews = (() => {
         <button class="btn btn-ghost btn-sm" onclick="App.openMarginRecap('${programId}')" title="View margin breakdown by TC and customer" style="border:1px solid var(--border)">📊 Margin Recap</button>
       </div>
     </div>
+    ${headerTiles}
     ${tcs.length === 0 ? `<div class="alert alert-warning">No trading companies assigned. <button class="btn btn-warning btn-sm" onclick="App.openAssignTCs('${programId}')">Assign</button></div>` : ''}
     <div id="recosting-banner">${typeof App !== 'undefined' && App._renderRecostBanner ? App._renderRecostBanner(programId) : ''}</div>
     <div class="card" style="padding:0;overflow:hidden">
