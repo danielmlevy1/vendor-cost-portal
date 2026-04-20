@@ -149,6 +149,24 @@ const AdminViews = (() => {
       return quoted < ps.length;  // not fully costed
     });
 
+    // ── Stalled programs: assigned to TCs but ZERO submissions ─
+    // Flags programs where vendors are silent — different from "low
+    // coverage" because it means no activity has started at all.
+    const stalledProgs = programs.filter(p => {
+      if (p.status !== 'Costing') return false;
+      if ((p.tcCount || 0) === 0) return false;       // need at least one TC assigned
+      const progSubs = allSubs.filter(sub => {
+        const s = allStylesDB.find(x => x.id === sub.styleId);
+        return s && s.programId === p.id && sub.fob != null;
+      });
+      return progSubs.length === 0;
+    }).map(p => {
+      // Days since the first TC was assigned, as a proxy for "how long silent".
+      // We don't have an assigned-at field on the program, so use program.createdAt.
+      const days = p.createdAt ? Math.floor((Date.now() - new Date(p.createdAt).getTime()) / 86400000) : null;
+      return { p, days };
+    });
+
     // ── UI helpers ────────────────────────────────────────────
     const bar = (val, total, color = '#6366f1') => {
       const pct = total > 0 ? Math.round((val / total) * 100) : 0;
@@ -373,12 +391,31 @@ const AdminViews = (() => {
       ${sec('⚡ Action Items')}
       <div class="kpi-alerts">
         ${alertKpi('🔥', 'At-risk programs (CRD ≤ 14d, not fully costed)', atRiskProgs.length, '#ef4444', 'programs')}
+        ${alertKpi('🤐', 'Stalled programs (TCs assigned, zero quotes)', stalledProgs.length, '#a855f7', 'programs')}
         ${alertKpi('↩', 'Re-costs Ready to Release to TC', recostForProd, '#f59e0b', 'recost-queue')}
         ${alertKpi('↩', 'Re-costs Awaiting Sales (visibility)', recostForSales, '#3b82f6', 'recost-queue')}
         ${alertKpi('🚩', 'Flagged Prices', flagCount, '#ef4444', '')}
         ${alertKpi('📅', 'CRDs Within 30 Days', upcomingCRDs, '#6366f1', 'programs')}
         ${isAdmin ? alertKpi('⏳', 'Pending Approvals', pendingCount, '#a855f7', 'pending-changes') : ''}
       </div>
+
+      ${stalledProgs.length ? `
+      ${sec('🤐 Stalled programs')}
+      <div class="card" style="padding:0">
+        <div class="table-wrap"><table>
+          <thead><tr>
+            <th>Program</th><th>TCs assigned</th><th>Days since created</th><th></th>
+          </tr></thead>
+          <tbody>
+            ${stalledProgs.sort((a,b) => (b.days||0) - (a.days||0)).map(({ p, days }) => `<tr style="cursor:pointer" onclick="App.navigate('cost-summary','${p.id}')">
+              <td class="font-bold">${p.name}</td>
+              <td><span class="tag">${p.tcCount}</span></td>
+              <td>${days != null ? `<span class="tag" style="background:${days>14?'rgba(239,68,68,.15)':'rgba(245,158,11,.15)'};color:${days>14?'#ef4444':'#f59e0b'}">${days}d</span>` : '—'}</td>
+              <td class="text-sm text-muted">No quotes received yet</td>
+            </tr>`).join('')}
+          </tbody>
+        </table></div>
+      </div>` : ''}
 
       ${atRiskProgs.length ? `
       ${sec('🔥 At-risk programs')}
@@ -2413,7 +2450,17 @@ const AdminViews = (() => {
       </div>` : '';
 
     const rows = handoffs.length ? handoffs.map(h => {
-      const d = new Date(h.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+      const created = new Date(h.createdAt);
+      const d = created.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+      // Aging badge — only for handoffs not yet linked to a program
+      // (linked ones are "done", aging doesn't matter).
+      const ageDays = Math.floor((Date.now() - created.getTime()) / 86400000);
+      const stillOpen = !h.linkedProgramId;
+      const ageColor = ageDays <= 7 ? '#22c55e' : ageDays <= 14 ? '#f59e0b' : '#ef4444';
+      const ageBg    = ageDays <= 7 ? 'rgba(34,197,94,0.12)' : ageDays <= 14 ? 'rgba(245,158,11,0.12)' : 'rgba(239,68,68,0.12)';
+      const ageBadge = stillOpen
+        ? `<span class="tag" style="font-size:0.68rem;background:${ageBg};color:${ageColor};font-weight:600;margin-left:6px" title="Days since handoff was created">⏱ ${ageDays}d</span>`
+        : '';
       const linkedBadge = h.linkedProgramId
         ? `<span class="badge badge-placed" style="cursor:pointer" onclick="App.navigate('cost-summary','${h.linkedProgramId}')">→ Program</span>`
         : `<button class="btn btn-secondary btn-sm" onclick="App.openConvertHandoffModal('${h.id}')">Convert →</button>`;
@@ -2431,7 +2478,7 @@ const AdminViews = (() => {
         <td class="text-sm">${h.gender || '—'}</td>
         <td class="text-sm">${h.tier || '—'}</td>
         <td class="text-sm">${h.supplierRequestNumber ? `<span class="tag" style="font-family:monospace;font-size:0.78rem">${h.supplierRequestNumber}</span>` : '<span class="text-muted">—</span>'}</td>
-        <td class="text-sm text-muted">${d}</td>
+        <td class="text-sm text-muted">${d}${ageBadge}</td>
         <td class="text-sm">${h.submittedByName || '—'}</td>
         <td><div style="display:flex;align-items:center;gap:6px">${stylesBadge}</div></td>
         <td><div style="display:flex;align-items:center;gap:6px">${fabricsBadge}</div></td>
@@ -2729,8 +2776,17 @@ const AdminViews = (() => {
       const prog = programs.find(p => p.id === r.programId);
       const s    = styles.find(x => x.id === r.styleId);
       const si   = stageInfo[r.status] || stageInfo.pending;
-      const dt   = new Date(r.createdAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+      const created = new Date(r.createdAt);
+      const dt   = created.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
       const programLabel = [prog?.season, prog?.year, prog?.brand].filter(Boolean).join(' · ') || r.programId;
+      // Aging: only meaningful while still actionable (not released / rejected / dismissed).
+      const ageDays = Math.floor((Date.now() - created.getTime()) / 86400000);
+      const stillOpen = ['pending', 'pending_sales', 'pending_production'].includes(r.status);
+      const ageColor = ageDays <= 2 ? '#22c55e' : ageDays <= 5 ? '#f59e0b' : '#ef4444';
+      const ageBg    = ageDays <= 2 ? 'rgba(34,197,94,0.12)' : ageDays <= 5 ? 'rgba(245,158,11,0.12)' : 'rgba(239,68,68,0.12)';
+      const ageChip  = stillOpen
+        ? `<span class="tag" title="Days in current queue" style="font-size:0.7rem;background:${ageBg};color:${ageColor};font-weight:600">⏱ ${ageDays}d</span>`
+        : '';
 
       let actions = '';
       if (showActions) {
@@ -2755,6 +2811,7 @@ const AdminViews = (() => {
               <span class="text-muted text-sm">${s?.styleName || ''}</span>
               <span class="tag" style="font-size:0.7rem;background:${si.bg};color:${si.color}">${si.label}</span>
               <span class="tag" style="font-size:0.7rem">${r.category||'Change'}</span>
+              ${ageChip}
             </div>
             <div class="text-muted text-sm">
               <strong>${programLabel}</strong> · ${dt} · by ${r.requestedByName||'?'}

@@ -30,14 +30,32 @@ const VendorViews = (() => {
       const flagged  = progSubs.filter(s => s.status === 'flagged').length;
       const skipped  = progSubs.filter(s => s.status === 'skipped').length;
       const pct      = totalRows > 0 ? Math.round((quoted / totalRows) * 100) : 0;
-      return { prog, styles, totalRows, quoted, flagged, skipped, pct };
+      // Days since this vendor last touched a submission on this program.
+      // null means "never quoted" — surfaces silent programs.
+      const lastTouch = progSubs.reduce((latest, s) => {
+        const t = new Date(s.updatedAt || s.createdAt || 0).getTime();
+        return t > latest ? t : latest;
+      }, 0);
+      const daysSinceQuote = lastTouch ? Math.floor((Date.now() - lastTouch) / 86400000) : null;
+      return { prog, styles, totalRows, quoted, flagged, skipped, pct, daysSinceQuote };
     });
 
-    const tableBody = progStats.length ? progStats.map(({ prog, styles, totalRows, quoted, flagged, skipped, pct }) => {
+    const tableBody = progStats.length ? progStats.map(({ prog, styles, totalRows, quoted, flagged, skipped, pct, daysSinceQuote }) => {
       const badgeHtml = flagged > 0
         ? `<span class="badge badge-flagged">🚩 ${flagged} Flagged</span>`
         : pct === 100 ? `<span class="badge badge-submitted">✓ Complete</span>`
         : `<span class="badge badge-pending">Open</span>`;
+      // "Last activity" cell: green ≤3d, amber 4–7d, red >7d, muted "never" if no quotes yet.
+      let activityCell;
+      if (pct === 100) {
+        activityCell = '<span class="text-muted text-sm">—</span>';
+      } else if (daysSinceQuote == null) {
+        activityCell = '<span class="text-sm" style="color:#ef4444;font-weight:600" title="No quotes submitted yet">never</span>';
+      } else {
+        const c = daysSinceQuote <= 3 ? '#22c55e' : daysSinceQuote <= 7 ? '#f59e0b' : '#ef4444';
+        const bg = daysSinceQuote <= 3 ? 'rgba(34,197,94,0.12)' : daysSinceQuote <= 7 ? 'rgba(245,158,11,0.12)' : 'rgba(239,68,68,0.12)';
+        activityCell = `<span class="tag" title="Days since you last touched a quote on this program" style="background:${bg};color:${c};font-weight:600">⏱ ${daysSinceQuote}d</span>`;
+      }
       return `<tr style="cursor:pointer" onclick="App.navigateVendorProgram('${tcId}','${prog.id}')">
         <td class="font-bold">${prog.name}</td>
         <td class="text-sm">${(prog.season && prog.season !== 'N/A') ? prog.season : '—'}</td>
@@ -51,10 +69,11 @@ const VendorViews = (() => {
             <span class="text-sm text-muted">${quoted}/${totalRows}</span>
           </div>
         </td>
+        <td>${activityCell}</td>
         <td>${badgeHtml}${skipped > 0 ? ` <span class="text-muted text-sm">(${skipped} skipped)</span>` : ''}</td>
         <td><button class="btn btn-primary btn-sm" onclick="event.stopPropagation();App.navigateVendorProgram('${tcId}','${prog.id}')">View →</button></td>
       </tr>`;
-    }).join('') : `<tr><td colspan="7" class="text-center text-muted" style="padding:40px">No programs assigned yet.</td></tr>`;
+    }).join('') : `<tr><td colspan="8" class="text-center text-muted" style="padding:40px">No programs assigned yet.</td></tr>`;
 
     return `
     <div class="page-header">
@@ -81,7 +100,7 @@ const VendorViews = (() => {
         <table>
           <thead><tr>
             <th>Program</th><th>Season</th><th>Year</th>
-            <th>Styles</th><th>Quoted</th><th>Status</th><th></th>
+            <th>Styles</th><th>Quoted</th><th>Last activity</th><th>Status</th><th></th>
           </tr></thead>
           <tbody>${tableBody}</tbody>
         </table>
