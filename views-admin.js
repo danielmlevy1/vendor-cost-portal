@@ -2759,6 +2759,7 @@ const AdminViews = (() => {
               <td class="font-bold primary">${esc(f.fabricCode || '—')}${badge}</td>
               <td>${esc(f.fabricName || '—')}${stylesChip}</td>
               <td class="text-sm text-muted">${esc(f.content || '—')}</td>
+              <td class="text-sm text-muted" style="white-space:nowrap">${esc(f.weight || '—')}</td>
               <td style="text-align:center">
                 <input type="text" inputmode="numeric" class="form-input fabric-qty-input"
                   placeholder="Qty"
@@ -2785,7 +2786,7 @@ const AdminViews = (() => {
             <div class="table-wrap"><table>
               <thead><tr>
                 <th style="width:40px"></th>
-                <th>Code</th><th>Name</th><th>Content</th><th style="text-align:center">Qty</th>
+                <th>Code</th><th>Name</th><th>Content</th><th>Weight</th><th style="text-align:center">Qty</th>
               </tr></thead>
               <tbody>${rows}</tbody>
             </table></div>

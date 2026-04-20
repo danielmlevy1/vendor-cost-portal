@@ -451,21 +451,52 @@ router.get('/vendor/available-fabrics', requireAuth, (req, res) => {
 
     // Some uploads only populate `content` (Design recorded fabrics by
     // composition, not by SKU). Fall back so the row is still requestable
-    // and identifies itself in the request history. The fabric_code field
-    // is non-null in the requests table, so we MUST emit something.
-    const fabrics = fabricsList.map(f => {
-      const rawCode    = f.code || f.fabricCode || f.fabricRef || f.ref || '';
-      const rawName    = f.name || f.fabricName || f.description || '';
-      const content    = f.content || f.composition || '';
+    // and identifies itself in the request history. fabric_code is non-
+    // null in the requests table, so we MUST emit something.
+    //
+    // Records that resolve to the same identity (same code OR same
+    // content+weight) are deduped — Design sheets often list the same
+    // fabric once per style, which would clutter the vendor catalog.
+    // styleNumbers from each duplicate are merged.
+    const dedup = new Map();
+    for (const f of fabricsList) {
+      const rawCode = f.code || f.fabricCode || f.fabricRef || f.ref || '';
+      const rawName = f.name || f.fabricName || f.description || '';
+      const content = f.content || f.composition || '';
+      const weight  = f.weight || f.gsm || f.weightGsm || f.weight_gsm || '';
+      // Identity preference: explicit code wins. Otherwise composition+weight.
+      const dedupKey = rawCode
+        ? `code::${rawCode.trim().toLowerCase()}`
+        : `cw::${content.trim().toLowerCase()}|${String(weight).trim().toLowerCase()}`;
       const fabricCode = rawCode || rawName || content || 'unspecified';
       const fabricName = rawName || content || rawCode || '—';
-      const key = `${p.id}::${fabricCode}`;
+      const styleNums  = fabricToStyles[rawCode] || [];
+
+      if (!dedup.has(dedupKey)) {
+        dedup.set(dedupKey, {
+          fabricCode, fabricName, content, weight,
+          styleNumbers: new Set(styleNums),
+        });
+      } else {
+        const acc = dedup.get(dedupKey);
+        // Take first non-empty for each display field
+        if (!acc.fabricCode || acc.fabricCode === 'unspecified') acc.fabricCode = fabricCode;
+        if (!acc.fabricName || acc.fabricName === '—')           acc.fabricName = fabricName;
+        if (!acc.content)                                         acc.content    = content;
+        if (!acc.weight)                                          acc.weight     = weight;
+        styleNums.forEach(s => acc.styleNumbers.add(s));
+      }
+    }
+
+    const fabrics = [...dedup.values()].map(d => {
+      const key = `${p.id}::${d.fabricCode}`;
       const already = existingMap.get(key);
       return {
-        fabricCode,
-        fabricName,
-        content,
-        styleNumbers: fabricToStyles[rawCode] || [],
+        fabricCode:   d.fabricCode,
+        fabricName:   d.fabricName,
+        content:      d.content,
+        weight:       d.weight,
+        styleNumbers: [...d.styleNumbers],
         existing:     already ? {
           id:     already.id,
           status: already.status,

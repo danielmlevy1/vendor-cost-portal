@@ -3996,6 +3996,7 @@ App._parseFabricListCSV = function(text) {
     fabricCode: hdrs.findIndex(h => /fabric.?code|code/.test(h)),
     fabricName: hdrs.findIndex(h => /fabric.?name|name/.test(h)),
     content:    hdrs.findIndex(h => /content|composition/.test(h)),
+    weight:     hdrs.findIndex(h => /weight|gsm/.test(h)),
   };
   const pick = (cols, key, pos) => {
     const i = colIdx[key] >= 0 ? colIdx[key] : pos;
@@ -4010,8 +4011,13 @@ App._parseFabricListCSV = function(text) {
       if (ch===delim&&!inQ) { cols.push(cur); cur=''; } else cur+=ch;
     }
     cols.push(cur);
-    return { fabricCode: pick(cols,'fabricCode',0), fabricName: pick(cols,'fabricName',1), content: pick(cols,'content',2) };
-  }).filter(r => r.fabricCode);
+    return {
+      fabricCode: pick(cols,'fabricCode',0),
+      fabricName: pick(cols,'fabricName',1),
+      content:    pick(cols,'content',2),
+      weight:     pick(cols,'weight',3),
+    };
+  }).filter(r => r.fabricCode || r.fabricName || r.content);
 };
 
 App._handoffParsedFabrics = null;
@@ -4684,6 +4690,7 @@ App.saveNewHandoff = async function(e) {
     fabricCode: f.fabricCode,
     fabricName: f.fabricName,
     content:    f.content,
+    weight:     f.weight,
   }));
 
   await API.DesignHandoffs.create({ season, year, brand, gender, tier, supplierRequestNumber, stylesList, fabricsList, trimsList, trimsUploaded: trimsList.length > 0,
