@@ -681,7 +681,7 @@ const AdminViews = (() => {
             <button class="btn btn-sm" style="background:rgba(16,185,129,0.15);color:#10b981;border:1px solid rgba(16,185,129,0.3)"
               onclick="App.openAssignVendorsToHandoff('${h.id}')">🏭 Vendors</button>
             <button class="btn btn-primary btn-sm" onclick="App.openBuildRequestFromHandoff('${h.id}')">📝 Build Request</button>
-            <button class="btn btn-secondary btn-sm" onclick="App.viewHandoff('${h.id}')">👁 View</button>
+            <button class="btn btn-secondary btn-sm" onclick="App.viewHandoff('${h.id}')">👁 Open</button>
           </div>
         </td>
       </tr>`;
@@ -727,7 +727,7 @@ const AdminViews = (() => {
           <div style="display:flex;gap:6px;flex-wrap:wrap">
             <button class="btn btn-sm" style="background:rgba(16,185,129,0.15);color:#10b981;border:1px solid rgba(16,185,129,0.3)"
               onclick="App.openAssignVendorsToRequest('${r.id}')">🏭 Vendors</button>
-            <button class="btn btn-secondary btn-sm" onclick="App.viewSalesRequest('${r.id}')">👁 View</button>
+            <button class="btn btn-secondary btn-sm" onclick="App.viewSalesRequest('${r.id}')">👁 Open</button>
           </div>
         </td>
       </tr>`;
@@ -771,11 +771,11 @@ const AdminViews = (() => {
                      <button class="btn btn-primary btn-sm" onclick="App.acknowledgeProgram('${p.id}')">✅ Release</button>`
                   : `<button class="btn btn-secondary btn-sm" onclick="App.openProgram('${p.id}')">👁 Preview</button>`)
               : (isAdminOrPC
-                  ? `<button class="btn btn-primary btn-sm" onclick="App.openProgram('${p.id}')">📋 Costs</button>
+                  ? `<button class="btn btn-primary btn-sm" onclick="App.openProgram('${p.id}')">📋 Open</button>
                      <button class="btn btn-secondary btn-sm" onclick="App.navigate('styles','${p.id}')">Styles</button>
                      <button class="btn btn-secondary btn-sm" onclick="App.openProgramModal('${p.id}')">Edit</button>
                      <button class="btn btn-danger btn-sm" onclick="App.deleteProgram('${p.id}')">🗑</button>`
-                  : `<button class="btn btn-primary btn-sm" onclick="App.openProgram('${p.id}')">👁 View</button>`)
+                  : `<button class="btn btn-primary btn-sm" onclick="App.openProgram('${p.id}')">👁 Open</button>`)
             }
           </div>
         </td>
@@ -804,7 +804,7 @@ const AdminViews = (() => {
         <div class="stat-item"><div class="stat-label">Quoted</div><div class="stat-value">${quotedCount}</div></div>
       </div>
       <div style="display:flex;gap:8px;margin-top:14px" onclick="event.stopPropagation()">
-        <button class="btn btn-primary btn-sm" onclick="App.openProgram('${p.id}')">📋 Costs</button>
+        <button class="btn btn-primary btn-sm" onclick="App.openProgram('${p.id}')">📋 Open</button>
         <button class="btn btn-secondary btn-sm" onclick="App.navigate('styles','${p.id}')">Styles</button>
         <button class="btn btn-secondary btn-sm" onclick="App.openProgramModal('${p.id}')">Edit</button>
         <button class="btn btn-secondary btn-sm" onclick="App.openAssignTCs('${p.id}')">🏭 Assign</button>
@@ -2569,7 +2569,7 @@ const AdminViews = (() => {
         <td>
           <div style="display:flex;gap:6px">
             <button class="btn btn-secondary btn-sm" onclick="App.openEditHandoffModal('${h.id}')">✏ Edit</button>
-            <button class="btn btn-secondary btn-sm" onclick="App.openHandoffDetail('${h.id}')">👁 View</button>
+            <button class="btn btn-secondary btn-sm" onclick="App.openHandoffDetail('${h.id}')">👁 Open</button>
             <button class="btn btn-danger btn-sm" onclick="App.deleteHandoff('${h.id}')">🗑</button>
           </div>
         </td>
@@ -2663,7 +2663,7 @@ const AdminViews = (() => {
         <td>${linkedBadge}</td>
         <td>
           <div style="display:flex;gap:6px">
-            <button class="btn btn-secondary btn-sm" onclick="App.openSalesRequestDetail('${r.id}')">👁 View</button>
+            <button class="btn btn-secondary btn-sm" onclick="App.openSalesRequestDetail('${r.id}')">👁 Open</button>
             <button class="btn btn-ghost btn-sm" onclick="App.downloadSalesRequest('${r.id}')" title="Download as Excel">⬇</button>
             ${!r.linkedProgramId ? `<button class="btn btn-danger btn-sm" onclick="App.deleteSalesRequest('${r.id}')">🗑</button>` : ''}
           </div>
