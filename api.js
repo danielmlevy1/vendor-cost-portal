@@ -976,10 +976,13 @@ const API = (() => {
       cache.fabricPackages = await GET('/api/fabric-packages');
       return cache.fabricPackages;
     },
-    async create({ tcId, awbNumber, carrier, notes, requestIds, markSent }) {
-      const pkg = await POST('/api/fabric-packages', { tcId, awbNumber, carrier, notes, requestIds, markSent });
+    // Two body shapes accepted by the server:
+    //   { ..., requestIds: [id, ...] }                                  (bare ids)
+    //   { ..., requests:   [{ id, pdStatus?, pdNotes? }, ...] }         (with PD markings)
+    async create({ tcId, awbNumber, carrier, notes, requestIds, requests, markSent }) {
+      const pkg = await POST('/api/fabric-packages', { tcId, awbNumber, carrier, notes, requestIds, requests, markSent });
       cache.fabricPackages = (cache.fabricPackages || []).concat(pkg);
-      // Re-fetch requests — their package_id/status changed server-side
+      // Re-fetch requests — their package_id/status/pd_* changed server-side
       await FabricRequests.fetchAll();
       return pkg;
     },

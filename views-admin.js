@@ -2710,7 +2710,8 @@ const AdminViews = (() => {
 
     const statusBadge = s => ({
       outstanding: '<span class="badge badge-pending">⏳ Requested</span>',
-      packaged:    '<span class="badge badge-costing">📦 In Package</span>',
+      packaged:    '<span class="badge badge-costing">📦 With Production</span>',
+      draft:       '<span class="badge badge-pending">📝 Awaiting production</span>',
       sent:        '<span class="badge badge-costing">✈ Sent</span>',
       received:    '<span class="badge badge-placed">✅ Received</span>',
       cancelled:   '<span class="badge" style="background:rgba(100,116,139,0.2);color:#94a3b8">✕ Cancelled</span>',
@@ -2754,6 +2755,7 @@ const AdminViews = (() => {
                   data-name="${esc(f.fabricName)}"
                   data-content="${esc(f.content)}"
                   data-styles="${esc(JSON.stringify(f.styleNumbers || []))}"
+                  onchange="App._fabricUpdateSelectedCount()"
                   ${disabled ? 'disabled' : ''}>
               </td>
               <td class="font-bold primary">${esc(f.fabricCode || '—')}${badge}</td>
@@ -2837,21 +2839,7 @@ const AdminViews = (() => {
         </tr></thead>
         <tbody>${historyRows}</tbody>
       </table></div>
-    </div>
-    <script>
-      // Wire checkboxes and qty inputs to the submit-button enabled state.
-      (function(){
-        const update = () => {
-          const checked = document.querySelectorAll('.fabric-pick:checked').length;
-          const el = document.getElementById('fabric-selected-count');
-          const btn = document.getElementById('fabric-submit-btn');
-          if (el) el.textContent = checked + ' selected';
-          if (btn) btn.disabled = checked === 0;
-        };
-        document.querySelectorAll('.fabric-pick').forEach(c => c.addEventListener('change', update));
-        update();
-      })();
-    </script>`;
+    </div>`;
   }
 
   // ── PD / Admin side ────────────────────────────────────────────
@@ -2861,6 +2849,13 @@ const AdminViews = (() => {
     const tcMap = {};
     (API.cache.tradingCompanies || []).forEach(t => { tcMap[t.id] = t; });
     const tcLabel = id => tcMap[id]?.code || id;
+
+    // PD's per-fabric marking when handing off to Production.
+    const pdStatusBadge = s => ({
+      complete:     '<span class="badge badge-placed">✓ Complete</span>',
+      none_on_hand: '<span class="badge badge-pending">○ None on hand</span>',
+      incomplete:   '<span class="badge badge-flagged">! Incomplete</span>',
+    }[s] || '<span class="text-muted text-sm">—</span>');
 
     const outstanding = allRequests.filter(r => r.status === 'outstanding');
     const packageRequests = id => allRequests.filter(r => r.packageId === id);
@@ -2881,7 +2876,7 @@ const AdminViews = (() => {
               <div style="display:flex;gap:6px">
                 <button class="btn btn-ghost btn-sm" onclick="App._fabricPdSelectTc('${esc(tcId)}', true)">Select all</button>
                 <button class="btn btn-ghost btn-sm" onclick="App._fabricPdSelectTc('${esc(tcId)}', false)">Clear</button>
-                <button class="btn btn-primary btn-sm" onclick="App.openCreateFabricPackage('${esc(tcId)}')">📦 Create package</button>
+                <button class="btn btn-primary btn-sm" onclick="App.openCreateFabricPackage('${esc(tcId)}')">📦 Pass to Production</button>
               </div>` : ''}
           </div>
           <div class="table-wrap"><table>
@@ -2927,16 +2922,27 @@ const AdminViews = (() => {
         ${pkg.notes ? `<div class="text-sm text-muted" style="padding:8px 14px;border-bottom:1px solid var(--border)">📝 ${esc(pkg.notes)}</div>` : ''}
         <div class="table-wrap"><table>
           <thead><tr>
-            <th>Code</th><th>Name</th><th>Content</th><th style="text-align:center">Qty</th><th>Program</th>
+            <th>Code</th><th>Name</th><th>Content</th>
+            <th style="text-align:center" title="Vendor's original ask">Vendor asked</th>
+            <th style="text-align:center" title="Qty PD is sending">Sending</th>
+            <th>Program</th>
+            <th>PD Status</th><th>PD Notes</th>
           </tr></thead>
           <tbody>
-            ${reqs.length ? reqs.map(r => `<tr>
-              <td class="font-bold primary">${esc(r.fabricCode)}</td>
-              <td>${esc(r.fabricName || '—')}</td>
-              <td class="text-sm text-muted">${esc(r.content || '—')}</td>
-              <td class="text-center">${r.swatchQty ?? '—'}</td>
-              <td class="text-sm">${esc((API.Programs.get(r.programId)?.name) || '—')}</td>
-            </tr>`).join('') : `<tr><td colspan="5" class="text-center text-muted" style="padding:16px">No requests in this package.</td></tr>`}
+            ${reqs.length ? reqs.map(r => {
+              const sendQty = r.pdQty != null ? r.pdQty : (r.swatchQty != null ? r.swatchQty : '—');
+              const mismatch = r.pdQty != null && r.swatchQty != null && r.pdQty !== r.swatchQty;
+              return `<tr>
+                <td class="font-bold primary">${esc(r.fabricCode)}</td>
+                <td>${esc(r.fabricName || '—')}</td>
+                <td class="text-sm text-muted">${esc(r.content || '—')}</td>
+                <td class="text-center text-sm text-muted">${r.swatchQty ?? '—'}</td>
+                <td class="text-center font-bold ${mismatch ? 'text-warning' : ''}" title="${mismatch ? 'Differs from vendor request' : ''}">${sendQty}</td>
+                <td class="text-sm">${esc((API.Programs.get(r.programId)?.name) || '—')}</td>
+                <td>${pdStatusBadge(r.pdStatus)}</td>
+                <td class="text-sm text-muted">${esc(r.pdNotes || '—')}</td>
+              </tr>`;
+            }).join('') : `<tr><td colspan="8" class="text-center text-muted" style="padding:16px">No requests in this package.</td></tr>`}
           </tbody>
         </table></div>
       </div>`;
@@ -2959,14 +2965,14 @@ const AdminViews = (() => {
 
     <div class="fabric-kpi-row">
       <div class="fabric-kpi fabric-kpi-pending"><span class="fabric-kpi-num">${outstanding.length}</span><span class="fabric-kpi-label">Outstanding</span></div>
-      <div class="fabric-kpi fabric-kpi-sent"><span class="fabric-kpi-num">${draftPkgs.length}</span><span class="fabric-kpi-label">Draft packages</span></div>
+      <div class="fabric-kpi fabric-kpi-sent"><span class="fabric-kpi-num">${draftPkgs.length}</span><span class="fabric-kpi-label">Awaiting production</span></div>
       <div class="fabric-kpi fabric-kpi-received"><span class="fabric-kpi-num">${shippedPkgs.length}</span><span class="fabric-kpi-label">Sent / Received</span></div>
     </div>
 
     <h3 style="margin:20px 0 10px">1. Outstanding requests</h3>
     ${outstandingHtml}
 
-    <h3 style="margin:20px 0 10px">2. Draft packages (not shipped yet)</h3>
+    <h3 style="margin:20px 0 10px">2. Awaiting production (passed to production, not shipped yet)</h3>
     ${draftHtml}
 
     <h3 style="margin:20px 0 10px">3. Sent / received</h3>

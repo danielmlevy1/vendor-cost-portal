@@ -129,6 +129,9 @@ function fabricReqFromRow(r) {
     receivedAt:   r.received_at,
     cancelReason: r.cancel_reason,
     notes:        r.notes,
+    pdStatus:     r.pd_status,
+    pdNotes:      r.pd_notes,
+    pdQty:        r.pd_qty,
   };
 }
 
@@ -243,6 +246,9 @@ router.patch('/fabric-requests/:id', requireAuth, (req, res) => {
     accept(b.sentAt         !== undefined, 'sent_at',       b.sentAt);
     accept(b.receivedAt     !== undefined, 'received_at',   b.receivedAt);
     accept(b.cancelReason   !== undefined, 'cancel_reason', b.cancelReason);
+    accept(b.pdStatus       !== undefined, 'pd_status',     b.pdStatus);
+    accept(b.pdNotes        !== undefined, 'pd_notes',      b.pdNotes);
+    accept(b.pdQty          !== undefined, 'pd_qty',        b.pdQty != null ? Number(b.pdQty) : null);
     if (b.status === 'sent'     && row.sent_at     == null) accept(true, 'sent_at',     now());
     if (b.status === 'received' && row.received_at == null) accept(true, 'received_at', now());
   }
@@ -282,11 +288,29 @@ router.get('/fabric-packages', requireAuth, (req, res) => {
 });
 
 // POST /api/fabric-packages — PD creates a package and (optionally)
-// attaches outstanding requests to it. Body:
-//   { tcId, awbNumber?, carrier?, notes?, requestIds: [...], markSent?: bool }
+// attaches outstanding requests to it. Body shape:
+//   {
+//     tcId, awbNumber?, carrier?, notes?, markSent?,
+//     // Either pass plain ids:
+//     requestIds: [id, ...],
+//     // OR pass per-request markings (preferred — captures PD's status/notes):
+//     requests:   [{ id, pdStatus?, pdNotes? }, ...]
+//   }
 router.post('/fabric-packages', requireAuth, requireRole('admin', 'pc', 'prod_dev'), (req, res) => {
   const b = req.body;
   if (!b.tcId) return res.status(400).json({ error: 'tcId required' });
+
+  // Normalize: prefer detailed `requests`, fall back to bare `requestIds`.
+  const items = Array.isArray(b.requests) && b.requests.length
+    ? b.requests
+        .filter(x => x && typeof x.id === 'string')
+        .map(x => ({
+          id:       x.id,
+          pdStatus: x.pdStatus || null,
+          pdNotes:  x.pdNotes  || null,
+          pdQty:    x.pdQty != null && x.pdQty !== '' ? Number(x.pdQty) : null,
+        }))
+    : (Array.isArray(b.requestIds) ? b.requestIds.map(id => ({ id, pdStatus: null, pdNotes: null, pdQty: null })) : []);
 
   const id = uid();
   const tx = db.transaction(() => {
@@ -297,15 +321,19 @@ router.post('/fabric-packages', requireAuth, requireRole('admin', 'pc', 'prod_de
            req.user.name || req.user.email || req.user.id, now(),
            b.markSent ? 'sent' : 'draft');
 
-    if (Array.isArray(b.requestIds) && b.requestIds.length) {
+    if (items.length) {
       const attach = db.prepare(`
-        UPDATE fabric_requests SET package_id = ?, status = ?, sent_at = COALESCE(sent_at, ?)
+        UPDATE fabric_requests
+        SET package_id = ?, status = ?, sent_at = COALESCE(sent_at, ?),
+            pd_status = COALESCE(?, pd_status),
+            pd_notes  = COALESCE(?, pd_notes),
+            pd_qty    = COALESCE(?, pd_qty)
         WHERE id = ? AND tc_id = ?
       `);
       const sentAt = b.markSent ? now() : null;
       const newStatus = b.markSent ? 'sent' : 'packaged';
-      for (const rid of b.requestIds) {
-        attach.run(id, newStatus, sentAt, rid, b.tcId);
+      for (const it of items) {
+        attach.run(id, newStatus, sentAt, it.pdStatus, it.pdNotes, it.pdQty, it.id, b.tcId);
       }
     }
     if (b.markSent) {
@@ -441,36 +469,57 @@ router.get('/vendor/available-fabrics', requireAuth, (req, res) => {
     if (!fabricsList.length) continue;
 
     const stylesList = JSON.parse(handoff.styles_list || '[]');
-    // Map fabric_code -> list of style numbers using it
-    const fabricToStyles = {};
+
+    // Build content→code and content→[styleNumbers] maps from the styles
+    // list. Many handoffs put the actual fabric SKU only on the styles
+    // (e.g. style.fabric = "HLK0001 80/20 POLY SPAN 180 GSM"), where the
+    // first whitespace-delimited token is the code and the remainder is
+    // the composition. We use this to enrich fabric records that arrive
+    // with only `content` populated.
+    const contentToCode   = {};
+    const contentToStyles = {};
+    const codeToStyles    = {};
     for (const s of stylesList) {
-      const code = s.fabricCode || s.fabric_code || null;
-      if (!code) continue;
-      (fabricToStyles[code] ||= []).push(s.styleNumber || s.style_number || s.styleNum || '');
+      const styleNum = s.styleNumber || s.style_number || s.styleNum || '';
+      // 1. Explicit fabricCode field on style (rare in current data)
+      const explicitCode = s.fabricCode || s.fabric_code || '';
+      if (explicitCode) {
+        (codeToStyles[explicitCode] ||= []).push(styleNum);
+      }
+      // 2. Embedded "CODE CONTENT" in style.fabric / style.fabrication
+      const fabricStr = s.fabric || s.fabrication || '';
+      if (!fabricStr) continue;
+      const m = fabricStr.match(/^(\S+)\s+(.+)$/);
+      if (!m) continue;
+      const code = m[1].trim();
+      const content = m[2].trim();
+      const cKey = content.toLowerCase();
+      contentToCode[cKey] = contentToCode[cKey] || code;
+      (contentToStyles[cKey] ||= []).push(styleNum);
+      (codeToStyles[code]    ||= []).push(styleNum);
     }
 
     // Some uploads only populate `content` (Design recorded fabrics by
-    // composition, not by SKU). Fall back so the row is still requestable
-    // and identifies itself in the request history. fabric_code is non-
-    // null in the requests table, so we MUST emit something.
-    //
-    // Records that resolve to the same identity (same code OR same
-    // content+weight) are deduped — Design sheets often list the same
-    // fabric once per style, which would clutter the vendor catalog.
-    // styleNumbers from each duplicate are merged.
+    // composition, not by SKU). For each fabric record:
+    //   - prefer explicit code on the record
+    //   - else look up the code from the styles-list lookup table built above
+    //   - else fall back to the content / name / 'unspecified'
+    // Records that resolve to the same identity are deduped.
     const dedup = new Map();
     for (const f of fabricsList) {
       const rawCode = f.code || f.fabricCode || f.fabricRef || f.ref || '';
       const rawName = f.name || f.fabricName || f.description || '';
       const content = f.content || f.composition || '';
       const weight  = f.weight || f.gsm || f.weightGsm || f.weight_gsm || '';
-      // Identity preference: explicit code wins. Otherwise composition+weight.
-      const dedupKey = rawCode
-        ? `code::${rawCode.trim().toLowerCase()}`
+      // Lookup code from the styles list when the fabric record itself
+      // doesn't carry one. Match by composition (case-insensitive).
+      const lookedUpCode = rawCode || contentToCode[content.toLowerCase()] || '';
+      const fabricCode = lookedUpCode || rawName || content || 'unspecified';
+      const fabricName = rawName || content || lookedUpCode || '—';
+      const dedupKey = lookedUpCode
+        ? `code::${lookedUpCode.trim().toLowerCase()}`
         : `cw::${content.trim().toLowerCase()}|${String(weight).trim().toLowerCase()}`;
-      const fabricCode = rawCode || rawName || content || 'unspecified';
-      const fabricName = rawName || content || rawCode || '—';
-      const styleNums  = fabricToStyles[rawCode] || [];
+      const styleNums = (codeToStyles[lookedUpCode] || contentToStyles[content.toLowerCase()] || []);
 
       if (!dedup.has(dedupKey)) {
         dedup.set(dedupKey, {
@@ -479,7 +528,6 @@ router.get('/vendor/available-fabrics', requireAuth, (req, res) => {
         });
       } else {
         const acc = dedup.get(dedupKey);
-        // Take first non-empty for each display field
         if (!acc.fabricCode || acc.fabricCode === 'unspecified') acc.fabricCode = fabricCode;
         if (!acc.fabricName || acc.fabricName === '—')           acc.fabricName = fabricName;
         if (!acc.content)                                         acc.content    = content;

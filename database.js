@@ -357,6 +357,11 @@ function runMigrations() {
   // into the new DB-backed fabric_requests table. One-shot; guarded by
   // "is table empty?" so reruns are no-ops. Leaves the file in place.
   importLegacyFabricRequests();
+
+  // v6: PD's per-request marking when passing to production.
+  addColumn('fabric_requests', 'pd_status', 'TEXT');
+  addColumn('fabric_requests', 'pd_notes',  'TEXT');
+  addColumn('fabric_requests', 'pd_qty',    'INTEGER');
 }
 
 function importLegacyFabricRequests() {

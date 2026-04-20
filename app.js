@@ -6086,14 +6086,19 @@ App.saveDesignChange = async function(e, styleId, programId) {
 // received. No more per-fabric popup form.
 
 // ── Vendor: bulk-select helpers ─────────────────────────────────
+App._fabricUpdateSelectedCount = function() {
+  const checked = document.querySelectorAll('.fabric-pick:checked').length;
+  const el  = document.getElementById('fabric-selected-count');
+  const btn = document.getElementById('fabric-submit-btn');
+  if (el)  el.textContent = checked + ' selected';
+  if (btn) btn.disabled = checked === 0;
+};
+
 App._fabricToggleGroup = function(programId, checked) {
   document.querySelectorAll(`.fabric-pick[data-prog="${programId}"]`).forEach(c => {
     if (!c.disabled) c.checked = checked;
   });
-  document.querySelectorAll('.fabric-pick').forEach(() => {}); // no-op; the inline wire in the view refreshes count
-  // Trigger change event so the count refresh in the view runs
-  const evt = new Event('change', { bubbles: true });
-  document.querySelectorAll(`.fabric-pick[data-prog="${programId}"]`).forEach(c => c.dispatchEvent(evt));
+  App._fabricUpdateSelectedCount();
 };
 
 App.submitFabricRequests = async function(tcId) {
@@ -6150,47 +6155,96 @@ App._fabricPdSelectTc = function(tcId, checked) {
 };
 
 App.openCreateFabricPackage = function(tcId) {
-  const selected = [...document.querySelectorAll(`.fab-pd-chk[data-tc="${tcId}"]:checked`)].map(c => c.value);
-  if (!selected.length) { alert('Select at least one request to include in this package.'); return; }
+  const selectedIds = [...document.querySelectorAll(`.fab-pd-chk[data-tc="${tcId}"]:checked`)].map(c => c.value);
+  if (!selectedIds.length) { alert('Select at least one request to pass to production.'); return; }
 
   const tc = API.TradingCompanies.get(tcId);
+  const reqs = selectedIds
+    .map(id => API.FabricRequests.all().find(r => r.id === id))
+    .filter(Boolean);
+
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+
+  const rowsHtml = reqs.map(r => {
+    // Default the "Send" qty to PD's previously-set qty, else vendor's ask.
+    const defaultSend = r.pdQty != null ? r.pdQty : (r.swatchQty != null ? r.swatchQty : '');
+    return `
+    <tr>
+      <td class="font-bold primary" style="white-space:nowrap">${esc(r.fabricCode || '—')}</td>
+      <td class="text-sm">${esc(r.fabricName || '—')}</td>
+      <td class="text-center text-sm text-muted">${r.swatchQty ?? '—'}</td>
+      <td class="text-center">
+        <input type="text" inputmode="numeric" class="form-input fp-row-qty" data-rid="${esc(r.id)}"
+          value="${esc(defaultSend)}" placeholder="Qty"
+          style="width:64px;padding:4px 8px;font-size:0.85rem;text-align:center">
+      </td>
+      <td>
+        <select class="form-select fp-row-status" data-rid="${esc(r.id)}" style="padding:4px 8px;font-size:0.85rem">
+          <option value="">— Pick —</option>
+          <option value="complete"     ${r.pdStatus === 'complete'     ? 'selected' : ''}>Complete</option>
+          <option value="none_on_hand" ${r.pdStatus === 'none_on_hand' ? 'selected' : ''}>None on Hand</option>
+          <option value="incomplete"   ${r.pdStatus === 'incomplete'   ? 'selected' : ''}>Incomplete</option>
+        </select>
+      </td>
+      <td>
+        <input type="text" class="form-input fp-row-notes" data-rid="${esc(r.id)}"
+          value="${esc(r.pdNotes || '')}" placeholder="e.g. waiting on dye lot"
+          style="padding:4px 8px;font-size:0.85rem">
+      </td>
+    </tr>`;
+  }).join('');
+
   App.showModal(`
-    <div class="modal-header"><h2>📦 Create fabric package</h2><button class="btn btn-ghost btn-icon" onclick="App.closeModal()">✕</button></div>
-    <p class="mb-3">Bundle <strong>${selected.length}</strong> outstanding request${selected.length!==1?'s':''} for <strong>${tc?.code || tcId}</strong> into one package.</p>
-    <div class="form-row form-row-2">
-      <div class="form-group">
-        <label class="form-label">AWB / Tracking number (optional)</label>
-        <input class="form-input" id="fp-awb" placeholder="e.g. DHL 1234567890">
-      </div>
-      <div class="form-group">
-        <label class="form-label">Carrier (optional)</label>
-        <input class="form-input" id="fp-carrier" placeholder="e.g. DHL, FedEx">
-      </div>
+    <div class="modal-header"><h2>📦 Pass to Production</h2><button class="btn btn-ghost btn-icon" onclick="App.closeModal()">✕</button></div>
+    <p class="mb-3">Hand off <strong>${reqs.length}</strong> request${reqs.length!==1?'s':''} for <strong>${esc(tc?.code || tcId)}</strong> to the production team. Mark each fabric's status; Production will handle shipper and AWB.</p>
+
+    <div style="border:1px solid var(--border);border-radius:var(--radius-sm);overflow:hidden;margin-bottom:16px">
+      <table style="width:100%;border-collapse:collapse">
+        <thead style="background:var(--bg-elevated)">
+          <tr>
+            <th style="padding:8px 10px;text-align:left;font-size:0.75rem;color:#94a3b8;text-transform:uppercase;letter-spacing:.05em">Code</th>
+            <th style="padding:8px 10px;text-align:left;font-size:0.75rem;color:#94a3b8;text-transform:uppercase;letter-spacing:.05em">Name</th>
+            <th style="padding:8px 10px;text-align:center;font-size:0.75rem;color:#94a3b8;text-transform:uppercase;letter-spacing:.05em" title="What the vendor asked for">Vendor asked</th>
+            <th style="padding:8px 10px;text-align:center;font-size:0.75rem;color:#94a3b8;text-transform:uppercase;letter-spacing:.05em" title="What PD is sending">Send</th>
+            <th style="padding:8px 10px;text-align:left;font-size:0.75rem;color:#94a3b8;text-transform:uppercase;letter-spacing:.05em;width:160px">Status</th>
+            <th style="padding:8px 10px;text-align:left;font-size:0.75rem;color:#94a3b8;text-transform:uppercase;letter-spacing:.05em">Notes</th>
+          </tr>
+        </thead>
+        <tbody>${rowsHtml}</tbody>
+      </table>
     </div>
+
     <div class="form-group">
-      <label class="form-label">Notes (optional)</label>
-      <textarea class="form-input" id="fp-notes" rows="2" placeholder="e.g. Bundled with sales samples"></textarea>
+      <label class="form-label">Notes for Production (overall, optional)</label>
+      <textarea class="form-input" id="fp-notes" rows="2" placeholder="e.g. Pair with sales samples; ship by Friday"></textarea>
     </div>
-    <div class="form-group">
-      <label style="display:flex;align-items:center;gap:8px">
-        <input type="checkbox" id="fp-mark-sent">
-        <span>Mark as sent now (otherwise saved as draft)</span>
-      </label>
-    </div>
+
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="App.closeModal()">Cancel</button>
-      <button class="btn btn-primary" onclick='App._createFabricPackage(${JSON.stringify(tcId)}, ${JSON.stringify(selected)})'>Create package</button>
-    </div>`);
+      <button class="btn btn-primary" onclick='App._createFabricPackage(${JSON.stringify(tcId)})'>Pass to Production</button>
+    </div>`, 'modal-lg');
 };
 
-App._createFabricPackage = async function(tcId, requestIds) {
-  const awb     = document.getElementById('fp-awb')?.value.trim() || null;
-  const carrier = document.getElementById('fp-carrier')?.value.trim() || null;
-  const notes   = document.getElementById('fp-notes')?.value.trim() || null;
-  const markSent = !!document.getElementById('fp-mark-sent')?.checked;
+App._createFabricPackage = async function(tcId) {
+  const notes = document.getElementById('fp-notes')?.value.trim() || null;
+  // Collect per-fabric PD markings from the modal table.
+  const requests = [...document.querySelectorAll('.fp-row-status')].map(sel => {
+    const id       = sel.dataset.rid;
+    const pdStatus = sel.value || null;
+    const noteEl   = document.querySelector(`.fp-row-notes[data-rid="${id}"]`);
+    const pdNotes  = (noteEl?.value || '').trim() || null;
+    const qtyEl    = document.querySelector(`.fp-row-qty[data-rid="${id}"]`);
+    const qtyRaw   = (qtyEl?.value || '').trim();
+    const qtyNum   = qtyRaw === '' ? null : Number(qtyRaw);
+    const pdQty    = (qtyNum != null && !isNaN(qtyNum)) ? qtyNum : null;
+    return { id, pdStatus, pdNotes, pdQty };
+  });
+  if (!requests.length) return;
+
   try {
-    await API.FabricPackages.create({ tcId, awbNumber: awb, carrier, notes, requestIds, markSent });
-  } catch (err) { alert('Could not create package: ' + (err.message || 'unknown')); return; }
+    // Always saved as draft — Production fills AWB / carrier and marks sent.
+    await API.FabricPackages.create({ tcId, awbNumber: null, carrier: null, notes, requests, markSent: false });
+  } catch (err) { alert('Could not pass to production: ' + (err.message || 'unknown')); return; }
   App.closeModal();
   App.navigate('fabric-standards');
 };

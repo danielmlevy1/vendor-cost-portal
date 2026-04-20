@@ -385,7 +385,12 @@ CREATE TABLE IF NOT EXISTS fabric_requests (
   sent_at           TEXT,
   received_at       TEXT,
   cancel_reason     TEXT,
-  notes             TEXT
+  notes             TEXT,
+  pd_status         TEXT,                          -- PD's marking when passing to production:
+                                                   --   'complete' | 'none_on_hand' | 'incomplete'
+  pd_notes          TEXT,                          -- free-text PD note for Production
+  pd_qty            INTEGER                        -- qty PD is actually sending (may differ
+                                                   -- from the vendor's requested swatch_qty)
 );
 
 CREATE INDEX IF NOT EXISTS idx_fabric_requests_tc_id     ON fabric_requests(tc_id);
