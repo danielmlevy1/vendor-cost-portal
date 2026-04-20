@@ -2532,7 +2532,16 @@ const AdminViews = (() => {
         </div>
       </div>` : '';
 
-    const rows = handoffs.length ? handoffs.map(h => {
+    // Split handoffs into workflow buckets. No explicit "cancelled"
+    // status on handoffs in the current schema, so just In-Progress
+    // (no program link yet) vs. Complete (linked to a program).
+    const handoffBuckets = {
+      inProgress: handoffs.filter(h => !h.linkedProgramId),
+      complete:   handoffs.filter(h =>  h.linkedProgramId),
+      cancelled:  [],  // reserved for future cancelled flag
+    };
+
+    const buildRow = h => {
       const created = new Date(h.createdAt);
       const d = created.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
       // Aging badge — only for handoffs not yet linked to a program
@@ -2574,7 +2583,39 @@ const AdminViews = (() => {
           </div>
         </td>
       </tr>`;
-    }).join('') : `<tr><td colspan="10" class="text-center text-muted" style="padding:40px">No design handoffs yet. Click "+ New Handoff" to upload a style list from Design.</td></tr>`;
+    };  // end buildRow
+
+    const handoffThead = `<thead><tr>
+      <th>Season / Year</th><th>Brand</th><th>Gender</th><th>Tier</th><th>SR #</th><th>Date</th><th>Submitted By</th>
+      <th>Styles</th><th>Fabrics</th><th>Program</th><th>Actions</th>
+    </tr></thead>`;
+
+    const bucketSection = (label, list, { open = true, accent = 'var(--accent)' } = {}) => {
+      if (!list.length) return '';
+      const body = `
+        <div class="card" style="padding:0;margin-top:8px"><div class="table-wrap"><table>
+          ${handoffThead}
+          <tbody>${list.map(buildRow).join('')}</tbody>
+        </table></div></div>`;
+      // <details> is native collapsible — no JS state to manage.
+      return `
+        <details ${open ? 'open' : ''} style="margin-top:16px">
+          <summary style="cursor:pointer;padding:8px 0;font-weight:700;font-size:0.95rem;list-style:none;display:flex;align-items:center;gap:8px">
+            <span style="color:${accent}">▸</span>
+            <span>${label}</span>
+            <span class="tag" style="font-size:0.72rem">${list.length}</span>
+          </summary>
+          ${body}
+        </details>`;
+    };
+
+    const handoffSections = handoffs.length
+      ? [
+          bucketSection('🟢 In Progress', handoffBuckets.inProgress, { open: true,  accent: '#22c55e' }),
+          bucketSection('✅ Complete',    handoffBuckets.complete,   { open: false, accent: '#6366f1' }),
+          bucketSection('✕ Cancelled',    handoffBuckets.cancelled,  { open: false, accent: '#94a3b8' }),
+        ].join('')
+      : `<div class="card text-center text-muted" style="padding:40px">No design handoffs yet. Click "+ New Handoff" to upload a style list from Design.</div>`;
 
     return `
     <div class="page-header">
@@ -2587,13 +2628,7 @@ const AdminViews = (() => {
     </div>
     ${reconcilePanel}
     ${awaitingPanel}
-    <div class="card" style="padding:0"><div class="table-wrap"><table>
-      <thead><tr>
-        <th>Season / Year</th><th>Brand</th><th>Gender</th><th>Tier</th><th>SR #</th><th>Date</th><th>Submitted By</th>
-        <th>Styles</th><th>Fabrics</th><th>Program</th><th>Actions</th>
-      </tr></thead>
-      <tbody>${rows}</tbody>
-    </table></div></div>`;
+    ${handoffSections}`;
   }
 
   // ── Sales Request ──────────────────────────────────────────
@@ -2634,8 +2669,17 @@ const AdminViews = (() => {
         </div>
       </div>` : '';
 
+    // Bucket the requests for grouped display. Complete = linked to a
+    // program OR status='converted'. Cancelled = explicit status flag.
+    // Everything else (submitted / draft, no program yet) is In Progress.
+    const srBuckets = {
+      inProgress: requests.filter(r => r.status !== 'cancelled' && !r.linkedProgramId && r.status !== 'converted'),
+      complete:   requests.filter(r =>  r.linkedProgramId || r.status === 'converted'),
+      cancelled:  requests.filter(r => r.status === 'cancelled'),
+    };
+
     const statusMap = { submitted: 'badge-costing', converted: 'badge-placed', draft: 'badge-pending' };
-    const rows = requests.length ? requests.map(r => {
+    const buildRow = r => {
       const d = new Date(r.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
       const hasQtyPrice = (r.styles||[]).some(s => (s.projQty > 0) && (s.projSell > 0));
       const linkedBadge = r.linkedProgramId
@@ -2669,7 +2713,38 @@ const AdminViews = (() => {
           </div>
         </td>
       </tr>`;
-    }).join('') : `<tr><td colspan="11" class="text-center text-muted" style="padding:40px">No sales requests yet. Build one from a Design Handoff above, or click "+ New Request" to create manually.</td></tr>`;
+    };  // end buildRow
+
+    const srThead = `<thead><tr>
+      <th>Season / Year</th><th>Brand</th><th>Tier / Retailer</th><th>Gender</th><th>In-Whse</th><th>Cost Due</th><th>Date</th><th>Submitted By</th>
+      <th>Styles</th><th>Source</th><th>Status</th><th>Program</th><th>Actions</th>
+    </tr></thead>`;
+
+    const bucketSection = (label, list, { open = true, accent = 'var(--accent)' } = {}) => {
+      if (!list.length) return '';
+      const body = `
+        <div class="card" style="padding:0;margin-top:8px"><div class="table-wrap"><table>
+          ${srThead}
+          <tbody>${list.map(buildRow).join('')}</tbody>
+        </table></div></div>`;
+      return `
+        <details ${open ? 'open' : ''} style="margin-top:16px">
+          <summary style="cursor:pointer;padding:8px 0;font-weight:700;font-size:0.95rem;list-style:none;display:flex;align-items:center;gap:8px">
+            <span style="color:${accent}">▸</span>
+            <span>${label}</span>
+            <span class="tag" style="font-size:0.72rem">${list.length}</span>
+          </summary>
+          ${body}
+        </details>`;
+    };
+
+    const srSections = requests.length
+      ? [
+          bucketSection('🟢 In Progress', srBuckets.inProgress, { open: true,  accent: '#22c55e' }),
+          bucketSection('✅ Complete',    srBuckets.complete,   { open: false, accent: '#6366f1' }),
+          bucketSection('✕ Cancelled',    srBuckets.cancelled,  { open: false, accent: '#94a3b8' }),
+        ].join('')
+      : `<div class="card text-center text-muted" style="padding:40px">No sales requests yet. Build one from a Design Handoff above, or click "+ New Request" to create manually.</div>`;
 
     return `
     <div class="page-header">
@@ -2678,13 +2753,7 @@ const AdminViews = (() => {
       <button class="btn btn-primary" onclick="App.openNewSalesRequestModal()">＋ New Request</button>
     </div>
     ${availablePanel}
-    <div class="card" style="padding:0"><div class="table-wrap"><table>
-      <thead><tr>
-        <th>Season / Year</th><th>Brand</th><th>Tier / Retailer</th><th>Gender</th><th>In-Whse</th><th>Cost Due</th><th>Date</th><th>Submitted By</th>
-        <th>Styles</th><th>Source</th><th>Status</th><th>Program</th><th>Actions</th>
-      </tr></thead>
-      <tbody>${rows}</tbody>
-    </table></div></div>`;
+    ${srSections}`;
   }
 
   // ── Build Request from Handoff — FULL PAGE SPREADSHEET ─────────────────────
