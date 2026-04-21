@@ -433,6 +433,7 @@ CREATE TABLE IF NOT EXISTS factories (
   -- Factory. `factory_address` holds the street / line 1; the other
   -- four (city/state/country/zip) are split out as of v7.
   factory_name                TEXT NOT NULL,
+  factory_sap_name            TEXT,                 -- SAP master-data name
   factory_address             TEXT,
   factory_city                TEXT,
   factory_state               TEXT,
@@ -441,10 +442,12 @@ CREATE TABLE IF NOT EXISTS factories (
   factory_related_to_tc       INTEGER NOT NULL DEFAULT 0,
   factory_terms               TEXT,                 -- TC's terms with factory
   factory_terms_hl            TEXT,                 -- HighLife's terms with factory
+  tc_sap_name                 TEXT,                 -- SAP name for the owning TC on this record
 
   -- Export Company (optional — has_exporter=0 means "not applicable")
   has_exporter                INTEGER NOT NULL DEFAULT 0,
   exporter_name               TEXT,
+  exporter_sap_name           TEXT,
   exporter_address            TEXT,
   exporter_city               TEXT,
   exporter_state              TEXT,
@@ -458,6 +461,7 @@ CREATE TABLE IF NOT EXISTS factories (
   -- Pay-to Company (optional — has_payto=0 means "not applicable")
   has_payto                   INTEGER NOT NULL DEFAULT 0,
   payto_name                  TEXT,
+  payto_sap_name              TEXT,
   payto_address               TEXT,
   payto_city                  TEXT,
   payto_state                 TEXT,

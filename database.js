@@ -378,6 +378,14 @@ function runMigrations() {
   addColumn('factories', 'first_sale_approved',      'INTEGER NOT NULL DEFAULT 0');
   addColumn('factories', 'first_sale_approved_by',   'TEXT');
   addColumn('factories', 'first_sale_approved_at',   'TEXT');
+
+  // v8: SAP names per party on a factory record. Maps each of the
+  // four entities to the matching SAP account so the vendor matrix
+  // import can reconcile across systems.
+  addColumn('factories', 'tc_sap_name',       'TEXT');
+  addColumn('factories', 'factory_sap_name',  'TEXT');
+  addColumn('factories', 'exporter_sap_name', 'TEXT');
+  addColumn('factories', 'payto_sap_name',    'TEXT');
 }
 
 function importLegacyFabricRequests() {

@@ -4165,15 +4165,16 @@ const AdminViews = (() => {
         </div>
 
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;margin-top:14px">
-          ${entityBlock('🏭 Factory', f.factoryName,
+          ${entityBlock('🏭 Factory', f.factoryName, f.factorySapName,
             fmtAddress(f.factoryAddress, f.factoryCity, f.factoryState, f.factoryCountry, f.factoryZip),
             false,
             [
+              ['TC SAP name',  esc(f.tcSapName || '—')],
               ['Related to TC', yesNo(f.factoryRelatedToTc)],
               ['TC terms', esc(f.factoryTerms || '—')],
               ['HighLife terms', esc(f.factoryTermsHl || '—')],
             ])}
-          ${entityBlock('📦 Export Company', f.exporterName,
+          ${entityBlock('📦 Export Company', f.exporterName, f.exporterSapName,
             fmtAddress(f.exporterAddress, f.exporterCity, f.exporterState, f.exporterCountry, f.exporterZip),
             !f.hasExporter,
             [
@@ -4182,7 +4183,7 @@ const AdminViews = (() => {
               ['TC terms',           esc(f.exporterTerms || '—')],
               ['HighLife terms',     esc(f.exporterTermsHl || '—')],
             ])}
-          ${entityBlock('💰 Pay-to Company', f.paytoName,
+          ${entityBlock('💰 Pay-to Company', f.paytoName, f.paytoSapName,
             fmtAddress(f.paytoAddress, f.paytoCity, f.paytoState, f.paytoCountry, f.paytoZip),
             !f.hasPayto,
             [
@@ -4196,11 +4197,14 @@ const AdminViews = (() => {
         ${f.notes ? `<div class="text-sm text-muted" style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border)">📝 ${esc(f.notes)}</div>` : ''}
       </div>`;
 
-    function entityBlock(title, name, addressHtml, greyedOut, rows) {
+    function entityBlock(title, name, sapName, addressHtml, greyedOut, rows) {
       const dim = greyedOut ? 'opacity:0.45;filter:grayscale(0.4)' : '';
+      const sapLine = sapName
+        ? `<div class="text-sm" style="color:#818cf8;margin-bottom:4px">SAP: ${esc(sapName)}</div>`
+        : '';
       const placeholder = greyedOut
         ? '<div class="font-bold">Not applicable</div><div class="text-sm text-muted">This profile has no separate entity for this role.</div>'
-        : `<div class="font-bold">${esc(name || '—')}</div><div class="text-sm text-muted" style="margin-bottom:8px;line-height:1.35">${addressHtml}</div>`;
+        : `<div class="font-bold">${esc(name || '—')}</div>${sapLine}<div class="text-sm text-muted" style="margin-bottom:8px;line-height:1.35">${addressHtml}</div>`;
       return `
         <div style="padding:10px 12px;background:var(--bg-elevated);border-radius:var(--radius-sm);border:1px solid var(--border);${dim}">
           <div class="text-sm font-bold" style="color:var(--accent);margin-bottom:6px">${title}</div>

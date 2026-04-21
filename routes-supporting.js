@@ -1429,6 +1429,8 @@ function factoryFromRow(r) {
     tcId:                      r.tc_id,
     // Factory
     factoryName:               r.factory_name,
+    factorySapName:            r.factory_sap_name,
+    tcSapName:                 r.tc_sap_name,
     factoryAddress:            r.factory_address,   // street
     factoryCity:               r.factory_city,
     factoryState:              r.factory_state,
@@ -1440,6 +1442,7 @@ function factoryFromRow(r) {
     // Exporter
     hasExporter:               b(r.has_exporter),
     exporterName:              r.exporter_name,
+    exporterSapName:           r.exporter_sap_name,
     exporterAddress:           r.exporter_address,
     exporterCity:              r.exporter_city,
     exporterState:             r.exporter_state,
@@ -1452,6 +1455,7 @@ function factoryFromRow(r) {
     // Pay-to
     hasPayto:                  b(r.has_payto),
     paytoName:                 r.payto_name,
+    paytoSapName:              r.payto_sap_name,
     paytoAddress:              r.payto_address,
     paytoCity:                 r.payto_city,
     paytoState:                r.payto_state,
@@ -1487,6 +1491,8 @@ function factoryFromRow(r) {
 // Fields that a vendor is allowed to submit/edit.
 const FACTORY_VENDOR_FIELDS = {
   factoryName:                'factory_name',
+  factorySapName:             'factory_sap_name',
+  tcSapName:                  'tc_sap_name',
   factoryAddress:             'factory_address',
   factoryCity:                'factory_city',
   factoryState:               'factory_state',
@@ -1496,6 +1502,7 @@ const FACTORY_VENDOR_FIELDS = {
   factoryTerms:               'factory_terms',
   hasExporter:                'has_exporter',
   exporterName:               'exporter_name',
+  exporterSapName:            'exporter_sap_name',
   exporterAddress:            'exporter_address',
   exporterCity:               'exporter_city',
   exporterState:              'exporter_state',
@@ -1506,6 +1513,7 @@ const FACTORY_VENDOR_FIELDS = {
   exporterTerms:              'exporter_terms',
   hasPayto:                   'has_payto',
   paytoName:                  'payto_name',
+  paytoSapName:               'payto_sap_name',
   paytoAddress:               'payto_address',
   paytoCity:                  'payto_city',
   paytoState:                 'payto_state',

@@ -6762,8 +6762,14 @@ App._openFactoryForm = function(id, mode) {
     <!-- Factory (always required) -->
     <div class="card" style="padding:12px 14px;margin-bottom:12px">
       <div class="font-bold mb-2">🏭 Factory</div>
-      <div class="form-group"><label class="form-label">Factory name *</label>
-        <input class="form-input" id="fac-name" value="${esc(f?.factoryName || '')}" data-req="1"></div>
+      <div class="form-row form-row-2">
+        <div class="form-group"><label class="form-label">Factory name *</label>
+          <input class="form-input" id="fac-name" value="${esc(f?.factoryName || '')}" data-req="1"></div>
+        <div class="form-group"><label class="form-label">Factory SAP name</label>
+          <input class="form-input" id="fac-sap" value="${esc(f?.factorySapName || '')}" placeholder="HighLife SAP master-data name"></div>
+      </div>
+      <div class="form-group"><label class="form-label">TC SAP name (for this record)</label>
+        <input class="form-input" id="fac-tc-sap" value="${esc(f?.tcSapName || '')}" placeholder="SAP name of the trading company on this factory"></div>
       ${addr('fac', false, facGet)}
       <div class="form-row form-row-2" style="margin-top:8px">
         <div class="form-group">${check('fac-related', f?.factoryRelatedToTc, 'Factory is related to our trading company')}</div>
@@ -6779,8 +6785,12 @@ App._openFactoryForm = function(id, mode) {
       </label>
       <p class="text-sm text-muted" style="margin:0 0 10px">Leave unchecked if the factory itself is the exporter.</p>
       <div id="exp-fields" style="${hasExp ? '' : 'display:none'}">
-        <div class="form-group"><label class="form-label">Exporter name *</label>
-          <input class="form-input" id="exp-name" value="${esc(f?.exporterName || '')}" data-req-exp="1"></div>
+        <div class="form-row form-row-2">
+          <div class="form-group"><label class="form-label">Exporter name *</label>
+            <input class="form-input" id="exp-name" value="${esc(f?.exporterName || '')}" data-req-exp="1"></div>
+          <div class="form-group"><label class="form-label">Exporter SAP name</label>
+            <input class="form-input" id="exp-sap" value="${esc(f?.exporterSapName || '')}"></div>
+        </div>
         ${addr('exp', true, expGet).replace(/data-req="1"/g, 'data-req-exp="1"')}
         <div class="form-row form-row-2" style="margin-top:8px">
           <div class="form-group">${check('exp-related-tc', f?.exporterRelatedToTc, 'Exporter is related to TC')}</div>
@@ -6798,8 +6808,12 @@ App._openFactoryForm = function(id, mode) {
       </label>
       <p class="text-sm text-muted" style="margin:0 0 10px">Leave unchecked if you're paid directly (no separate pay-to entity).</p>
       <div id="pay-fields" style="${hasPay ? '' : 'display:none'}">
-        <div class="form-group"><label class="form-label">Pay-to name *</label>
-          <input class="form-input" id="pay-name" value="${esc(f?.paytoName || '')}" data-req-pay="1"></div>
+        <div class="form-row form-row-2">
+          <div class="form-group"><label class="form-label">Pay-to name *</label>
+            <input class="form-input" id="pay-name" value="${esc(f?.paytoName || '')}" data-req-pay="1"></div>
+          <div class="form-group"><label class="form-label">Pay-to SAP name</label>
+            <input class="form-input" id="pay-sap" value="${esc(f?.paytoSapName || '')}"></div>
+        </div>
         ${addr('pay', true, payGet).replace(/data-req="1"/g, 'data-req-pay="1"')}
         <div class="form-row form-row-3" style="margin-top:8px">
           <div class="form-group">${check('pay-related-tc', f?.paytoRelatedToTc, 'Related to TC')}</div>
@@ -6860,6 +6874,8 @@ App._saveFactory = async function(id, mode) {
 
     // Factory
     factoryName:                name,
+    factorySapName:             v('fac-sap'),
+    tcSapName:                  v('fac-tc-sap'),
     factoryAddress:             v('fac-addr'),
     factoryCity:                v('fac-city'),
     factoryState:               v('fac-state'),
@@ -6871,6 +6887,7 @@ App._saveFactory = async function(id, mode) {
     // Exporter — included fields are only sent when the section is on
     hasExporter:                hasExp,
     exporterName:               hasExp ? v('exp-name')    : '',
+    exporterSapName:            hasExp ? v('exp-sap')     : '',
     exporterAddress:            hasExp ? v('exp-addr')    : '',
     exporterCity:               hasExp ? v('exp-city')    : '',
     exporterState:              hasExp ? v('exp-state')   : '',
@@ -6883,6 +6900,7 @@ App._saveFactory = async function(id, mode) {
     // Pay-to
     hasPayto:                   hasPay,
     paytoName:                  hasPay ? v('pay-name')    : '',
+    paytoSapName:               hasPay ? v('pay-sap')     : '',
     paytoAddress:               hasPay ? v('pay-addr')    : '',
     paytoCity:                  hasPay ? v('pay-city')    : '',
     paytoState:                 hasPay ? v('pay-state')   : '',
