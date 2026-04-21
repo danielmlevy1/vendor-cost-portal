@@ -430,29 +430,53 @@ CREATE TABLE IF NOT EXISTS factories (
   id                          TEXT PRIMARY KEY,
   tc_id                       TEXT NOT NULL,
 
-  -- Factory
+  -- Factory. `factory_address` holds the street / line 1; the other
+  -- four (city/state/country/zip) are split out as of v7.
   factory_name                TEXT NOT NULL,
   factory_address             TEXT,
+  factory_city                TEXT,
+  factory_state               TEXT,
+  factory_country             TEXT,
+  factory_zip                 TEXT,
   factory_related_to_tc       INTEGER NOT NULL DEFAULT 0,
   factory_terms               TEXT,                 -- TC's terms with factory
   factory_terms_hl            TEXT,                 -- HighLife's terms with factory
 
-  -- Export Company
+  -- Export Company (optional — has_exporter=0 means "not applicable")
+  has_exporter                INTEGER NOT NULL DEFAULT 0,
   exporter_name               TEXT,
   exporter_address            TEXT,
+  exporter_city               TEXT,
+  exporter_state              TEXT,
+  exporter_country            TEXT,
+  exporter_zip                TEXT,
   exporter_related_to_tc      INTEGER NOT NULL DEFAULT 0,
   exporter_related_to_factory INTEGER NOT NULL DEFAULT 0,
-  exporter_terms              TEXT,                 -- TC's terms with exporter
-  exporter_terms_hl           TEXT,                 -- HighLife's terms with exporter
+  exporter_terms              TEXT,
+  exporter_terms_hl           TEXT,
 
-  -- Pay-to Company
+  -- Pay-to Company (optional — has_payto=0 means "not applicable")
+  has_payto                   INTEGER NOT NULL DEFAULT 0,
   payto_name                  TEXT,
   payto_address               TEXT,
+  payto_city                  TEXT,
+  payto_state                 TEXT,
+  payto_country               TEXT,
+  payto_zip                   TEXT,
   payto_related_to_tc         INTEGER NOT NULL DEFAULT 0,
   payto_related_to_exporter   INTEGER NOT NULL DEFAULT 0,
   payto_related_to_factory    INTEGER NOT NULL DEFAULT 0,
   payto_terms                 TEXT,
   payto_terms_hl              TEXT,
+
+  -- Logistics
+  shipping_responsible        TEXT,                 -- 'tc' | 'factory' | 'exporter' | 'payto'
+  port_of_shipping            TEXT,
+
+  -- First-Sale qualification (admin toggle)
+  first_sale_approved         INTEGER NOT NULL DEFAULT 0,
+  first_sale_approved_by      TEXT,
+  first_sale_approved_at      TEXT,
 
   -- Lifecycle
   status                      TEXT NOT NULL DEFAULT 'pending',

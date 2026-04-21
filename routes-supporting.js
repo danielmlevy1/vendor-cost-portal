@@ -1427,24 +1427,49 @@ function factoryFromRow(r) {
   return {
     id:                        r.id,
     tcId:                      r.tc_id,
+    // Factory
     factoryName:               r.factory_name,
-    factoryAddress:            r.factory_address,
+    factoryAddress:            r.factory_address,   // street
+    factoryCity:               r.factory_city,
+    factoryState:              r.factory_state,
+    factoryCountry:            r.factory_country,
+    factoryZip:                r.factory_zip,
     factoryRelatedToTc:        b(r.factory_related_to_tc),
     factoryTerms:              r.factory_terms,
     factoryTermsHl:            r.factory_terms_hl,
+    // Exporter
+    hasExporter:               b(r.has_exporter),
     exporterName:              r.exporter_name,
     exporterAddress:           r.exporter_address,
+    exporterCity:              r.exporter_city,
+    exporterState:             r.exporter_state,
+    exporterCountry:           r.exporter_country,
+    exporterZip:               r.exporter_zip,
     exporterRelatedToTc:       b(r.exporter_related_to_tc),
     exporterRelatedToFactory:  b(r.exporter_related_to_factory),
     exporterTerms:             r.exporter_terms,
     exporterTermsHl:           r.exporter_terms_hl,
+    // Pay-to
+    hasPayto:                  b(r.has_payto),
     paytoName:                 r.payto_name,
     paytoAddress:              r.payto_address,
+    paytoCity:                 r.payto_city,
+    paytoState:                r.payto_state,
+    paytoCountry:              r.payto_country,
+    paytoZip:                  r.payto_zip,
     paytoRelatedToTc:          b(r.payto_related_to_tc),
     paytoRelatedToExporter:    b(r.payto_related_to_exporter),
     paytoRelatedToFactory:     b(r.payto_related_to_factory),
     paytoTerms:                r.payto_terms,
     paytoTermsHl:              r.payto_terms_hl,
+    // Logistics
+    shippingResponsible:       r.shipping_responsible,
+    portOfShipping:            r.port_of_shipping,
+    // First-Sale
+    firstSaleApproved:         b(r.first_sale_approved),
+    firstSaleApprovedBy:       r.first_sale_approved_by,
+    firstSaleApprovedAt:       r.first_sale_approved_at,
+    // Lifecycle
     status:                    r.status,
     submittedBy:               r.submitted_by,
     submittedAt:               r.submitted_at,
@@ -1463,29 +1488,64 @@ function factoryFromRow(r) {
 const FACTORY_VENDOR_FIELDS = {
   factoryName:                'factory_name',
   factoryAddress:             'factory_address',
+  factoryCity:                'factory_city',
+  factoryState:               'factory_state',
+  factoryCountry:             'factory_country',
+  factoryZip:                 'factory_zip',
   factoryRelatedToTc:         'factory_related_to_tc',
   factoryTerms:               'factory_terms',
+  hasExporter:                'has_exporter',
   exporterName:               'exporter_name',
   exporterAddress:            'exporter_address',
+  exporterCity:               'exporter_city',
+  exporterState:              'exporter_state',
+  exporterCountry:            'exporter_country',
+  exporterZip:                'exporter_zip',
   exporterRelatedToTc:        'exporter_related_to_tc',
   exporterRelatedToFactory:   'exporter_related_to_factory',
   exporterTerms:              'exporter_terms',
+  hasPayto:                   'has_payto',
   paytoName:                  'payto_name',
   paytoAddress:               'payto_address',
-  paytoRelatedToTc:            'payto_related_to_tc',
+  paytoCity:                  'payto_city',
+  paytoState:                 'payto_state',
+  paytoCountry:               'payto_country',
+  paytoZip:                   'payto_zip',
+  paytoRelatedToTc:           'payto_related_to_tc',
   paytoRelatedToExporter:     'payto_related_to_exporter',
-  paytoRelatedToFactory:       'payto_related_to_factory',
+  paytoRelatedToFactory:      'payto_related_to_factory',
   paytoTerms:                 'payto_terms',
+  shippingResponsible:        'shipping_responsible',
+  portOfShipping:             'port_of_shipping',
   notes:                      'notes',
 };
 
-// Admin/PC can also set the HighLife term fields + reviewer metadata.
+// Admin/PC also set HighLife terms + first-sale approval.
 const FACTORY_ADMIN_FIELDS = {
   ...FACTORY_VENDOR_FIELDS,
-  factoryTermsHl:  'factory_terms_hl',
-  exporterTermsHl: 'exporter_terms_hl',
-  paytoTermsHl:    'payto_terms_hl',
+  factoryTermsHl:     'factory_terms_hl',
+  exporterTermsHl:    'exporter_terms_hl',
+  paytoTermsHl:       'payto_terms_hl',
+  firstSaleApproved:  'first_sale_approved',
 };
+
+// Required fields when the exporter / pay-to section is enabled.
+const EXPORTER_REQUIRED = ['exporterName', 'exporterAddress', 'exporterCity', 'exporterCountry'];
+const PAYTO_REQUIRED    = ['paytoName',    'paytoAddress',    'paytoCity',    'paytoCountry'];
+
+function validateSections(body) {
+  if (body.hasExporter) {
+    for (const k of EXPORTER_REQUIRED) {
+      if (!body[k] || !String(body[k]).trim()) return `${k} is required when Export Company is included`;
+    }
+  }
+  if (body.hasPayto) {
+    for (const k of PAYTO_REQUIRED) {
+      if (!body[k] || !String(body[k]).trim()) return `${k} is required when Pay-to Company is included`;
+    }
+  }
+  return null;
+}
 
 const FACTORY_INTERNAL_ROLES_READ = ['admin', 'pc', 'planning', 'design', 'tech_design', 'prod_dev'];
 const FACTORY_ADMIN_ROLES         = ['admin', 'pc'];
@@ -1524,6 +1584,14 @@ router.get('/factories/:id', requireAuth, (req, res) => {
   res.json(factoryFromRow(row));
 });
 
+// Columns on `factories` that should always be stored as 0/1 integers.
+const FACTORY_BOOL_COLS = new Set([
+  'factory_related_to_tc',
+  'exporter_related_to_tc', 'exporter_related_to_factory',
+  'payto_related_to_tc',    'payto_related_to_exporter', 'payto_related_to_factory',
+  'has_exporter', 'has_payto', 'first_sale_approved',
+]);
+
 // POST /api/factories
 // Vendor submits a new factory profile (status = pending).
 // Admin/PC can also create on behalf of a TC.
@@ -1539,15 +1607,18 @@ router.post('/factories', requireAuth, (req, res) => {
   const tcId = isVendor ? req.user.tcId : (b.tcId || null);
   if (!tcId) return res.status(400).json({ error: 'tcId required' });
 
+  // If Exporter or Pay-to section is included, its required fields must be filled.
+  const vErr = validateSections(b);
+  if (vErr) return res.status(400).json({ error: vErr });
+
   const id = uid();
   const nowIso = now();
   const fields = {};
-  // Copy allowed fields, default booleans to 0.
   const FIELDS = isVendor ? FACTORY_VENDOR_FIELDS : FACTORY_ADMIN_FIELDS;
   for (const [camel, col] of Object.entries(FIELDS)) {
     const v = b[camel];
     if (v === undefined) continue;
-    if (col.endsWith('_related_to_tc') || col.endsWith('_related_to_factory') || col.endsWith('_related_to_exporter')) {
+    if (FACTORY_BOOL_COLS.has(col)) {
       fields[col] = v ? 1 : 0;
     } else {
       fields[col] = v === '' ? null : v;
@@ -1584,12 +1655,22 @@ router.patch('/factories/:id', requireAuth, (req, res) => {
   const b = req.body || {};
   const FIELDS = isVendor ? FACTORY_VENDOR_FIELDS : FACTORY_ADMIN_FIELDS;
 
+  // If the caller is touching the has_exporter / has_payto flags (or
+  // is a vendor, whose patch behaves like a full resubmit), re-check
+  // that the required fields for enabled sections are present.
+  // Merge incoming body with the stored row so a vendor editing only
+  // the factory section still passes validation if the existing row
+  // has has_exporter already set.
+  const merged = { ...factoryFromRow(row), ...b };
+  const vErr = validateSections(merged);
+  if (vErr) return res.status(400).json({ error: vErr });
+
   const sets = [];
   const vals = [];
   for (const [camel, col] of Object.entries(FIELDS)) {
     if (b[camel] === undefined) continue;
     const v = b[camel];
-    if (col.endsWith('_related_to_tc') || col.endsWith('_related_to_factory') || col.endsWith('_related_to_exporter')) {
+    if (FACTORY_BOOL_COLS.has(col)) {
       sets.push(`${col} = ?`); vals.push(v ? 1 : 0);
     } else {
       sets.push(`${col} = ?`); vals.push(v === '' ? null : v);
@@ -1598,6 +1679,22 @@ router.patch('/factories/:id', requireAuth, (req, res) => {
 
   const nowIso = now();
   const userLabel = req.user.name || req.user.email || req.user.id;
+
+  // First-sale stamping: if admin/PC flips first_sale_approved, record
+  // who/when (or clear on revoke).
+  if (!isVendor && b.firstSaleApproved !== undefined) {
+    const wasOn  = row.first_sale_approved === 1 || row.first_sale_approved === '1';
+    const nowOn  = !!b.firstSaleApproved;
+    if (wasOn !== nowOn) {
+      if (nowOn) {
+        sets.push('first_sale_approved_by = ?'); vals.push(userLabel);
+        sets.push('first_sale_approved_at = ?'); vals.push(nowIso);
+      } else {
+        sets.push('first_sale_approved_by = ?'); vals.push(null);
+        sets.push('first_sale_approved_at = ?'); vals.push(null);
+      }
+    }
+  }
 
   if (isVendor) {
     // Any vendor edit pushes the row back to pending for re-review.

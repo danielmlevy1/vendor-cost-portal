@@ -6704,6 +6704,33 @@ App._openFactoryForm = function(id, mode) {
       <input type="checkbox" id="${id}" ${checked ? 'checked' : ''}> ${label}
     </label>`;
 
+  // Factory / exporter / pay-to all use the same 5-field address block.
+  // `required` adds the visual " *" and a data-req flag that the save
+  // handler checks before submit.
+  const addr = (prefix, required, get) => `
+    <div class="form-group"><label class="form-label">Street address${required ? ' *' : ''}</label>
+      <input class="form-input" id="${prefix}-addr" value="${esc(get('address') || '')}" ${required ? 'data-req="1"' : ''}></div>
+    <div class="form-row form-row-2">
+      <div class="form-group"><label class="form-label">City${required ? ' *' : ''}</label>
+        <input class="form-input" id="${prefix}-city" value="${esc(get('city') || '')}" ${required ? 'data-req="1"' : ''}></div>
+      <div class="form-group"><label class="form-label">Province / State</label>
+        <input class="form-input" id="${prefix}-state" value="${esc(get('state') || '')}"></div>
+    </div>
+    <div class="form-row form-row-2">
+      <div class="form-group"><label class="form-label">Country${required ? ' *' : ''}</label>
+        <input class="form-input" id="${prefix}-country" value="${esc(get('country') || '')}" ${required ? 'data-req="1"' : ''}></div>
+      <div class="form-group"><label class="form-label">ZIP / Postal code</label>
+        <input class="form-input" id="${prefix}-zip" value="${esc(get('zip') || '')}"></div>
+    </div>`;
+
+  const facGet = k => f?.['factory'  + k[0].toUpperCase() + k.slice(1)];
+  const expGet = k => f?.['exporter' + k[0].toUpperCase() + k.slice(1)];
+  const payGet = k => f?.['payto'    + k[0].toUpperCase() + k.slice(1)];
+
+  const hasExp = f ? !!f.hasExporter : false;
+  const hasPay = f ? !!f.hasPayto    : false;
+  const ship   = f?.shippingResponsible || '';
+
   App.showModal(`
     <div class="modal-header">
       <h2>${isEdit ? 'Edit' : 'Submit'} factory</h2>
@@ -6715,52 +6742,72 @@ App._openFactoryForm = function(id, mode) {
       ${terms.map(t => `<option value="${t}">`).join('')}
     </datalist>
 
-    <!-- Factory -->
+    <!-- Logistics -->
+    <div class="card" style="padding:12px 14px;margin-bottom:12px">
+      <div class="font-bold mb-2">🚢 Shipping &amp; Port</div>
+      <div class="form-row form-row-2">
+        <div class="form-group"><label class="form-label">Who is responsible for shipping? *</label>
+          <select class="form-select" id="fac-ship" data-req="1">
+            <option value=""         ${!ship ? 'selected' : ''}>— Select —</option>
+            <option value="tc"       ${ship === 'tc'       ? 'selected' : ''}>Trading Company</option>
+            <option value="factory"  ${ship === 'factory'  ? 'selected' : ''}>Factory</option>
+            <option value="exporter" ${ship === 'exporter' ? 'selected' : ''}>Export Company</option>
+            <option value="payto"    ${ship === 'payto'    ? 'selected' : ''}>Pay-to Company</option>
+          </select></div>
+        <div class="form-group"><label class="form-label">Port of Shipping</label>
+          <input class="form-input" id="fac-port" value="${esc(f?.portOfShipping || '')}" placeholder="e.g. Shenzhen, Chittagong"></div>
+      </div>
+    </div>
+
+    <!-- Factory (always required) -->
     <div class="card" style="padding:12px 14px;margin-bottom:12px">
       <div class="font-bold mb-2">🏭 Factory</div>
-      <div class="form-row form-row-2">
-        <div class="form-group"><label class="form-label">Factory name *</label>
-          <input class="form-input" id="fac-name" value="${esc(f?.factoryName || '')}" required></div>
-        <div class="form-group"><label class="form-label">Address</label>
-          <input class="form-input" id="fac-addr" value="${esc(f?.factoryAddress || '')}"></div>
-      </div>
-      <div class="form-row form-row-2">
+      <div class="form-group"><label class="form-label">Factory name *</label>
+        <input class="form-input" id="fac-name" value="${esc(f?.factoryName || '')}" data-req="1"></div>
+      ${addr('fac', false, facGet)}
+      <div class="form-row form-row-2" style="margin-top:8px">
         <div class="form-group">${check('fac-related', f?.factoryRelatedToTc, 'Factory is related to our trading company')}</div>
         <div class="form-group"><label class="form-label">Terms between TC & factory</label>${termInput('fac-terms', f?.factoryTerms)}</div>
       </div>
     </div>
 
-    <!-- Exporter -->
-    <div class="card" style="padding:12px 14px;margin-bottom:12px">
-      <div class="font-bold mb-2">📦 Export Company</div>
-      <div class="form-row form-row-2">
-        <div class="form-group"><label class="form-label">Exporter name</label>
-          <input class="form-input" id="exp-name" value="${esc(f?.exporterName || '')}"></div>
-        <div class="form-group"><label class="form-label">Address</label>
-          <input class="form-input" id="exp-addr" value="${esc(f?.exporterAddress || '')}"></div>
+    <!-- Exporter (optional, checkbox-gated) -->
+    <div class="card" id="exp-card" style="padding:12px 14px;margin-bottom:12px">
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:700;margin-bottom:6px">
+        <input type="checkbox" id="has-exp" ${hasExp ? 'checked' : ''} onchange="App._factoryToggleSection('exp', this.checked)">
+        📦 Include separate Export Company
+      </label>
+      <p class="text-sm text-muted" style="margin:0 0 10px">Leave unchecked if the factory itself is the exporter.</p>
+      <div id="exp-fields" style="${hasExp ? '' : 'display:none'}">
+        <div class="form-group"><label class="form-label">Exporter name *</label>
+          <input class="form-input" id="exp-name" value="${esc(f?.exporterName || '')}" data-req-exp="1"></div>
+        ${addr('exp', true, expGet).replace(/data-req="1"/g, 'data-req-exp="1"')}
+        <div class="form-row form-row-2" style="margin-top:8px">
+          <div class="form-group">${check('exp-related-tc', f?.exporterRelatedToTc, 'Exporter is related to TC')}</div>
+          <div class="form-group">${check('exp-related-factory', f?.exporterRelatedToFactory, 'Exporter is related to Factory')}</div>
+        </div>
+        <div class="form-group"><label class="form-label">Terms between TC & exporter</label>${termInput('exp-terms', f?.exporterTerms)}</div>
       </div>
-      <div class="form-row form-row-2">
-        <div class="form-group">${check('exp-related-tc', f?.exporterRelatedToTc, 'Exporter is related to TC')}</div>
-        <div class="form-group">${check('exp-related-factory', f?.exporterRelatedToFactory, 'Exporter is related to Factory')}</div>
-      </div>
-      <div class="form-group"><label class="form-label">Terms between TC & exporter</label>${termInput('exp-terms', f?.exporterTerms)}</div>
     </div>
 
-    <!-- Pay-to -->
-    <div class="card" style="padding:12px 14px;margin-bottom:12px">
-      <div class="font-bold mb-2">💰 Pay-to Company</div>
-      <div class="form-row form-row-2">
-        <div class="form-group"><label class="form-label">Pay-to name</label>
-          <input class="form-input" id="pay-name" value="${esc(f?.paytoName || '')}"></div>
-        <div class="form-group"><label class="form-label">Address</label>
-          <input class="form-input" id="pay-addr" value="${esc(f?.paytoAddress || '')}"></div>
+    <!-- Pay-to (optional, checkbox-gated) -->
+    <div class="card" id="pay-card" style="padding:12px 14px;margin-bottom:12px">
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:700;margin-bottom:6px">
+        <input type="checkbox" id="has-pay" ${hasPay ? 'checked' : ''} onchange="App._factoryToggleSection('pay', this.checked)">
+        💰 Include separate Pay-to Company
+      </label>
+      <p class="text-sm text-muted" style="margin:0 0 10px">Leave unchecked if you're paid directly (no separate pay-to entity).</p>
+      <div id="pay-fields" style="${hasPay ? '' : 'display:none'}">
+        <div class="form-group"><label class="form-label">Pay-to name *</label>
+          <input class="form-input" id="pay-name" value="${esc(f?.paytoName || '')}" data-req-pay="1"></div>
+        ${addr('pay', true, payGet).replace(/data-req="1"/g, 'data-req-pay="1"')}
+        <div class="form-row form-row-3" style="margin-top:8px">
+          <div class="form-group">${check('pay-related-tc', f?.paytoRelatedToTc, 'Related to TC')}</div>
+          <div class="form-group">${check('pay-related-exporter', f?.paytoRelatedToExporter, 'Related to Exporter')}</div>
+          <div class="form-group">${check('pay-related-factory', f?.paytoRelatedToFactory, 'Related to Factory')}</div>
+        </div>
+        <div class="form-group"><label class="form-label">Pay-to terms</label>${termInput('pay-terms', f?.paytoTerms)}</div>
       </div>
-      <div class="form-row form-row-3">
-        <div class="form-group">${check('pay-related-tc', f?.paytoRelatedToTc, 'Related to TC')}</div>
-        <div class="form-group">${check('pay-related-exporter', f?.paytoRelatedToExporter, 'Related to Exporter')}</div>
-        <div class="form-group">${check('pay-related-factory', f?.paytoRelatedToFactory, 'Related to Factory')}</div>
-      </div>
-      <div class="form-group"><label class="form-label">Pay-to terms</label>${termInput('pay-terms', f?.paytoTerms)}</div>
     </div>
 
     <div class="form-group"><label class="form-label">Notes (optional)</label>
@@ -6772,6 +6819,12 @@ App._openFactoryForm = function(id, mode) {
     </div>`, 'modal-lg');
 };
 
+// Show/hide Exporter or Pay-to fields when checkbox flips.
+App._factoryToggleSection = function(prefix, on) {
+  const el = document.getElementById(prefix + '-fields');
+  if (el) el.style.display = on ? '' : 'none';
+};
+
 App._saveFactory = async function(id, mode) {
   const v = sel => (document.getElementById(sel)?.value || '').trim();
   const c = sel => !!document.getElementById(sel)?.checked;
@@ -6779,22 +6832,67 @@ App._saveFactory = async function(id, mode) {
   const name = v('fac-name');
   if (!name) { alert('Factory name is required.'); return; }
 
+  const ship = v('fac-ship');
+  if (!ship) { alert('Please pick who is responsible for shipping.'); return; }
+
+  const hasExp = c('has-exp');
+  const hasPay = c('has-pay');
+
+  // Client-side required-field check — matches the server's rule so
+  // the user doesn't hit the API error. Every input with data-req-exp
+  // (or data-req-pay) must be non-empty when that section is on.
+  const reqCheck = (prefix, selector, label) => {
+    const missing = [...document.querySelectorAll(`[${selector}]`)].filter(el => !(el.value || '').trim());
+    if (missing.length) {
+      missing[0].focus();
+      alert(`Fill in all required fields for ${label} (${missing.length} missing).`);
+      return false;
+    }
+    return true;
+  };
+  if (hasExp && !reqCheck('exp', 'data-req-exp', 'Export Company')) return;
+  if (hasPay && !reqCheck('pay', 'data-req-pay', 'Pay-to Company')) return;
+
   const payload = {
+    // Logistics
+    shippingResponsible:        ship,
+    portOfShipping:             v('fac-port'),
+
+    // Factory
     factoryName:                name,
     factoryAddress:             v('fac-addr'),
+    factoryCity:                v('fac-city'),
+    factoryState:               v('fac-state'),
+    factoryCountry:             v('fac-country'),
+    factoryZip:                 v('fac-zip'),
     factoryRelatedToTc:         c('fac-related'),
     factoryTerms:               v('fac-terms'),
-    exporterName:               v('exp-name'),
-    exporterAddress:            v('exp-addr'),
-    exporterRelatedToTc:        c('exp-related-tc'),
-    exporterRelatedToFactory:   c('exp-related-factory'),
-    exporterTerms:              v('exp-terms'),
-    paytoName:                  v('pay-name'),
-    paytoAddress:               v('pay-addr'),
-    paytoRelatedToTc:           c('pay-related-tc'),
-    paytoRelatedToExporter:     c('pay-related-exporter'),
-    paytoRelatedToFactory:      c('pay-related-factory'),
-    paytoTerms:                 v('pay-terms'),
+
+    // Exporter — included fields are only sent when the section is on
+    hasExporter:                hasExp,
+    exporterName:               hasExp ? v('exp-name')    : '',
+    exporterAddress:            hasExp ? v('exp-addr')    : '',
+    exporterCity:               hasExp ? v('exp-city')    : '',
+    exporterState:              hasExp ? v('exp-state')   : '',
+    exporterCountry:            hasExp ? v('exp-country') : '',
+    exporterZip:                hasExp ? v('exp-zip')     : '',
+    exporterRelatedToTc:        hasExp ? c('exp-related-tc')      : false,
+    exporterRelatedToFactory:   hasExp ? c('exp-related-factory') : false,
+    exporterTerms:              hasExp ? v('exp-terms')   : '',
+
+    // Pay-to
+    hasPayto:                   hasPay,
+    paytoName:                  hasPay ? v('pay-name')    : '',
+    paytoAddress:               hasPay ? v('pay-addr')    : '',
+    paytoCity:                  hasPay ? v('pay-city')    : '',
+    paytoState:                 hasPay ? v('pay-state')   : '',
+    paytoCountry:               hasPay ? v('pay-country') : '',
+    paytoZip:                   hasPay ? v('pay-zip')     : '',
+    paytoRelatedToTc:           hasPay ? c('pay-related-tc')       : false,
+    paytoRelatedToExporter:     hasPay ? c('pay-related-exporter') : false,
+    paytoRelatedToFactory:      hasPay ? c('pay-related-factory')  : false,
+    paytoTerms:                 hasPay ? v('pay-terms')   : '',
+
     notes:                      v('fac-notes'),
   };
 
@@ -6807,6 +6905,37 @@ App._saveFactory = async function(id, mode) {
   }
   App.closeModal();
   App.navigate(mode === 'vendor' ? 'my-factories' : 'factories');
+};
+
+// First-Sale approval toggle (admin / PC only).
+App.toggleFactoryFirstSale = async function(id, on) {
+  const f = API.Factories.get(id);
+  if (!f) return;
+  if (on && !confirm('Mark this factory as approved for First Sale transactions?')) return;
+  if (!on && !confirm('Revoke First Sale approval on this factory?')) return;
+  try {
+    if (on) await API.Factories.approveFirstSale(id);
+    else    await API.Factories.revokeFirstSale(id);
+  } catch (err) { alert('Could not update: ' + (err.message || 'unknown')); return; }
+  App.navigate('factories');
+};
+
+// Admin Factories page — Country / TC filters (persisted in localStorage).
+App._factoryFilterSet = function(key, value) {
+  if (!['country','tc'].includes(key)) return;
+  const k = 'vcp_factory_f_' + key;
+  if (value) localStorage.setItem(k, value); else localStorage.removeItem(k);
+  App.navigate('factories');
+};
+App._factoryFilterClear = function() {
+  ['country','tc'].forEach(k => localStorage.removeItem('vcp_factory_f_' + k));
+  App.navigate('factories');
+};
+// Vendor My Factories — Country filter only.
+App._myFactoryFilterSet = function(value) {
+  if (value) localStorage.setItem('vcp_my_factory_f_country', value);
+  else       localStorage.removeItem('vcp_my_factory_f_country');
+  App.navigate('my-factories');
 };
 
 // Admin/PC actions

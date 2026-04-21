@@ -490,7 +490,11 @@ const VendorViews = (() => {
   function renderMyFactories(tcId) {
     const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
     const fmtDate = d => d ? new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
-    const mine = API.Factories.byTc(tcId);
+    const mineAll = API.Factories.byTc(tcId);
+
+    const fCountry = localStorage.getItem('vcp_my_factory_f_country') || '';
+    const countryOpts = [...new Set(mineAll.map(f => f.factoryCountry).filter(Boolean))].sort();
+    const mine = fCountry ? mineAll.filter(f => f.factoryCountry === fCountry) : mineAll;
 
     const statusBadge = s => ({
       pending:  '<span class="badge badge-pending">⏳ Pending review</span>',
@@ -499,15 +503,23 @@ const VendorViews = (() => {
       rejected: '<span class="badge badge-flagged">✕ Rejected</span>',
     }[s] || `<span class="badge">${s}</span>`);
 
-    const yesNo = b => b ? '<span class="tag" style="font-size:0.7rem">Related</span>' : '<span class="text-muted text-sm">—</span>';
+    const shipLabel = {
+      tc: 'TC', factory: 'Factory', exporter: 'Exporter', payto: 'Pay-to',
+    };
+
+    // One-line "City, Country" summary for the card header.
+    const locSummary = f => [f.factoryCity, f.factoryCountry].filter(Boolean).join(', ') || 'No address';
 
     const rows = mine.length ? mine.map(f => `
       <div class="card" style="padding:14px 16px;margin-bottom:12px;border-left:3px solid ${
         f.status === 'active' ? '#22c55e' : f.status === 'rejected' ? '#ef4444' : '#f59e0b'}">
         <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap">
           <div style="flex:1;min-width:240px">
-            <div class="font-bold" style="font-size:1.05rem;margin-bottom:4px">${esc(f.factoryName)}</div>
-            <div class="text-sm text-muted">${esc(f.factoryAddress || 'No address')} · submitted ${fmtDate(f.submittedAt)}</div>
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px">
+              <span class="font-bold" style="font-size:1.05rem">${esc(f.factoryName)}</span>
+              ${f.firstSaleApproved ? '<span class="badge" style="background:rgba(99,102,241,0.15);color:#818cf8;font-weight:600">🌟 First Sale</span>' : ''}
+            </div>
+            <div class="text-sm text-muted">${esc(locSummary(f))} · submitted ${fmtDate(f.submittedAt)}</div>
             <div style="margin-top:8px">${statusBadge(f.status)}</div>
             ${f.rejectionReason ? `<div class="text-sm" style="color:#ef4444;margin-top:6px"><strong>Rejected:</strong> ${esc(f.rejectionReason)}</div>` : ''}
           </div>
@@ -516,16 +528,16 @@ const VendorViews = (() => {
           </div>
         </div>
         <div class="text-sm text-muted" style="margin-top:10px;display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:8px">
-          <div>🏭 <strong>Factory</strong> ${yesNo(f.factoryRelatedToTc)} · ${esc(f.factoryTerms || 'No terms')}</div>
-          <div>📦 <strong>Exporter</strong> ${esc(f.exporterName || '—')} · ${esc(f.exporterTerms || 'No terms')}</div>
-          <div>💰 <strong>Pay-to</strong> ${esc(f.paytoName || '—')} · ${esc(f.paytoTerms || 'No terms')}</div>
+          <div>🚢 Ship by <strong>${shipLabel[f.shippingResponsible] || '—'}</strong>${f.portOfShipping ? ` · ${esc(f.portOfShipping)}` : ''}</div>
+          <div>📦 ${f.hasExporter ? `<strong>${esc(f.exporterName || 'Exporter')}</strong>` : 'No separate exporter'}</div>
+          <div>💰 ${f.hasPayto ? `<strong>${esc(f.paytoName || 'Pay-to')}</strong>` : 'No separate pay-to'}</div>
         </div>
-      </div>`).join('') : `<div class="empty-state" style="padding:40px"><div class="icon">🏭</div><h3>No factories submitted yet</h3><p class="text-muted">Click "+ Submit new factory" to start.</p></div>`;
+      </div>`).join('') : `<div class="empty-state" style="padding:40px"><div class="icon">🏭</div><h3>${fCountry ? `No factories in ${esc(fCountry)}` : 'No factories submitted yet'}</h3>${fCountry ? '' : '<p class="text-muted">Click "+ Submit new factory" to start.</p>'}</div>`;
 
     const kpis = {
-      pending:  mine.filter(f => f.status === 'pending').length,
-      active:   mine.filter(f => f.status === 'active').length,
-      rejected: mine.filter(f => f.status === 'rejected').length,
+      pending:  mineAll.filter(f => f.status === 'pending').length,
+      active:   mineAll.filter(f => f.status === 'active').length,
+      rejected: mineAll.filter(f => f.status === 'rejected').length,
     };
 
     return `
@@ -541,6 +553,15 @@ const VendorViews = (() => {
       <div class="fabric-kpi fabric-kpi-received"><span class="fabric-kpi-num">${kpis.active}</span><span class="fabric-kpi-label">Active</span></div>
       <div class="fabric-kpi fabric-kpi-sent"><span class="fabric-kpi-num">${kpis.rejected}</span><span class="fabric-kpi-label">Rejected</span></div>
     </div>
+
+    ${countryOpts.length > 1 ? `
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
+      <select class="form-select" style="width:180px" onchange="App._myFactoryFilterSet(this.value)" title="Filter by factory country">
+        <option value="">Country: All</option>
+        ${countryOpts.map(c => `<option value="${esc(c)}" ${fCountry === c ? 'selected' : ''}>${esc(c)}</option>`).join('')}
+      </select>
+      ${fCountry ? `<button class="btn btn-ghost btn-sm" onclick="App._myFactoryFilterSet('')">✕ Clear</button>` : ''}
+    </div>` : ''}
 
     ${rows}`;
   }

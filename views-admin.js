@@ -4104,6 +4104,23 @@ const AdminViews = (() => {
       ? '<span class="tag" style="background:rgba(34,197,94,0.12);color:#22c55e">Related</span>'
       : '<span class="tag" style="background:rgba(148,163,184,0.1);color:#94a3b8">Unrelated</span>';
 
+    const shipLabel = {
+      tc: 'Trading Company', factory: 'Factory', exporter: 'Export Company', payto: 'Pay-to Company',
+    };
+
+    // Compose a multi-line address from the 5 parts. Falls back to a
+    // single muted em-dash if every part is empty.
+    const fmtAddress = (street, city, state, country, zip) => {
+      const lines = [];
+      if (street) lines.push(esc(street));
+      const cityLine = [city, state, zip].filter(Boolean).join(', ');
+      if (cityLine) lines.push(esc(cityLine));
+      if (country) lines.push(esc(country));
+      return lines.length
+        ? lines.join('<br>')
+        : '<span class="text-muted">—</span>';
+    };
+
     const profileCard = (f) => `
       <div class="card" style="padding:14px 16px;margin-bottom:12px;border-left:3px solid ${
         f.status === 'active' ? '#22c55e'
@@ -4112,7 +4129,10 @@ const AdminViews = (() => {
 
         <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap">
           <div style="flex:1;min-width:240px">
-            <div class="font-bold" style="font-size:1.05rem;margin-bottom:4px">${esc(f.factoryName)}</div>
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px">
+              <span class="font-bold" style="font-size:1.05rem">${esc(f.factoryName)}</span>
+              ${f.firstSaleApproved ? '<span class="badge" style="background:rgba(99,102,241,0.15);color:#818cf8;font-weight:600">🌟 First Sale</span>' : ''}
+            </div>
             <div class="text-sm text-muted">${esc(tcLabel(f.tcId))} · submitted ${fmtDate(f.submittedAt)} by ${esc(f.submittedBy || '—')}</div>
             <div style="margin-top:8px">${statusBadge(f.status)}</div>
             ${f.rejectionReason ? `<div class="text-sm" style="color:#ef4444;margin-top:6px">✕ ${esc(f.rejectionReason)}</div>` : ''}
@@ -4124,6 +4144,7 @@ const AdminViews = (() => {
             ` : ''}
             ${f.status === 'active' ? `
               <button class="btn btn-secondary btn-sm" onclick="App.openFactoryTermsModal('${esc(f.id)}')" title="Set HighLife terms">📝 HL Terms</button>
+              <button class="btn btn-secondary btn-sm" onclick="App.toggleFactoryFirstSale('${esc(f.id)}', ${!f.firstSaleApproved})" title="${f.firstSaleApproved ? 'Revoke First Sale approval' : 'Approve for First Sale transactions'}">${f.firstSaleApproved ? '🌟 Revoke First Sale' : '🌟 Approve First Sale'}</button>
               <button class="btn btn-warning btn-sm"   onclick="App.deactivateFactory('${esc(f.id)}')">⦸ Deactivate</button>
             ` : ''}
             ${f.status === 'inactive' ? `
@@ -4136,52 +4157,98 @@ const AdminViews = (() => {
           </div>` : ''}
         </div>
 
+        <!-- Logistics strip -->
+        <div style="display:flex;gap:16px;margin-top:12px;padding:8px 12px;background:var(--bg-elevated);border-radius:var(--radius-sm);flex-wrap:wrap">
+          <div class="text-sm"><span class="text-muted">🚢 Shipping by:</span> <strong>${shipLabel[f.shippingResponsible] || '—'}</strong></div>
+          <div class="text-sm"><span class="text-muted">🛳 Port:</span> <strong>${esc(f.portOfShipping || '—')}</strong></div>
+          ${f.firstSaleApproved ? `<div class="text-sm" style="color:#818cf8"><span class="text-muted">🌟 First Sale:</span> <strong>${esc(f.firstSaleApprovedBy || 'approved')} · ${fmtDate(f.firstSaleApprovedAt)}</strong></div>` : ''}
+        </div>
+
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;margin-top:14px">
-          ${entityBlock('🏭 Factory', f.factoryName, f.factoryAddress, [
-            ['Related to TC', yesNo(f.factoryRelatedToTc)],
-            ['TC terms', esc(f.factoryTerms || '—')],
-            ['HighLife terms', esc(f.factoryTermsHl || '—')],
-          ])}
-          ${entityBlock('📦 Export Company', f.exporterName, f.exporterAddress, [
-            ['Related to TC',      yesNo(f.exporterRelatedToTc)],
-            ['Related to Factory', yesNo(f.exporterRelatedToFactory)],
-            ['TC terms',           esc(f.exporterTerms || '—')],
-            ['HighLife terms',     esc(f.exporterTermsHl || '—')],
-          ])}
-          ${entityBlock('💰 Pay-to Company', f.paytoName, f.paytoAddress, [
-            ['Related to TC',       yesNo(f.paytoRelatedToTc)],
-            ['Related to Exporter', yesNo(f.paytoRelatedToExporter)],
-            ['Related to Factory',  yesNo(f.paytoRelatedToFactory)],
-            ['TC terms',            esc(f.paytoTerms || '—')],
-            ['HighLife terms',      esc(f.paytoTermsHl || '—')],
-          ])}
+          ${entityBlock('🏭 Factory', f.factoryName,
+            fmtAddress(f.factoryAddress, f.factoryCity, f.factoryState, f.factoryCountry, f.factoryZip),
+            false,
+            [
+              ['Related to TC', yesNo(f.factoryRelatedToTc)],
+              ['TC terms', esc(f.factoryTerms || '—')],
+              ['HighLife terms', esc(f.factoryTermsHl || '—')],
+            ])}
+          ${entityBlock('📦 Export Company', f.exporterName,
+            fmtAddress(f.exporterAddress, f.exporterCity, f.exporterState, f.exporterCountry, f.exporterZip),
+            !f.hasExporter,
+            [
+              ['Related to TC',      yesNo(f.exporterRelatedToTc)],
+              ['Related to Factory', yesNo(f.exporterRelatedToFactory)],
+              ['TC terms',           esc(f.exporterTerms || '—')],
+              ['HighLife terms',     esc(f.exporterTermsHl || '—')],
+            ])}
+          ${entityBlock('💰 Pay-to Company', f.paytoName,
+            fmtAddress(f.paytoAddress, f.paytoCity, f.paytoState, f.paytoCountry, f.paytoZip),
+            !f.hasPayto,
+            [
+              ['Related to TC',       yesNo(f.paytoRelatedToTc)],
+              ['Related to Exporter', yesNo(f.paytoRelatedToExporter)],
+              ['Related to Factory',  yesNo(f.paytoRelatedToFactory)],
+              ['TC terms',            esc(f.paytoTerms || '—')],
+              ['HighLife terms',      esc(f.paytoTermsHl || '—')],
+            ])}
         </div>
         ${f.notes ? `<div class="text-sm text-muted" style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border)">📝 ${esc(f.notes)}</div>` : ''}
       </div>`;
 
-    function entityBlock(title, name, address, rows) {
+    function entityBlock(title, name, addressHtml, greyedOut, rows) {
+      const dim = greyedOut ? 'opacity:0.45;filter:grayscale(0.4)' : '';
+      const placeholder = greyedOut
+        ? '<div class="font-bold">Not applicable</div><div class="text-sm text-muted">This profile has no separate entity for this role.</div>'
+        : `<div class="font-bold">${esc(name || '—')}</div><div class="text-sm text-muted" style="margin-bottom:8px;line-height:1.35">${addressHtml}</div>`;
       return `
-        <div style="padding:10px 12px;background:var(--bg-elevated);border-radius:var(--radius-sm);border:1px solid var(--border)">
+        <div style="padding:10px 12px;background:var(--bg-elevated);border-radius:var(--radius-sm);border:1px solid var(--border);${dim}">
           <div class="text-sm font-bold" style="color:var(--accent);margin-bottom:6px">${title}</div>
-          <div class="font-bold">${esc(name || '—')}</div>
-          <div class="text-sm text-muted" style="margin-bottom:8px">${esc(address || '—')}</div>
-          <div style="display:flex;flex-direction:column;gap:4px">
+          ${placeholder}
+          ${greyedOut ? '' : `<div style="display:flex;flex-direction:column;gap:4px">
             ${rows.map(([k, v]) => `<div style="display:flex;justify-content:space-between;gap:8px;font-size:0.8rem">
               <span class="text-muted">${k}</span><span>${v}</span>
             </div>`).join('')}
-          </div>
+          </div>`}
         </div>`;
     }
 
+    // Country + TC filters (both admin + read-only views use them).
+    const fCountry = localStorage.getItem('vcp_factory_f_country') || '';
+    const fTc      = localStorage.getItem('vcp_factory_f_tc')      || '';
+    const countryOpts = [...new Set(all.map(f => f.factoryCountry).filter(Boolean))].sort();
+    const tcOpts      = [...new Set(all.map(f => f.tcId))]
+      .map(id => ({ id, label: tcLabel(id) }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+
+    const filterBar = (includeTc) => `
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
+        <select class="form-select" style="width:170px" onchange="App._factoryFilterSet('country', this.value)" title="Filter by factory country">
+          <option value="">Country: All</option>
+          ${countryOpts.map(c => `<option value="${esc(c)}" ${fCountry === c ? 'selected' : ''}>${esc(c)}</option>`).join('')}
+        </select>
+        ${includeTc ? `<select class="form-select" style="width:220px" onchange="App._factoryFilterSet('tc', this.value)" title="Filter by trading company">
+          <option value="">Trading Company: All</option>
+          ${tcOpts.map(o => `<option value="${esc(o.id)}" ${fTc === o.id ? 'selected' : ''}>${esc(o.label)}</option>`).join('')}
+        </select>` : ''}
+        ${(fCountry || fTc) ? `<button class="btn btn-ghost btn-sm" onclick="App._factoryFilterClear()">✕ Clear filters</button>` : ''}
+      </div>`;
+
+    const applyFilters = list => list.filter(f =>
+      (!fCountry || f.factoryCountry === fCountry) &&
+      (!fTc      || f.tcId === fTc)
+    );
+
     if (!canReview) {
       // Read-only directory — active factories only.
-      const list = all.filter(f => f.status === 'active');
+      const list = applyFilters(all.filter(f => f.status === 'active'));
       return `
       <div class="page-header">
         <div><h1 class="page-title">🏭 Factories</h1>
           <p class="page-subtitle">Directory of approved trading-company factories</p></div>
       </div>
-      ${list.length ? list.map(profileCard).join('') : `<div class="empty-state" style="padding:40px"><div class="icon">🏭</div><h3>No active factories yet</h3></div>`}`;
+      ${filterBar(true)}
+      ${list.length ? list.map(profileCard).join('') : `<div class="empty-state" style="padding:40px"><div class="icon">🏭</div><h3>No factories match the current filter</h3></div>`}`;
     }
 
     // Admin/PC — tabbed queue.
@@ -4198,7 +4265,7 @@ const AdminViews = (() => {
         ${label}${count > 0 ? ` <span class="pending-badge" style="background:${color};margin-left:4px">${count}</span>` : ''}
       </button>`;
 
-    const shownList = all.filter(f => f.status === activeTab);
+    const shownList = applyFilters(all.filter(f => f.status === activeTab));
 
     return `
     <div class="page-header">
@@ -4206,6 +4273,7 @@ const AdminViews = (() => {
         <p class="page-subtitle">Review TC factory submissions, set HighLife terms of business, and manage active/inactive status.</p>
       </div>
     </div>
+    ${filterBar(true)}
     <div style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap">
       ${tabBtn('pending',  '⏳ Pending',  tabCounts.pending,  '#f59e0b')}
       ${tabBtn('active',   '✓ Active',   tabCounts.active,   '#22c55e')}

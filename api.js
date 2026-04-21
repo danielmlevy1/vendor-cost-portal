@@ -1039,6 +1039,8 @@ const API = (() => {
     },
     async deactivate(id) { return this.update(id, { status: 'inactive' }); },
     async reactivate(id) { return this.update(id, { status: 'active' }); },
+    async approveFirstSale(id) { return this.update(id, { firstSaleApproved: true  }); },
+    async revokeFirstSale(id)  { return this.update(id, { firstSaleApproved: false }); },
     async delete(id) {
       await DEL(`/api/factories/${id}`);
       cache.factories = (cache.factories || []).filter(f => f.id !== id);

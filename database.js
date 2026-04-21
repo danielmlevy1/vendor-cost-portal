@@ -362,6 +362,22 @@ function runMigrations() {
   addColumn('fabric_requests', 'pd_status', 'TEXT');
   addColumn('fabric_requests', 'pd_notes',  'TEXT');
   addColumn('fabric_requests', 'pd_qty',    'INTEGER');
+
+  // v7: factories — richer address breakdown, shipping responsibility,
+  // port, optional Exporter / Pay-to sections, first-sale approval.
+  // `<entity>_address` kept as the street/line-1 field; new columns
+  // add city/state/country/zip for each.
+  const ADDR_PARTS = ['city', 'state', 'country', 'zip'];
+  for (const prefix of ['factory_', 'exporter_', 'payto_']) {
+    for (const p of ADDR_PARTS) addColumn('factories', prefix + p, 'TEXT');
+  }
+  addColumn('factories', 'shipping_responsible',     'TEXT');     // 'tc' | 'factory' | 'exporter' | 'payto'
+  addColumn('factories', 'port_of_shipping',         'TEXT');
+  addColumn('factories', 'has_exporter',             'INTEGER NOT NULL DEFAULT 0');
+  addColumn('factories', 'has_payto',                'INTEGER NOT NULL DEFAULT 0');
+  addColumn('factories', 'first_sale_approved',      'INTEGER NOT NULL DEFAULT 0');
+  addColumn('factories', 'first_sale_approved_by',   'TEXT');
+  addColumn('factories', 'first_sale_approved_at',   'TEXT');
 }
 
 function importLegacyFabricRequests() {
