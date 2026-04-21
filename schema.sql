@@ -413,6 +413,66 @@ CREATE TABLE IF NOT EXISTS fabric_packages (
 CREATE INDEX IF NOT EXISTS idx_fabric_packages_tc_id  ON fabric_packages(tc_id);
 CREATE INDEX IF NOT EXISTS idx_fabric_packages_status ON fabric_packages(status);
 
+-- ── Factories (TC ↔ Factory ↔ Exporter ↔ Pay-to profiles) ────
+-- Each row is one factory "profile" submitted by a Trading Company.
+-- Captures name/address for the factory itself, the export company,
+-- and the pay-to company, plus the relationship flags between them
+-- and the business terms. Two term fields per relationship: the
+-- terms the TC does on, and the terms HighLife (our company) does
+-- on — Production sets HighLife terms during approval.
+--
+-- Lifecycle: pending → active | rejected. Active can toggle with
+-- inactive without re-review. Rejected rows can be edited by the
+-- TC and resubmitted (→ pending again). TC editing an active row
+-- flips it back to pending for re-review.
+
+CREATE TABLE IF NOT EXISTS factories (
+  id                          TEXT PRIMARY KEY,
+  tc_id                       TEXT NOT NULL,
+
+  -- Factory
+  factory_name                TEXT NOT NULL,
+  factory_address             TEXT,
+  factory_related_to_tc       INTEGER NOT NULL DEFAULT 0,
+  factory_terms               TEXT,                 -- TC's terms with factory
+  factory_terms_hl            TEXT,                 -- HighLife's terms with factory
+
+  -- Export Company
+  exporter_name               TEXT,
+  exporter_address            TEXT,
+  exporter_related_to_tc      INTEGER NOT NULL DEFAULT 0,
+  exporter_related_to_factory INTEGER NOT NULL DEFAULT 0,
+  exporter_terms              TEXT,                 -- TC's terms with exporter
+  exporter_terms_hl           TEXT,                 -- HighLife's terms with exporter
+
+  -- Pay-to Company
+  payto_name                  TEXT,
+  payto_address               TEXT,
+  payto_related_to_tc         INTEGER NOT NULL DEFAULT 0,
+  payto_related_to_exporter   INTEGER NOT NULL DEFAULT 0,
+  payto_related_to_factory    INTEGER NOT NULL DEFAULT 0,
+  payto_terms                 TEXT,
+  payto_terms_hl              TEXT,
+
+  -- Lifecycle
+  status                      TEXT NOT NULL DEFAULT 'pending',
+    -- pending | active | inactive | rejected
+  submitted_by                TEXT,
+  submitted_at                TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  reviewed_by                 TEXT,
+  reviewed_at                 TEXT,
+  rejection_reason            TEXT,
+  deactivated_by              TEXT,
+  deactivated_at              TEXT,
+  notes                       TEXT,
+
+  created_at                  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_at                  TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_factories_tc_id  ON factories(tc_id);
+CREATE INDEX IF NOT EXISTS idx_factories_status ON factories(status);
+
 -- ── Sales Requests ────────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS sales_requests (

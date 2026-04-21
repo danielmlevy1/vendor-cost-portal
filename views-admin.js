@@ -4076,6 +4076,147 @@ const AdminViews = (() => {
   // Opens a modal showing cost history for a given style
   // Called from app.js: App.showCostHistory(styleId, styleName)
 
+  // ── Factories page ───────────────────────────────────────────────
+  // One render, driven by the caller's role. Admin/PC get the full
+  // tabbed queue with review actions. Other internal roles see a
+  // read-only directory of active factories.
+  function renderFactories(role) {
+    const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+    const fmtDate = d => d ? new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
+    const canReview = role === 'admin' || role === 'pc';
+
+    const all = API.Factories.all();
+    const tcMap = {};
+    (API.cache.tradingCompanies || []).forEach(t => { tcMap[t.id] = t; });
+    const tcLabel = id => {
+      const t = tcMap[id];
+      return t ? `${t.code} — ${t.name}` : id;
+    };
+
+    const statusBadge = s => ({
+      pending:  '<span class="badge badge-pending">⏳ Pending</span>',
+      active:   '<span class="badge badge-placed">✓ Active</span>',
+      inactive: '<span class="badge" style="background:rgba(148,163,184,0.2);color:#94a3b8">⦸ Inactive</span>',
+      rejected: '<span class="badge badge-flagged">✕ Rejected</span>',
+    }[s] || `<span class="badge">${s}</span>`);
+
+    const yesNo = b => b
+      ? '<span class="tag" style="background:rgba(34,197,94,0.12);color:#22c55e">Related</span>'
+      : '<span class="tag" style="background:rgba(148,163,184,0.1);color:#94a3b8">Unrelated</span>';
+
+    const profileCard = (f) => `
+      <div class="card" style="padding:14px 16px;margin-bottom:12px;border-left:3px solid ${
+        f.status === 'active' ? '#22c55e'
+        : f.status === 'pending' ? '#f59e0b'
+        : f.status === 'rejected' ? '#ef4444' : '#94a3b8'}">
+
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap">
+          <div style="flex:1;min-width:240px">
+            <div class="font-bold" style="font-size:1.05rem;margin-bottom:4px">${esc(f.factoryName)}</div>
+            <div class="text-sm text-muted">${esc(tcLabel(f.tcId))} · submitted ${fmtDate(f.submittedAt)} by ${esc(f.submittedBy || '—')}</div>
+            <div style="margin-top:8px">${statusBadge(f.status)}</div>
+            ${f.rejectionReason ? `<div class="text-sm" style="color:#ef4444;margin-top:6px">✕ ${esc(f.rejectionReason)}</div>` : ''}
+          </div>
+          ${canReview ? `<div style="display:flex;gap:6px;flex-wrap:wrap">
+            ${f.status === 'pending' ? `
+              <button class="btn btn-success btn-sm" onclick="App.approveFactory('${esc(f.id)}')">✓ Approve</button>
+              <button class="btn btn-danger btn-sm"  onclick="App.rejectFactory('${esc(f.id)}')">✕ Reject</button>
+            ` : ''}
+            ${f.status === 'active' ? `
+              <button class="btn btn-secondary btn-sm" onclick="App.openFactoryTermsModal('${esc(f.id)}')" title="Set HighLife terms">📝 HL Terms</button>
+              <button class="btn btn-warning btn-sm"   onclick="App.deactivateFactory('${esc(f.id)}')">⦸ Deactivate</button>
+            ` : ''}
+            ${f.status === 'inactive' ? `
+              <button class="btn btn-success btn-sm" onclick="App.reactivateFactory('${esc(f.id)}')">✓ Reactivate</button>
+            ` : ''}
+            ${f.status === 'rejected' ? `
+              <button class="btn btn-secondary btn-sm" onclick="App.reviewFactoryAgain('${esc(f.id)}')">Re-open</button>
+            ` : ''}
+            <button class="btn btn-danger btn-sm" onclick="App.deleteFactory('${esc(f.id)}')" title="Delete">🗑</button>
+          </div>` : ''}
+        </div>
+
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;margin-top:14px">
+          ${entityBlock('🏭 Factory', f.factoryName, f.factoryAddress, [
+            ['Related to TC', yesNo(f.factoryRelatedToTc)],
+            ['TC terms', esc(f.factoryTerms || '—')],
+            ['HighLife terms', esc(f.factoryTermsHl || '—')],
+          ])}
+          ${entityBlock('📦 Export Company', f.exporterName, f.exporterAddress, [
+            ['Related to TC',      yesNo(f.exporterRelatedToTc)],
+            ['Related to Factory', yesNo(f.exporterRelatedToFactory)],
+            ['TC terms',           esc(f.exporterTerms || '—')],
+            ['HighLife terms',     esc(f.exporterTermsHl || '—')],
+          ])}
+          ${entityBlock('💰 Pay-to Company', f.paytoName, f.paytoAddress, [
+            ['Related to TC',       yesNo(f.paytoRelatedToTc)],
+            ['Related to Exporter', yesNo(f.paytoRelatedToExporter)],
+            ['Related to Factory',  yesNo(f.paytoRelatedToFactory)],
+            ['TC terms',            esc(f.paytoTerms || '—')],
+            ['HighLife terms',      esc(f.paytoTermsHl || '—')],
+          ])}
+        </div>
+        ${f.notes ? `<div class="text-sm text-muted" style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border)">📝 ${esc(f.notes)}</div>` : ''}
+      </div>`;
+
+    function entityBlock(title, name, address, rows) {
+      return `
+        <div style="padding:10px 12px;background:var(--bg-elevated);border-radius:var(--radius-sm);border:1px solid var(--border)">
+          <div class="text-sm font-bold" style="color:var(--accent);margin-bottom:6px">${title}</div>
+          <div class="font-bold">${esc(name || '—')}</div>
+          <div class="text-sm text-muted" style="margin-bottom:8px">${esc(address || '—')}</div>
+          <div style="display:flex;flex-direction:column;gap:4px">
+            ${rows.map(([k, v]) => `<div style="display:flex;justify-content:space-between;gap:8px;font-size:0.8rem">
+              <span class="text-muted">${k}</span><span>${v}</span>
+            </div>`).join('')}
+          </div>
+        </div>`;
+    }
+
+    if (!canReview) {
+      // Read-only directory — active factories only.
+      const list = all.filter(f => f.status === 'active');
+      return `
+      <div class="page-header">
+        <div><h1 class="page-title">🏭 Factories</h1>
+          <p class="page-subtitle">Directory of approved trading-company factories</p></div>
+      </div>
+      ${list.length ? list.map(profileCard).join('') : `<div class="empty-state" style="padding:40px"><div class="icon">🏭</div><h3>No active factories yet</h3></div>`}`;
+    }
+
+    // Admin/PC — tabbed queue.
+    const tabCounts = {
+      pending:  all.filter(f => f.status === 'pending').length,
+      active:   all.filter(f => f.status === 'active').length,
+      inactive: all.filter(f => f.status === 'inactive').length,
+      rejected: all.filter(f => f.status === 'rejected').length,
+    };
+    const activeTab = localStorage.getItem('vcp_factory_tab') || (tabCounts.pending ? 'pending' : 'active');
+    const tabBtn = (key, label, count, color) => `
+      <button class="btn ${activeTab === key ? 'btn-primary' : 'btn-secondary'} btn-sm"
+        onclick="App._factoryTab('${key}')">
+        ${label}${count > 0 ? ` <span class="pending-badge" style="background:${color};margin-left:4px">${count}</span>` : ''}
+      </button>`;
+
+    const shownList = all.filter(f => f.status === activeTab);
+
+    return `
+    <div class="page-header">
+      <div><h1 class="page-title">🏭 Factories</h1>
+        <p class="page-subtitle">Review TC factory submissions, set HighLife terms of business, and manage active/inactive status.</p>
+      </div>
+    </div>
+    <div style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap">
+      ${tabBtn('pending',  '⏳ Pending',  tabCounts.pending,  '#f59e0b')}
+      ${tabBtn('active',   '✓ Active',   tabCounts.active,   '#22c55e')}
+      ${tabBtn('inactive', '⦸ Inactive', tabCounts.inactive, '#94a3b8')}
+      ${tabBtn('rejected', '✕ Rejected', tabCounts.rejected, '#ef4444')}
+    </div>
+    ${shownList.length
+      ? shownList.map(profileCard).join('')
+      : `<div class="empty-state" style="padding:40px"><div class="icon">🏭</div><h3>Nothing in this bucket</h3></div>`}`;
+  }
+
   const api = {
     renderDashboard,
     renderBuySummary, renderCustomers,
@@ -4090,6 +4231,8 @@ const AdminViews = (() => {
     renderBottleneckTracker, designChangeHistoryPanel, renderAllDesignChanges,
     // Design/Sales costing view (v13)
     renderDesignCostingView, renderCostHistoryTimeline,
+    // Factory matrix
+    renderFactories,
   };
 
   Object.defineProperty(api, '_programsView', {

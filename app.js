@@ -68,6 +68,8 @@ App = (() => {
         await API.preload.pendingChanges();
       else if (route === 'design-changes')
         await API.preload.programs();
+      else if (route === 'factories' || route === 'my-factories')
+        await API.preload.factories();
       else if (route === '' || route === 'vendor-home' || route === 'vendor-program' || route === 'my-styles') {
         // Vendor routes — load all assigned programs with assignments,
         // styles, and this vendor's submissions so inline editing works.
@@ -247,6 +249,7 @@ App = (() => {
         ${(() => { const rc = API.RecostRequests.pendingProduction().length; return `<button class="nav-item ${state.route === 'recost-queue' ? 'active' : ''}" onclick="App.navigate('recost-queue')"><span class="icon">↩</span> Re-cost Queue${rc > 0 ? ` <span class="pending-badge">${rc}</span>` : ''}</button>`; })()}
         <div class="sidebar-section"><div class="sidebar-section-label">Settings</div></div>
         <button class="nav-item ${state.route === 'trading-companies' ? 'active' : ''}" onclick="App.navigate('trading-companies')"><span class="icon">🏣</span> Trading Companies</button>
+        ${(() => { const pf = (API.Factories?.byStatus('pending') || []).length; return `<button class="nav-item ${state.route === 'factories' ? 'active' : ''}" onclick="App.navigate('factories')"><span class="icon">🏭</span> Factories${pf > 0 ? ` <span class="pending-badge">${pf}</span>` : ''}</button>`; })()}
         <button class="nav-item ${state.route === 'customers' ? 'active' : ''}" onclick="App.navigate('customers')"><span class="icon">👥</span> Customers</button>
         <button class="nav-item ${state.route === 'internal' ? 'active' : ''}" onclick="App.navigate('internal')"><span class="icon">📊</span> Internal Programs</button>
         <button class="nav-item ${state.route === 'coo' ? 'active' : ''}" onclick="App.navigate('coo')"><span class="icon">🌍</span> COO Rates</button>
@@ -261,21 +264,25 @@ App = (() => {
         <button class="nav-item ${state.route === 'programs' || state.route === 'design-costing' || state.route === 'buy-summary' ? 'active' : ''}" onclick="App.navigate('programs')"><span class="icon">📋</span> Programs</button>
         <button class="nav-item ${state.route === 'design-handoff' ? 'active' : ''}" onclick="App.navigate('design-handoff')"><span class="icon">🎨</span> Design Handoffs</button>
         <button class="nav-item ${state.route === 'design-changes' ? 'active' : ''}" onclick="App.navigate('design-changes')"><span class="icon">📌</span> Design Changes</button>
+        <button class="nav-item ${state.route === 'factories' ? 'active' : ''}" onclick="App.navigate('factories')"><span class="icon">🏭</span> Factories</button>
         <button class="nav-item ${state.route === 'recost-queue' ? 'active' : ''}" onclick="App.navigate('recost-queue')"><span class="icon">↩</span> Re-cost Queue</button>
       ` : isTechDesign ? `
         <button class="nav-item ${state.route === 'dashboard' ? 'active' : ''}" onclick="App.navigate('dashboard')"><span class="icon">🏡</span> Dashboard</button>
         <button class="nav-item ${state.route === 'programs' || state.route === 'design-costing' ? 'active' : ''}" onclick="App.navigate('programs')"><span class="icon">📋</span> Programs</button>
         <button class="nav-item ${state.route === 'design-handoff' ? 'active' : ''}" onclick="App.navigate('design-handoff')"><span class="icon">🎨</span> Design Handoffs</button>
         <button class="nav-item ${state.route === 'design-changes' ? 'active' : ''}" onclick="App.navigate('design-changes')"><span class="icon">📌</span> Design Changes</button>
+        <button class="nav-item ${state.route === 'factories' ? 'active' : ''}" onclick="App.navigate('factories')"><span class="icon">🏭</span> Factories</button>
         <button class="nav-item ${state.route === 'recost-queue' ? 'active' : ''}" onclick="App.navigate('recost-queue')"><span class="icon">↩</span> Re-cost Queue</button>
       \` : isProdDev ? \`
         <button class="nav-item ${state.route === 'dashboard' ? 'active' : ''}" onclick="App.navigate('dashboard')"><span class="icon">🏡</span> Dashboard</button>
         <button class="nav-item ${state.route === 'fabric-standards' ? 'active' : ''}" onclick="App.navigate('fabric-standards')"><span class="icon">🧵</span> Standards Requests</button>
+        <button class="nav-item ${state.route === 'factories' ? 'active' : ''}" onclick="App.navigate('factories')"><span class="icon">🏭</span> Factories</button>
       \` : isPlanning ? \`
         <button class="nav-item ${state.route === 'dashboard' ? 'active' : ''}" onclick="App.navigate('dashboard')"><span class="icon">🏡</span> Dashboard</button>
         <button class="nav-item ${state.route === 'programs' || state.route === 'design-costing' || state.route === 'buy-summary' ? 'active' : ''}" onclick="App.navigate('programs')"><span class="icon">📋</span> Programs</button>
         <button class="nav-item ${state.route === 'sales-request' ? 'active' : ''}" onclick="App.navigate('sales-request')"><span class="icon">📝</span> Sales Requests</button>
         <button class="nav-item ${state.route === 'design-handoff' ? 'active' : ''}" onclick="App.navigate('design-handoff')"><span class="icon">🎨</span> Design Handoffs</button>
+        <button class="nav-item ${state.route === 'factories' ? 'active' : ''}" onclick="App.navigate('factories')"><span class="icon">🏭</span> Factories</button>
         ${(() => { const rc = API.RecostRequests.pendingSales().length; return `<button class="nav-item ${state.route === 'recost-queue' ? 'active' : ''}" onclick="App.navigate('recost-queue')"><span class="icon">↩</span> Re-cost Queue${rc > 0 ? ` <span class="pending-badge">${rc}</span>` : ''}</button>`; })()}
       ` : `
         <button class="nav-item ${
@@ -284,6 +291,7 @@ App = (() => {
         <button class="nav-item ${state.route === 'my-styles' ? 'active' : ''}" onclick="App.navigate('my-styles')"><span class="icon">📋</span> All Styles</button>
         <button class="nav-item ${state.route === 'fabric-standards' ? 'active' : ''}" onclick="App.navigate('fabric-standards')"><span class="icon">🧵</span> Fabric Standards</button>
         <div class="sidebar-section"><div class="sidebar-section-label">Account</div></div>
+        <button class="nav-item ${state.route === 'my-factories' ? 'active' : ''}" onclick="App.navigate('my-factories')"><span class="icon">🏭</span> My Factories</button>
         <button class="nav-item ${state.route === 'my-company' ? 'active' : ''}" onclick="App.navigate('my-company')"><span class="icon">🏣</span> My Company</button>
       `}
       <div style="padding:4px 8px 8px">
@@ -337,6 +345,7 @@ App = (() => {
       else if (route === 'build-from-handoff')   { mc.innerHTML = AdminViews.renderBuildFromHandoff(routeParam); App._initBuildFromHandoffKbd(); }
       else if (route === 'design-changes')       mc.innerHTML = AdminViews.renderAllDesignChanges();
       else if (route === 'recost-queue')          mc.innerHTML = AdminViews.renderRecostQueue();
+      else if (route === 'factories')             mc.innerHTML = AdminViews.renderFactories(user.role);
       // Settings — Admin gets full CRUD; PC gets propose-mode
       else if (route === 'trading-companies') mc.innerHTML = isAdmin ? AdminViews.renderTradingCompanies() : AdminViews.renderTradingCompaniesPC();
       else if (route === 'customers')         mc.innerHTML = isAdmin ? AdminViews.renderCustomers() : mc.innerHTML;
@@ -352,6 +361,7 @@ App = (() => {
       else if (route === 'design-handoff') mc.innerHTML = AdminViews.renderDesignHandoff();
       else if (route === 'design-changes') mc.innerHTML = AdminViews.renderAllDesignChanges();
       else if (route === 'recost-queue')   mc.innerHTML = AdminViews.renderRecostQueue();
+      else if (route === 'factories')      mc.innerHTML = AdminViews.renderFactories(user.role);
       else if (route === 'programs')       mc.innerHTML = AdminViews.renderPrograms();
       else if (route === 'design-costing') mc.innerHTML = AdminViews.renderDesignCostingView(routeParam, user.role);
       else if (route === 'buy-summary')    mc.innerHTML = AdminViews.renderBuySummary(routeParam, user.role);
@@ -368,6 +378,7 @@ App = (() => {
       else if (route === 'build-from-handoff') { mc.innerHTML = AdminViews.renderBuildFromHandoff(routeParam); App._initBuildFromHandoffKbd(); }
       else if (route === 'design-changes')     mc.innerHTML = AdminViews.renderAllDesignChanges();
       else if (route === 'recost-queue')        mc.innerHTML = AdminViews.renderRecostQueue();
+      else if (route === 'factories')           mc.innerHTML = AdminViews.renderFactories(user.role);
       else mc.innerHTML = AdminViews.renderDashboard(user.role, user);
     } else if (isTechDesign) {
       if (route === 'dashboard')           mc.innerHTML = AdminViews.renderDashboard(user.role, user);
@@ -377,6 +388,7 @@ App = (() => {
       else if (route === 'design-costing') mc.innerHTML = AdminViews.renderDesignCostingView(routeParam, user.role);
       else if (route === 'cost-summary')   mc.innerHTML = AdminViews.renderDesignCostingView(routeParam, user.role);
       else if (route === 'recost-queue')   mc.innerHTML = AdminViews.renderRecostQueue();
+      else if (route === 'factories')      mc.innerHTML = AdminViews.renderFactories(user.role);
       else mc.innerHTML = AdminViews.renderDashboard(user.role, user);
     } else if (isProdDev) {
       if (route === 'dashboard')           mc.innerHTML = AdminViews.renderDashboard(user.role, user);
@@ -385,17 +397,19 @@ App = (() => {
         AdminViews.renderFabricStandards(user.role, user.tcId).then(html => { mc.innerHTML = html; });
         return;
       }
+      else if (route === 'factories')      mc.innerHTML = AdminViews.renderFactories(user.role);
       else mc.innerHTML = AdminViews.renderDashboard(user.role, user);
     } else {
       // TC / Vendor routes — guard against admin route access
       const tcForbidden = ['programs','styles','cost-summary','compare','cross-program',
         'trading-companies','internal','coo','pending-changes','staff','buy-summary','customers',
-        'design-handoff','sales-request','design-changes'];
+        'design-handoff','sales-request','design-changes','factories'];
       if (tcForbidden.includes(route)) { navigate(''); return; }
 
       if      (route === 'vendor-program')   mc.innerHTML = VendorViews.renderProgramStyles(user.tcId, routeParam);
       else if (route === 'my-styles')        mc.innerHTML = VendorViews.renderMyStyles(user.tcId);
       else if (route === 'my-company')       mc.innerHTML = VendorViews.renderMyCompany(user.tcId);
+      else if (route === 'my-factories')     mc.innerHTML = VendorViews.renderMyFactories(user.tcId);
       else                                   mc.innerHTML = VendorViews.renderPrograms(user.tcId);
     }
     // Post-render setup
@@ -6653,4 +6667,238 @@ App.initColumnFilters = function(table) {
   }
 
   applyFilters();
+};
+
+// ── Factories (TC ↔ Factory ↔ Exporter ↔ Pay-to) ────────────────
+// Suggested business-term values surfaced as a datalist in every
+// term input. Not an enum — users can type their own.
+App._FACTORY_TERMS = ['FOB', 'Ex Factory', 'CIF', 'CIF Plus', 'FCA', 'First Sale', 'CPTPP', 'Duty Free'];
+
+// Admin/PC — switch between Pending / Active / Inactive / Rejected tabs
+App._factoryTab = function(key) {
+  if (!['pending','active','inactive','rejected'].includes(key)) return;
+  localStorage.setItem('vcp_factory_tab', key);
+  App.navigate('factories');
+};
+
+// Shared form modal — used by both vendor (submit / edit own) and
+// admin (edit any). Role is inferred from current user.
+App.openFactoryFormVendor = function(id) {
+  App._openFactoryForm(id, 'vendor');
+};
+App.openFactoryFormAdmin = function(id) {
+  App._openFactoryForm(id, 'admin');
+};
+
+App._openFactoryForm = function(id, mode) {
+  const f = id ? API.Factories.get(id) : null;
+  const isEdit = !!f;
+  const terms = App._FACTORY_TERMS;
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+
+  const termInput = (id, value, placeholder = 'e.g. FOB') => `
+    <input class="form-input" id="${id}" list="factory-terms-dl" value="${esc(value || '')}" placeholder="${placeholder}">`;
+
+  const check = (id, checked, label) => `
+    <label style="display:flex;align-items:center;gap:6px;cursor:pointer;padding:4px 0">
+      <input type="checkbox" id="${id}" ${checked ? 'checked' : ''}> ${label}
+    </label>`;
+
+  App.showModal(`
+    <div class="modal-header">
+      <h2>${isEdit ? 'Edit' : 'Submit'} factory</h2>
+      <button class="btn btn-ghost btn-icon" onclick="App.closeModal()">✕</button>
+    </div>
+    <p class="text-sm text-muted mb-3">Capture the factory and any separate export / pay-to companies along with the business terms between them. ${isEdit ? 'Saving will send this back to our team for review.' : 'Our team will review and approve before it goes live on the portal.'}</p>
+
+    <datalist id="factory-terms-dl">
+      ${terms.map(t => `<option value="${t}">`).join('')}
+    </datalist>
+
+    <!-- Factory -->
+    <div class="card" style="padding:12px 14px;margin-bottom:12px">
+      <div class="font-bold mb-2">🏭 Factory</div>
+      <div class="form-row form-row-2">
+        <div class="form-group"><label class="form-label">Factory name *</label>
+          <input class="form-input" id="fac-name" value="${esc(f?.factoryName || '')}" required></div>
+        <div class="form-group"><label class="form-label">Address</label>
+          <input class="form-input" id="fac-addr" value="${esc(f?.factoryAddress || '')}"></div>
+      </div>
+      <div class="form-row form-row-2">
+        <div class="form-group">${check('fac-related', f?.factoryRelatedToTc, 'Factory is related to our trading company')}</div>
+        <div class="form-group"><label class="form-label">Terms between TC & factory</label>${termInput('fac-terms', f?.factoryTerms)}</div>
+      </div>
+    </div>
+
+    <!-- Exporter -->
+    <div class="card" style="padding:12px 14px;margin-bottom:12px">
+      <div class="font-bold mb-2">📦 Export Company</div>
+      <div class="form-row form-row-2">
+        <div class="form-group"><label class="form-label">Exporter name</label>
+          <input class="form-input" id="exp-name" value="${esc(f?.exporterName || '')}"></div>
+        <div class="form-group"><label class="form-label">Address</label>
+          <input class="form-input" id="exp-addr" value="${esc(f?.exporterAddress || '')}"></div>
+      </div>
+      <div class="form-row form-row-2">
+        <div class="form-group">${check('exp-related-tc', f?.exporterRelatedToTc, 'Exporter is related to TC')}</div>
+        <div class="form-group">${check('exp-related-factory', f?.exporterRelatedToFactory, 'Exporter is related to Factory')}</div>
+      </div>
+      <div class="form-group"><label class="form-label">Terms between TC & exporter</label>${termInput('exp-terms', f?.exporterTerms)}</div>
+    </div>
+
+    <!-- Pay-to -->
+    <div class="card" style="padding:12px 14px;margin-bottom:12px">
+      <div class="font-bold mb-2">💰 Pay-to Company</div>
+      <div class="form-row form-row-2">
+        <div class="form-group"><label class="form-label">Pay-to name</label>
+          <input class="form-input" id="pay-name" value="${esc(f?.paytoName || '')}"></div>
+        <div class="form-group"><label class="form-label">Address</label>
+          <input class="form-input" id="pay-addr" value="${esc(f?.paytoAddress || '')}"></div>
+      </div>
+      <div class="form-row form-row-3">
+        <div class="form-group">${check('pay-related-tc', f?.paytoRelatedToTc, 'Related to TC')}</div>
+        <div class="form-group">${check('pay-related-exporter', f?.paytoRelatedToExporter, 'Related to Exporter')}</div>
+        <div class="form-group">${check('pay-related-factory', f?.paytoRelatedToFactory, 'Related to Factory')}</div>
+      </div>
+      <div class="form-group"><label class="form-label">Pay-to terms</label>${termInput('pay-terms', f?.paytoTerms)}</div>
+    </div>
+
+    <div class="form-group"><label class="form-label">Notes (optional)</label>
+      <textarea class="form-input" id="fac-notes" rows="2">${esc(f?.notes || '')}</textarea></div>
+
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="App.closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="App._saveFactory('${id || ''}', '${mode}')">${isEdit ? 'Save & resubmit' : 'Submit for review'}</button>
+    </div>`, 'modal-lg');
+};
+
+App._saveFactory = async function(id, mode) {
+  const v = sel => (document.getElementById(sel)?.value || '').trim();
+  const c = sel => !!document.getElementById(sel)?.checked;
+
+  const name = v('fac-name');
+  if (!name) { alert('Factory name is required.'); return; }
+
+  const payload = {
+    factoryName:                name,
+    factoryAddress:             v('fac-addr'),
+    factoryRelatedToTc:         c('fac-related'),
+    factoryTerms:               v('fac-terms'),
+    exporterName:               v('exp-name'),
+    exporterAddress:            v('exp-addr'),
+    exporterRelatedToTc:        c('exp-related-tc'),
+    exporterRelatedToFactory:   c('exp-related-factory'),
+    exporterTerms:              v('exp-terms'),
+    paytoName:                  v('pay-name'),
+    paytoAddress:               v('pay-addr'),
+    paytoRelatedToTc:           c('pay-related-tc'),
+    paytoRelatedToExporter:     c('pay-related-exporter'),
+    paytoRelatedToFactory:      c('pay-related-factory'),
+    paytoTerms:                 v('pay-terms'),
+    notes:                      v('fac-notes'),
+  };
+
+  try {
+    if (id) await API.Factories.update(id, payload);
+    else    await API.Factories.create(payload);
+  } catch (err) {
+    alert('Could not save: ' + (err.message || 'unknown'));
+    return;
+  }
+  App.closeModal();
+  App.navigate(mode === 'vendor' ? 'my-factories' : 'factories');
+};
+
+// Admin/PC actions
+App.approveFactory = async function(id) {
+  if (!confirm('Approve this factory? It will become active immediately.')) return;
+  try { await API.Factories.approve(id); }
+  catch (err) { alert('Could not approve: ' + (err.message || 'unknown')); return; }
+  App.navigate('factories');
+};
+
+App.rejectFactory = async function(id) {
+  const reason = prompt('Reason for rejection (shown to the TC):', '');
+  if (reason === null) return;
+  try { await API.Factories.reject(id, reason.trim() || null); }
+  catch (err) { alert('Could not reject: ' + (err.message || 'unknown')); return; }
+  App.navigate('factories');
+};
+
+App.deactivateFactory = async function(id) {
+  if (!confirm('Deactivate this factory?')) return;
+  try { await API.Factories.deactivate(id); }
+  catch (err) { alert('Could not deactivate: ' + (err.message || 'unknown')); return; }
+  App.navigate('factories');
+};
+
+App.reactivateFactory = async function(id) {
+  try { await API.Factories.reactivate(id); }
+  catch (err) { alert('Could not reactivate: ' + (err.message || 'unknown')); return; }
+  App.navigate('factories');
+};
+
+App.reviewFactoryAgain = async function(id) {
+  // Move a rejected factory back to pending so it's reviewable again.
+  try { await API.Factories.update(id, { status: 'pending' }); }
+  catch (err) { alert('Could not re-open: ' + (err.message || 'unknown')); return; }
+  App.navigate('factories');
+};
+
+App.deleteFactory = async function(id) {
+  if (!confirm('Delete this factory profile permanently? This cannot be undone.')) return;
+  try { await API.Factories.delete(id); }
+  catch (err) { alert('Could not delete: ' + (err.message || 'unknown')); return; }
+  App.navigate('factories');
+};
+
+// HighLife terms modal — Production sets the terms HighLife does
+// on (distinct from what the TC filled in).
+App.openFactoryTermsModal = function(id) {
+  const f = API.Factories.get(id);
+  if (!f) return;
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+  const termInput = (inputId, value) => `
+    <input class="form-input" id="${inputId}" list="factory-terms-dl" value="${esc(value || '')}" placeholder="e.g. FOB">`;
+  App.showModal(`
+    <div class="modal-header">
+      <h2>📝 HighLife terms — ${esc(f.factoryName)}</h2>
+      <button class="btn btn-ghost btn-icon" onclick="App.closeModal()">✕</button>
+    </div>
+    <p class="text-sm text-muted mb-3">Set the terms of business HighLife does with each party. These override the TC-proposed terms for our records.</p>
+
+    <datalist id="factory-terms-dl">
+      ${App._FACTORY_TERMS.map(t => `<option value="${t}">`).join('')}
+    </datalist>
+
+    <div class="form-group">
+      <label class="form-label">HighLife ↔ Factory <span class="text-muted text-sm">(TC said: ${esc(f.factoryTerms || '—')})</span></label>
+      ${termInput('hl-fac-terms', f.factoryTermsHl)}
+    </div>
+    <div class="form-group">
+      <label class="form-label">HighLife ↔ Exporter <span class="text-muted text-sm">(TC said: ${esc(f.exporterTerms || '—')})</span></label>
+      ${termInput('hl-exp-terms', f.exporterTermsHl)}
+    </div>
+    <div class="form-group">
+      <label class="form-label">HighLife ↔ Pay-to <span class="text-muted text-sm">(TC said: ${esc(f.paytoTerms || '—')})</span></label>
+      ${termInput('hl-pay-terms', f.paytoTermsHl)}
+    </div>
+
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="App.closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="App._saveFactoryHlTerms('${id}')">Save HL terms</button>
+    </div>`);
+};
+
+App._saveFactoryHlTerms = async function(id) {
+  const v = sel => (document.getElementById(sel)?.value || '').trim();
+  try {
+    await API.Factories.update(id, {
+      factoryTermsHl:  v('hl-fac-terms'),
+      exporterTermsHl: v('hl-exp-terms'),
+      paytoTermsHl:    v('hl-pay-terms'),
+    });
+  } catch (err) { alert('Could not save: ' + (err.message || 'unknown')); return; }
+  App.closeModal();
+  App.navigate('factories');
 };

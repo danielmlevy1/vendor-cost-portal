@@ -94,6 +94,7 @@ const API = (() => {
     fabricRequests:      [],
     fabricPackages:      [],
     availableFabrics:    [],   // vendor only: [{programId, fabrics[]}]
+    factories:           [],
     recostByProgram:     {},   // programId -> [rcrs]
     recostPendingSales:      [],
     recostPendingProduction: [],
@@ -1006,6 +1007,44 @@ const API = (() => {
     },
   };
 
+  // ── Factories ───────────────────────────────────────────────
+  // TC-submitted factory profiles. Each row captures factory +
+  // exporter + pay-to details plus relationship flags and business
+  // terms (TC's vs HighLife's). See routes-supporting.js for role
+  // gating — the server filters the list based on the caller's role.
+
+  const Factories = {
+    all()          { return cache.factories || []; },
+    byTc(tcId)     { return (cache.factories || []).filter(f => f.tcId === tcId); },
+    byStatus(s)    { return (cache.factories || []).filter(f => f.status === s); },
+    get(id)        { return (cache.factories || []).find(f => f.id === id) || null; },
+    async fetchAll() {
+      cache.factories = await GET('/api/factories');
+      return cache.factories;
+    },
+    async create(data) {
+      const f = await POST('/api/factories', data);
+      cache.factories = (cache.factories || []).concat(f);
+      return f;
+    },
+    async update(id, patch) {
+      const f = await PATCH(`/api/factories/${id}`, patch);
+      const i = (cache.factories || []).findIndex(x => x.id === id);
+      if (i >= 0) cache.factories[i] = f; else (cache.factories ||= []).push(f);
+      return f;
+    },
+    async approve(id)   { return this.update(id, { status: 'active' }); },
+    async reject(id, rejectionReason) {
+      return this.update(id, { status: 'rejected', rejectionReason });
+    },
+    async deactivate(id) { return this.update(id, { status: 'inactive' }); },
+    async reactivate(id) { return this.update(id, { status: 'active' }); },
+    async delete(id) {
+      await DEL(`/api/factories/${id}`);
+      cache.factories = (cache.factories || []).filter(f => f.id !== id);
+    },
+  };
+
   // Vendor-only: available fabrics across all their assigned programs,
   // sourced from design handoffs. Each entry is annotated with the
   // vendor's existing request (if any) so the UI can disable already-
@@ -1166,6 +1205,13 @@ const API = (() => {
     async salesRequest() {
       await Promise.all([SalesRequests.fetchAll(), DesignHandoffs.fetchAll(), InternalPrograms.all(), BrandTierMargins.all(), TradingCompanies.all(), preload.nav()]);
     },
+    async factories() {
+      await Promise.all([
+        Factories.fetchAll(),
+        TradingCompanies.all(),
+        preload.nav(),
+      ]);
+    },
     async fabricStandards() {
       // Both sides (vendor + PD/admin) need the requests+packages list.
       // Vendors additionally need the available-fabrics catalog so they
@@ -1223,7 +1269,7 @@ const API = (() => {
     Submissions, Placements, CustomerAssignments, CustomerBuys,
     StyleLinks, DesignChanges, RecostRequests, CellFlags, Revisions,
     PendingChanges, DesignHandoffs, FabricLibrary, FabricRequests, FabricPackages, AvailableFabrics,
-    SalesRequests, CostHistory,
+    Factories, SalesRequests, CostHistory,
     calcLDP, computeTargetLDP, parseCSV, csvRowToStyle,
     cache, preload,
   };

@@ -1409,4 +1409,240 @@ router.post('/styles/:id/tech-pack-history', requireAuth, (req, res) => {
   res.status(201).json(tphFromRow(db.prepare('SELECT * FROM tech_pack_history WHERE id = ?').get(id)));
 });
 
+// =============================================================
+// FACTORIES (TC ↔ Factory ↔ Exporter ↔ Pay-to)
+// =============================================================
+// Roles:
+//   vendor            — see/edit/submit their own; can resubmit a
+//                       rejected row; editing an active row flips
+//                       it back to 'pending'.
+//   admin, pc         — full review (approve/reject, activate/
+//                       deactivate), set HighLife terms.
+//   planning/design/
+//   tech_design/
+//   prod_dev          — read-only directory of active factories.
+
+function factoryFromRow(r) {
+  const b = v => v === 1 || v === '1' || v === true;
+  return {
+    id:                        r.id,
+    tcId:                      r.tc_id,
+    factoryName:               r.factory_name,
+    factoryAddress:            r.factory_address,
+    factoryRelatedToTc:        b(r.factory_related_to_tc),
+    factoryTerms:              r.factory_terms,
+    factoryTermsHl:            r.factory_terms_hl,
+    exporterName:              r.exporter_name,
+    exporterAddress:           r.exporter_address,
+    exporterRelatedToTc:       b(r.exporter_related_to_tc),
+    exporterRelatedToFactory:  b(r.exporter_related_to_factory),
+    exporterTerms:             r.exporter_terms,
+    exporterTermsHl:           r.exporter_terms_hl,
+    paytoName:                 r.payto_name,
+    paytoAddress:              r.payto_address,
+    paytoRelatedToTc:          b(r.payto_related_to_tc),
+    paytoRelatedToExporter:    b(r.payto_related_to_exporter),
+    paytoRelatedToFactory:     b(r.payto_related_to_factory),
+    paytoTerms:                r.payto_terms,
+    paytoTermsHl:              r.payto_terms_hl,
+    status:                    r.status,
+    submittedBy:               r.submitted_by,
+    submittedAt:               r.submitted_at,
+    reviewedBy:                r.reviewed_by,
+    reviewedAt:                r.reviewed_at,
+    rejectionReason:           r.rejection_reason,
+    deactivatedBy:             r.deactivated_by,
+    deactivatedAt:             r.deactivated_at,
+    notes:                     r.notes,
+    createdAt:                 r.created_at,
+    updatedAt:                 r.updated_at,
+  };
+}
+
+// Fields that a vendor is allowed to submit/edit.
+const FACTORY_VENDOR_FIELDS = {
+  factoryName:                'factory_name',
+  factoryAddress:             'factory_address',
+  factoryRelatedToTc:         'factory_related_to_tc',
+  factoryTerms:               'factory_terms',
+  exporterName:               'exporter_name',
+  exporterAddress:            'exporter_address',
+  exporterRelatedToTc:        'exporter_related_to_tc',
+  exporterRelatedToFactory:   'exporter_related_to_factory',
+  exporterTerms:              'exporter_terms',
+  paytoName:                  'payto_name',
+  paytoAddress:               'payto_address',
+  paytoRelatedToTc:            'payto_related_to_tc',
+  paytoRelatedToExporter:     'payto_related_to_exporter',
+  paytoRelatedToFactory:       'payto_related_to_factory',
+  paytoTerms:                 'payto_terms',
+  notes:                      'notes',
+};
+
+// Admin/PC can also set the HighLife term fields + reviewer metadata.
+const FACTORY_ADMIN_FIELDS = {
+  ...FACTORY_VENDOR_FIELDS,
+  factoryTermsHl:  'factory_terms_hl',
+  exporterTermsHl: 'exporter_terms_hl',
+  paytoTermsHl:    'payto_terms_hl',
+};
+
+const FACTORY_INTERNAL_ROLES_READ = ['admin', 'pc', 'planning', 'design', 'tech_design', 'prod_dev'];
+const FACTORY_ADMIN_ROLES         = ['admin', 'pc'];
+
+// GET /api/factories
+//   Vendor: their own (all statuses).
+//   admin/pc: everything.
+//   Other internal roles: active only (read-only directory).
+router.get('/factories', requireAuth, (req, res) => {
+  const role = req.user.role;
+  let rows;
+  if (role === 'vendor') {
+    rows = db.prepare('SELECT * FROM factories WHERE tc_id = ? ORDER BY created_at DESC').all(req.user.tcId);
+  } else if (FACTORY_ADMIN_ROLES.includes(role)) {
+    rows = db.prepare('SELECT * FROM factories ORDER BY created_at DESC').all();
+  } else if (FACTORY_INTERNAL_ROLES_READ.includes(role)) {
+    rows = db.prepare(`SELECT * FROM factories WHERE status = 'active' ORDER BY created_at DESC`).all();
+  } else {
+    return res.status(403).json({ error: 'Insufficient permissions' });
+  }
+  res.json(rows.map(factoryFromRow));
+});
+
+// GET /api/factories/:id
+router.get('/factories/:id', requireAuth, (req, res) => {
+  const row = db.prepare('SELECT * FROM factories WHERE id = ?').get(req.params.id);
+  if (!row) return res.status(404).json({ error: 'Not found' });
+  const role = req.user.role;
+  if (role === 'vendor' && row.tc_id !== req.user.tcId) return res.status(403).json({ error: 'Forbidden' });
+  if (!FACTORY_INTERNAL_ROLES_READ.includes(role) && role !== 'vendor') {
+    return res.status(403).json({ error: 'Insufficient permissions' });
+  }
+  if (role !== 'vendor' && !FACTORY_ADMIN_ROLES.includes(role) && row.status !== 'active') {
+    return res.status(403).json({ error: 'Not visible in directory' });
+  }
+  res.json(factoryFromRow(row));
+});
+
+// POST /api/factories
+// Vendor submits a new factory profile (status = pending).
+// Admin/PC can also create on behalf of a TC.
+router.post('/factories', requireAuth, (req, res) => {
+  const role = req.user.role;
+  const isVendor = role === 'vendor';
+  if (!isVendor && !FACTORY_ADMIN_ROLES.includes(role)) {
+    return res.status(403).json({ error: 'Insufficient permissions' });
+  }
+  const b = req.body || {};
+  if (!b.factoryName || !b.factoryName.trim()) return res.status(400).json({ error: 'factoryName required' });
+
+  const tcId = isVendor ? req.user.tcId : (b.tcId || null);
+  if (!tcId) return res.status(400).json({ error: 'tcId required' });
+
+  const id = uid();
+  const nowIso = now();
+  const fields = {};
+  // Copy allowed fields, default booleans to 0.
+  const FIELDS = isVendor ? FACTORY_VENDOR_FIELDS : FACTORY_ADMIN_FIELDS;
+  for (const [camel, col] of Object.entries(FIELDS)) {
+    const v = b[camel];
+    if (v === undefined) continue;
+    if (col.endsWith('_related_to_tc') || col.endsWith('_related_to_factory') || col.endsWith('_related_to_exporter')) {
+      fields[col] = v ? 1 : 0;
+    } else {
+      fields[col] = v === '' ? null : v;
+    }
+  }
+
+  const cols = ['id','tc_id','status','submitted_by','submitted_at','created_at', ...Object.keys(fields)];
+  const vals = [id, tcId, 'pending', req.user.name || req.user.email || req.user.id, nowIso, nowIso, ...Object.values(fields)];
+  const sql = `INSERT INTO factories (${cols.join(',')}) VALUES (${cols.map(() => '?').join(',')})`;
+  db.prepare(sql).run(...vals);
+
+  res.status(201).json(factoryFromRow(db.prepare('SELECT * FROM factories WHERE id = ?').get(id)));
+});
+
+// PATCH /api/factories/:id
+// Role-specific behavior:
+//   vendor: edit fields on their own row. If the row is 'rejected'
+//           or 'active' (edit flips back to 'pending') or already
+//           'pending' (just an edit), status is re-set to 'pending'
+//           and reviewer metadata is cleared.
+//   admin/pc: edit any field; may set status (active/inactive/
+//             rejected) which stamps reviewed_* / deactivated_*
+//             metadata. Can also set HighLife term fields.
+router.patch('/factories/:id', requireAuth, (req, res) => {
+  const row = db.prepare('SELECT * FROM factories WHERE id = ?').get(req.params.id);
+  if (!row) return res.status(404).json({ error: 'Not found' });
+  const role = req.user.role;
+  const isVendor = role === 'vendor';
+  if (isVendor && row.tc_id !== req.user.tcId) return res.status(403).json({ error: 'Forbidden' });
+  if (!isVendor && !FACTORY_ADMIN_ROLES.includes(role)) {
+    return res.status(403).json({ error: 'Insufficient permissions' });
+  }
+
+  const b = req.body || {};
+  const FIELDS = isVendor ? FACTORY_VENDOR_FIELDS : FACTORY_ADMIN_FIELDS;
+
+  const sets = [];
+  const vals = [];
+  for (const [camel, col] of Object.entries(FIELDS)) {
+    if (b[camel] === undefined) continue;
+    const v = b[camel];
+    if (col.endsWith('_related_to_tc') || col.endsWith('_related_to_factory') || col.endsWith('_related_to_exporter')) {
+      sets.push(`${col} = ?`); vals.push(v ? 1 : 0);
+    } else {
+      sets.push(`${col} = ?`); vals.push(v === '' ? null : v);
+    }
+  }
+
+  const nowIso = now();
+  const userLabel = req.user.name || req.user.email || req.user.id;
+
+  if (isVendor) {
+    // Any vendor edit pushes the row back to pending for re-review.
+    sets.push('status = ?');           vals.push('pending');
+    sets.push('submitted_by = ?');     vals.push(userLabel);
+    sets.push('submitted_at = ?');     vals.push(nowIso);
+    sets.push('reviewed_by = ?');      vals.push(null);
+    sets.push('reviewed_at = ?');      vals.push(null);
+    sets.push('rejection_reason = ?'); vals.push(null);
+  } else if (b.status !== undefined) {
+    const valid = ['pending', 'active', 'inactive', 'rejected'];
+    if (!valid.includes(b.status)) return res.status(400).json({ error: 'Invalid status' });
+    sets.push('status = ?'); vals.push(b.status);
+    if (b.status === 'active' || b.status === 'rejected') {
+      sets.push('reviewed_by = ?'); vals.push(userLabel);
+      sets.push('reviewed_at = ?'); vals.push(nowIso);
+      if (b.status === 'rejected' && b.rejectionReason !== undefined) {
+        sets.push('rejection_reason = ?'); vals.push(b.rejectionReason || null);
+      } else if (b.status === 'active') {
+        sets.push('rejection_reason = ?'); vals.push(null);
+      }
+    } else if (b.status === 'inactive') {
+      sets.push('deactivated_by = ?'); vals.push(userLabel);
+      sets.push('deactivated_at = ?'); vals.push(nowIso);
+    } else if (b.status === 'active' && row.status === 'inactive') {
+      // Reactivation clears deactivation metadata.
+      sets.push('deactivated_by = ?'); vals.push(null);
+      sets.push('deactivated_at = ?'); vals.push(null);
+    }
+  }
+
+  sets.push('updated_at = ?'); vals.push(nowIso);
+
+  vals.push(req.params.id);
+  db.prepare(`UPDATE factories SET ${sets.join(', ')} WHERE id = ?`).run(...vals);
+
+  res.json(factoryFromRow(db.prepare('SELECT * FROM factories WHERE id = ?').get(req.params.id)));
+});
+
+// DELETE /api/factories/:id — admin only
+router.delete('/factories/:id', requireAuth, requireRole('admin'), (req, res) => {
+  const row = db.prepare('SELECT * FROM factories WHERE id = ?').get(req.params.id);
+  if (!row) return res.status(404).json({ error: 'Not found' });
+  db.prepare('DELETE FROM factories WHERE id = ?').run(req.params.id);
+  res.json({ ok: true });
+});
+
 module.exports = router;

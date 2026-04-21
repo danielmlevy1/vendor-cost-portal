@@ -486,7 +486,66 @@ const VendorViews = (() => {
     </div>`;
   }
 
-  return { renderPrograms, renderProgramStyles, renderMyStyles, renderMyCompany, quoteForm, bulkUploadForm };
+  // ── My Factories (vendor-submitted factory profiles) ──────────
+  function renderMyFactories(tcId) {
+    const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+    const fmtDate = d => d ? new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
+    const mine = API.Factories.byTc(tcId);
+
+    const statusBadge = s => ({
+      pending:  '<span class="badge badge-pending">⏳ Pending review</span>',
+      active:   '<span class="badge badge-placed">✓ Active</span>',
+      inactive: '<span class="badge" style="background:rgba(148,163,184,0.2);color:#94a3b8">⦸ Inactive</span>',
+      rejected: '<span class="badge badge-flagged">✕ Rejected</span>',
+    }[s] || `<span class="badge">${s}</span>`);
+
+    const yesNo = b => b ? '<span class="tag" style="font-size:0.7rem">Related</span>' : '<span class="text-muted text-sm">—</span>';
+
+    const rows = mine.length ? mine.map(f => `
+      <div class="card" style="padding:14px 16px;margin-bottom:12px;border-left:3px solid ${
+        f.status === 'active' ? '#22c55e' : f.status === 'rejected' ? '#ef4444' : '#f59e0b'}">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap">
+          <div style="flex:1;min-width:240px">
+            <div class="font-bold" style="font-size:1.05rem;margin-bottom:4px">${esc(f.factoryName)}</div>
+            <div class="text-sm text-muted">${esc(f.factoryAddress || 'No address')} · submitted ${fmtDate(f.submittedAt)}</div>
+            <div style="margin-top:8px">${statusBadge(f.status)}</div>
+            ${f.rejectionReason ? `<div class="text-sm" style="color:#ef4444;margin-top:6px"><strong>Rejected:</strong> ${esc(f.rejectionReason)}</div>` : ''}
+          </div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            <button class="btn btn-secondary btn-sm" onclick="App.openFactoryFormVendor('${esc(f.id)}')">${f.status === 'rejected' ? 'Edit & resubmit' : 'Edit'}</button>
+          </div>
+        </div>
+        <div class="text-sm text-muted" style="margin-top:10px;display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:8px">
+          <div>🏭 <strong>Factory</strong> ${yesNo(f.factoryRelatedToTc)} · ${esc(f.factoryTerms || 'No terms')}</div>
+          <div>📦 <strong>Exporter</strong> ${esc(f.exporterName || '—')} · ${esc(f.exporterTerms || 'No terms')}</div>
+          <div>💰 <strong>Pay-to</strong> ${esc(f.paytoName || '—')} · ${esc(f.paytoTerms || 'No terms')}</div>
+        </div>
+      </div>`).join('') : `<div class="empty-state" style="padding:40px"><div class="icon">🏭</div><h3>No factories submitted yet</h3><p class="text-muted">Click "+ Submit new factory" to start.</p></div>`;
+
+    const kpis = {
+      pending:  mine.filter(f => f.status === 'pending').length,
+      active:   mine.filter(f => f.status === 'active').length,
+      rejected: mine.filter(f => f.status === 'rejected').length,
+    };
+
+    return `
+    <div class="page-header">
+      <div><h1 class="page-title">🏭 My Factories</h1>
+        <p class="page-subtitle">Submit new factory relationships for approval. Our team reviews each submission before it goes live.</p>
+      </div>
+      <button class="btn btn-primary" onclick="App.openFactoryFormVendor()">＋ Submit new factory</button>
+    </div>
+
+    <div class="fabric-kpi-row">
+      <div class="fabric-kpi fabric-kpi-pending"><span class="fabric-kpi-num">${kpis.pending}</span><span class="fabric-kpi-label">Pending review</span></div>
+      <div class="fabric-kpi fabric-kpi-received"><span class="fabric-kpi-num">${kpis.active}</span><span class="fabric-kpi-label">Active</span></div>
+      <div class="fabric-kpi fabric-kpi-sent"><span class="fabric-kpi-num">${kpis.rejected}</span><span class="fabric-kpi-label">Rejected</span></div>
+    </div>
+
+    ${rows}`;
+  }
+
+  return { renderPrograms, renderProgramStyles, renderMyStyles, renderMyCompany, renderMyFactories, quoteForm, bulkUploadForm };
 
 })();
 
