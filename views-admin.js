@@ -2309,12 +2309,13 @@ const AdminViews = (() => {
     </div>
     <div class="alert alert-info mb-3">Freight values = total container cost (÷ Proj Qty to get per-unit freight in LDP)</div>
     <div class="card"><div class="table-wrap"><table>
-      <thead><tr><th>Code</th><th>Country</th><th>Addl Duty %</th><th>USA NY</th><th>USA LA</th><th>CA Toronto</th><th>CA Vancouver</th><th>Actions</th></tr></thead>
+      <thead><tr><th>Code</th><th>Country</th><th>Addl Duty %</th><th>USA NY</th><th>USA LA</th><th>CA Toronto</th><th>CA Vancouver</th><th title="Sea transit days used by Delivery Plan to project in-whse from Production Cargo Ready (Sales)">Sea Lead (days)</th><th>Actions</th></tr></thead>
       <tbody>${rates.map(r => `<tr>
         <td class="primary font-bold">${r.code}</td><td>${r.country}</td>
         <td>${(r.addlDuty * 100).toFixed(1)}%</td>
         <td>$${Number(r.usaNY).toLocaleString()}</td><td>$${Number(r.usaLA).toLocaleString()}</td>
         <td>$${Number(r.caToronto).toLocaleString()}</td><td>$${Number(r.caVancouver).toLocaleString()}</td>
+        <td class="text-center">${r.seaLeadDays != null ? r.seaLeadDays + 'd' : '—'}</td>
         <td><div style="display:flex;gap:6px">
           <button class="btn btn-secondary btn-sm" onclick="App.openCooModal('${r.id}')">✏</button>
           <button class="btn btn-danger btn-sm" onclick="App.deleteCoo('${r.id}')">🗑</button>

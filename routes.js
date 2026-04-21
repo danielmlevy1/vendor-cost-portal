@@ -144,12 +144,13 @@ function tcFromRow(r, coos = []) {
 
 function cooRateFromRow(r) {
   return {
-    id:          r.id,
-    code:        r.code,
-    country:     r.country,
-    addlDuty:    r.addl_duty,
-    usaMult:     r.usa_mult,
-    canadaMult:  r.canada_mult,
+    id:           r.id,
+    code:         r.code,
+    country:      r.country,
+    addlDuty:     r.addl_duty,
+    usaMult:      r.usa_mult,
+    canadaMult:   r.canada_mult,
+    seaLeadDays:  r.sea_lead_days,
   };
 }
 
@@ -472,15 +473,16 @@ router.get('/users', requireAuth, requireRole('admin', 'pc'), (req, res) => {
 router.post('/coo-rates', requireAuth, requireRole('admin'), (req, res) => {
   const b = req.body;
   if (!b.code || !b.country) return res.status(400).json({ error: 'code and country required' });
+  const lead = (b.seaLeadDays == null || b.seaLeadDays === '') ? 30 : Number(b.seaLeadDays);
   const existing = db.prepare('SELECT id FROM coo_rates WHERE code = ?').get(b.code);
   if (existing) {
-    db.prepare('UPDATE coo_rates SET country=?, addl_duty=?, usa_mult=?, canada_mult=? WHERE id=?')
-      .run(b.country, b.addlDuty ?? 0, b.usaMult ?? 0, b.canadaMult ?? 0, existing.id);
+    db.prepare('UPDATE coo_rates SET country=?, addl_duty=?, usa_mult=?, canada_mult=?, sea_lead_days=? WHERE id=?')
+      .run(b.country, b.addlDuty ?? 0, b.usaMult ?? 0, b.canadaMult ?? 0, lead, existing.id);
     res.json(cooRateFromRow(db.prepare('SELECT * FROM coo_rates WHERE id=?').get(existing.id)));
   } else {
     const id = uid();
-    db.prepare('INSERT INTO coo_rates (id,code,country,addl_duty,usa_mult,canada_mult) VALUES (?,?,?,?,?,?)')
-      .run(id, b.code, b.country, b.addlDuty ?? 0, b.usaMult ?? 0, b.canadaMult ?? 0);
+    db.prepare('INSERT INTO coo_rates (id,code,country,addl_duty,usa_mult,canada_mult,sea_lead_days) VALUES (?,?,?,?,?,?,?)')
+      .run(id, b.code, b.country, b.addlDuty ?? 0, b.usaMult ?? 0, b.canadaMult ?? 0, lead);
     res.status(201).json(cooRateFromRow(db.prepare('SELECT * FROM coo_rates WHERE id=?').get(id)));
   }
 });

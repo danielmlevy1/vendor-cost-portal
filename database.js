@@ -386,6 +386,28 @@ function runMigrations() {
   addColumn('factories', 'factory_sap_name',  'TEXT');
   addColumn('factories', 'exporter_sap_name', 'TEXT');
   addColumn('factories', 'payto_sap_name',    'TEXT');
+
+  // v9: sea freight lead-time per COO. Used by delivery plan to
+  // auto-compute projected in-whse dates from Production Cargo
+  // Ready (Sales). Column default is 30; seed rougher per-country
+  // estimates once so existing rows aren't all identical.
+  addColumn('coo_rates', 'sea_lead_days', 'INTEGER NOT NULL DEFAULT 30');
+  seedCooLeadTimes();
+}
+
+// One-shot-ish per-country lead-time fill. Only overwrites rows
+// that still hold the plain default (30), so admin edits are never
+// stomped on a subsequent boot.
+function seedCooLeadTimes() {
+  const DEFAULTS = {
+    BD: 35, KH: 32, CN: 28, EG: 22, ET: 35,
+    ID: 32, HT:  7, JD: 30, KY: 38, LS: 40,
+    PK: 30, TH: 30, TK: 22, VN: 30, ES: 40,
+  };
+  const upd = db.prepare('UPDATE coo_rates SET sea_lead_days = ? WHERE code = ? AND sea_lead_days = 30');
+  db.transaction(() => {
+    for (const [code, days] of Object.entries(DEFAULTS)) upd.run(days, code);
+  })();
 }
 
 function importLegacyFabricRequests() {

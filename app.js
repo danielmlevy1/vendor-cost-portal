@@ -1210,6 +1210,10 @@ App = (() => {
           <div class="text-sm text-muted mt-1">Freight/unit = Est Base × (1 + multiplier)</div></div>
         <div class="form-group"><label class="form-label">Canada Freight Multiplier</label><input class="form-input" id="cr-can-mult" type="number" step="0.0001" value="${r?.canadaMult ?? ''}" placeholder="e.g. 1.5714"></div>
       </div>
+      <div class="form-group"><label class="form-label">Sea Lead Time (days)</label>
+        <input class="form-input" id="cr-sea-lead" type="number" step="1" min="0" value="${r?.seaLeadDays ?? 30}" placeholder="e.g. 30">
+        <div class="text-sm text-muted mt-1">Used by Delivery Plan — Projected In-Whse = Production Cargo Ready (Sales) + this many days</div>
+      </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary" onclick="App.closeModal()">Cancel</button>
         <button type="submit" class="btn btn-primary">${r ? 'Save' : 'Add'}</button>
@@ -1221,11 +1225,13 @@ App = (() => {
     e.preventDefault();
     const usaMult  = parseFloat(document.getElementById('cr-usa-mult')?.value);
     const canMult  = parseFloat(document.getElementById('cr-can-mult')?.value);
+    const seaLead  = parseInt(document.getElementById('cr-sea-lead')?.value, 10);
     await API.CooRates.upsert({
       id: v('cr-code'), code: v('cr-code'), country: v('cr-country'),
       addlDuty: nv('cr-duty') || 0,
       usaMult:  isNaN(usaMult)  ? 0 : usaMult,
       canadaMult: isNaN(canMult) ? 0 : canMult,
+      seaLeadDays: isNaN(seaLead) ? 30 : Math.max(0, seaLead),
     });
     closeModal(); navigate('coo');
   }

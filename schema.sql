@@ -16,12 +16,13 @@ PRAGMA foreign_keys = OFF;
 -- ── Reference / lookup tables ─────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS coo_rates (
-  id          TEXT PRIMARY KEY,
-  code        TEXT NOT NULL UNIQUE,
-  country     TEXT NOT NULL,
-  addl_duty   REAL NOT NULL DEFAULT 0,
-  usa_mult    REAL NOT NULL DEFAULT 0,
-  canada_mult REAL NOT NULL DEFAULT 0
+  id             TEXT PRIMARY KEY,
+  code           TEXT NOT NULL UNIQUE,
+  country        TEXT NOT NULL,
+  addl_duty      REAL NOT NULL DEFAULT 0,
+  usa_mult       REAL NOT NULL DEFAULT 0,
+  canada_mult    REAL NOT NULL DEFAULT 0,
+  sea_lead_days  INTEGER NOT NULL DEFAULT 30   -- typical sea transit days; used to compute projected In-Whse from Production Cargo Ready (Sales)
 );
 
 CREATE TABLE IF NOT EXISTS customers (
