@@ -41,11 +41,35 @@ const AdminViews = (() => {
     // Design/Planning see only their own internalProgramId.
     const userIpId   = user?._dashIpFilter || user?.internalProgramId || null;
     const allPrograms = API.cache.programs;
-    const programs    = (userIpId && !isAdminOrPC)
+    const ipScoped    = (userIpId && !isAdminOrPC)
       ? allPrograms.filter(p => p.internalProgramId === userIpId)
       : userIpId
         ? allPrograms.filter(p => p.internalProgramId === userIpId)
         : allPrograms;
+
+    // ── Dashboard filters: Season / Year / Brand / Tier ───────
+    // Persist in localStorage so the user's view sticks across
+    // navigations. Each filter intersects: a program must match
+    // every active filter to count.
+    const fSeason = localStorage.getItem('vcp_dash_f_season') || '';
+    const fYear   = localStorage.getItem('vcp_dash_f_year')   || '';
+    const fBrand  = localStorage.getItem('vcp_dash_f_brand')  || '';
+    const fTier   = localStorage.getItem('vcp_dash_f_tier')   || '';
+    const programs = ipScoped.filter(p =>
+      (!fSeason || p.season === fSeason) &&
+      (!fYear   || String(p.year) === fYear) &&
+      (!fBrand  || p.brand === fBrand) &&
+      (!fTier   || p.retailer === fTier)        // schema: retailer holds the tier
+    );
+
+    // Distinct values for the dropdowns, drawn from the IP-scoped pool
+    // (so the filter list never offers a value that won't match anything).
+    const distinct = (key) => [...new Set(ipScoped.map(p => p[key]).filter(Boolean))].sort();
+    const seasonOpts = distinct('season');
+    const yearOpts   = [...new Set(ipScoped.map(p => p.year).filter(Boolean))].map(String).sort();
+    const brandOpts  = distinct('brand');
+    const tierOpts   = distinct('retailer');
+    const filterCount = [fSeason, fYear, fBrand, fTier].filter(Boolean).length;
 
     const ip = userIpId ? API.InternalPrograms.get(userIpId) : null;
     const allStylesDB   = API.Styles.all();
@@ -221,6 +245,21 @@ const AdminViews = (() => {
         <span class="kpi-alert-label">${label}</span>
         ${route && value > 0 ? '<span class="kpi-alert-arrow">→</span>' : ''}
       </div>`;
+
+    // Same shape as alertKpi but the tile expands inline to show
+    // panelHtml when clicked (native <details>, no JS state).
+    const expandKpi = (icon, label, value, color, panelHtml) => `
+      <details class="kpi-alert-expand ${value > 0 ? 'kpi-alert-active' : ''}" style="background:var(--bg-elevated);border:1px solid var(--border);border-radius:var(--radius-sm)">
+        <summary style="list-style:none;cursor:pointer;display:flex;align-items:center;gap:10px;padding:10px 14px">
+          <span class="kpi-alert-icon" style="color:${color}">${icon}</span>
+          <span class="kpi-alert-value" style="color:${value > 0 ? color : '#64748b'}">${value}</span>
+          <span class="kpi-alert-label" style="flex:1">${label}</span>
+          ${value > 0 ? '<span class="text-muted text-sm">click to expand ▾</span>' : '<span class="text-muted text-sm">—</span>'}
+        </summary>
+        <div style="padding:0 14px 14px">
+          ${panelHtml || '<div class="text-muted text-sm" style="padding:8px 0">Nothing to show.</div>'}
+        </div>
+      </details>`;
 
     const sec = (label, mt = 28) => `<div class="kpi-section-label" style="margin-top:${mt}px">${label}</div>`;
 
@@ -412,60 +451,105 @@ const AdminViews = (() => {
         </div>
       </div>
 
-      ${sec('⚡ Action Items')}
-      <div class="kpi-alerts">
-        ${alertKpi('🔥', 'At-risk programs (CRD ≤ 14d, not fully costed)', atRiskProgs.length, '#ef4444', 'programs')}
-        ${alertKpi('🤐', 'Stalled programs (TCs assigned, zero quotes)', stalledProgs.length, '#a855f7', 'programs')}
-        ${alertKpi('↩', 'Re-costs Ready to Release to TC', recostForProd, '#f59e0b', 'recost-queue')}
-        ${alertKpi('↩', 'Re-costs Awaiting Sales (visibility)', recostForSales, '#3b82f6', 'recost-queue')}
-        ${alertKpi('🚩', 'Flagged Prices', flagCount, '#ef4444', '')}
-        ${alertKpi('📅', 'CRDs Within 30 Days', upcomingCRDs, '#6366f1', 'programs')}
-        ${isAdmin ? alertKpi('⏳', 'Pending Approvals', pendingCount, '#a855f7', 'pending-changes') : ''}
-      </div>
+      ${(() => {
+        // Build the drill-down panels once so they can be embedded
+        // inside their alert tiles (and not re-rendered as a separate
+        // section below).
 
-      ${stalledProgs.length ? `
-      ${sec('🤐 Stalled programs')}
-      <div class="card" style="padding:0">
-        <div class="table-wrap"><table>
-          <thead><tr>
-            <th>Program</th><th>TCs assigned</th><th>Days since created</th><th></th>
-          </tr></thead>
-          <tbody>
-            ${stalledProgs.sort((a,b) => (b.days||0) - (a.days||0)).map(({ p, days }) => `<tr style="cursor:pointer" onclick="App.navigate('cost-summary','${p.id}')">
-              <td class="font-bold">${p.name}</td>
-              <td><span class="tag">${p.tcCount}</span></td>
-              <td>${days != null ? `<span class="tag" style="background:${days>14?'rgba(239,68,68,.15)':'rgba(245,158,11,.15)'};color:${days>14?'#ef4444':'#f59e0b'}">${days}d</span>` : '—'}</td>
-              <td class="text-sm text-muted">No quotes received yet</td>
-            </tr>`).join('')}
-          </tbody>
-        </table></div>
-      </div>` : ''}
+        const atRiskPanel = atRiskProgs.length ? `
+          <div class="table-wrap"><table>
+            <thead><tr>
+              <th>Program</th><th>CRD</th><th>Days left</th><th>Coverage</th>
+            </tr></thead>
+            <tbody>
+              ${atRiskProgs.sort((a,b) => (a.crdDate||'').localeCompare(b.crdDate||'')).map(p => {
+                const d = new Date(p.crdDate + 'T00:00:00');
+                const daysLeft = Math.ceil((d - today) / 86400000);
+                const ps = allStylesDB.filter(s => s.programId === p.id && s.status !== 'cancelled');
+                const quoted = ps.filter(s => allSubs.some(sub => sub.styleId === s.id && sub.fob != null)).length;
+                const pct = ps.length ? Math.round((quoted / ps.length) * 100) : 0;
+                const urgent = daysLeft <= 7;
+                return `<tr style="cursor:pointer" onclick="App.navigate('cost-summary','${p.id}')">
+                  <td class="font-bold">${p.name}</td>
+                  <td class="text-sm">${d.toLocaleDateString('en-US',{month:'short',day:'numeric'})}</td>
+                  <td><span class="tag" style="background:${urgent?'rgba(239,68,68,.15)':'rgba(245,158,11,.15)'};color:${urgent?'#ef4444':'#f59e0b'}">${daysLeft}d</span></td>
+                  <td><span class="badge ${pct >= 80 ? 'badge-costing' : 'badge-pending'}">${quoted}/${ps.length} (${pct}%)</span></td>
+                </tr>`;
+              }).join('')}
+            </tbody>
+          </table></div>` : '';
 
-      ${atRiskProgs.length ? `
-      ${sec('🔥 At-risk programs')}
-      <div class="card" style="padding:0">
-        <div class="table-wrap"><table>
-          <thead><tr>
-            <th>Program</th><th>CRD</th><th>Days left</th><th>Coverage</th>
-          </tr></thead>
-          <tbody>
-            ${atRiskProgs.sort((a,b) => (a.crdDate||'').localeCompare(b.crdDate||'')).map(p => {
-              const d = new Date(p.crdDate + 'T00:00:00');
-              const daysLeft = Math.ceil((d - today) / 86400000);
-              const ps = allStylesDB.filter(s => s.programId === p.id && s.status !== 'cancelled');
-              const quoted = ps.filter(s => allSubs.some(sub => sub.styleId === s.id && sub.fob != null)).length;
-              const pct = ps.length ? Math.round((quoted / ps.length) * 100) : 0;
-              const urgent = daysLeft <= 7;
-              return `<tr style="cursor:pointer" onclick="App.navigate('cost-summary','${p.id}')">
+        const stalledPanel = stalledProgs.length ? `
+          <div class="table-wrap"><table>
+            <thead><tr>
+              <th>Program</th><th>TCs assigned</th><th>Days since created</th><th></th>
+            </tr></thead>
+            <tbody>
+              ${stalledProgs.sort((a,b) => (b.days||0) - (a.days||0)).map(({ p, days }) => `<tr style="cursor:pointer" onclick="App.navigate('cost-summary','${p.id}')">
                 <td class="font-bold">${p.name}</td>
-                <td class="text-sm">${d.toLocaleDateString('en-US',{month:'short',day:'numeric'})}</td>
-                <td><span class="tag" style="background:${urgent?'rgba(239,68,68,.15)':'rgba(245,158,11,.15)'};color:${urgent?'#ef4444':'#f59e0b'}">${daysLeft}d</span></td>
-                <td><span class="badge ${pct >= 80 ? 'badge-costing' : 'badge-pending'}">${quoted}/${ps.length} (${pct}%)</span></td>
-              </tr>`;
-            }).join('')}
-          </tbody>
-        </table></div>
-      </div>` : ''}
+                <td><span class="tag">${p.tcCount}</span></td>
+                <td>${days != null ? `<span class="tag" style="background:${days>14?'rgba(239,68,68,.15)':'rgba(245,158,11,.15)'};color:${days>14?'#ef4444':'#f59e0b'}">${days}d</span>` : '—'}</td>
+                <td class="text-sm text-muted">No quotes received yet</td>
+              </tr>`).join('')}
+            </tbody>
+          </table></div>` : '';
+
+        // Re-cost panels: link directly to the queue with row-click
+        // so the user can act after expanding.
+        const recostList = (filterFn) => {
+          const list = allRecosts.filter(filterFn).slice(0, 20);
+          if (!list.length) return '';
+          return `<div class="table-wrap"><table>
+            <thead><tr><th>Style</th><th>Program</th><th>Category</th><th>Requested</th></tr></thead>
+            <tbody>
+              ${list.map(r => {
+                const prog  = allPrograms.find(p => p.id === r.programId);
+                const style = API.Styles.get(r.styleId);
+                const dt = r.createdAt ? new Date(r.createdAt).toLocaleDateString('en-US',{month:'short',day:'numeric'}) : '—';
+                return `<tr style="cursor:pointer" onclick="App.navigate('recost-queue')">
+                  <td class="font-bold">${style?.styleNumber || '—'}</td>
+                  <td class="text-sm">${prog?.name || '—'}</td>
+                  <td class="text-sm">${r.category || '—'}</td>
+                  <td class="text-sm text-muted">${dt}</td>
+                </tr>`;
+              }).join('')}
+            </tbody>
+          </table></div>`;
+        };
+        const recostProdPanel  = recostList(r => r.status === 'pending_production');
+        const recostSalesPanel = recostList(r => r.status === 'pending_sales' || r.status === 'pending');
+
+        const upcomingPanel = upcomingProgs => upcomingProgs.length ? `
+          <div class="table-wrap"><table>
+            <thead><tr><th>Program</th><th>CRD</th><th>Days left</th></tr></thead>
+            <tbody>
+              ${upcomingProgs.map(p => {
+                const d = new Date(p.crdDate + 'T00:00:00');
+                const daysLeft = Math.ceil((d - today) / 86400000);
+                return `<tr style="cursor:pointer" onclick="App.navigate('cost-summary','${p.id}')">
+                  <td class="font-bold">${p.name}</td>
+                  <td class="text-sm">${d.toLocaleDateString('en-US',{month:'short',day:'numeric'})}</td>
+                  <td><span class="tag" style="background:${daysLeft<=7?'rgba(239,68,68,.15)':'rgba(245,158,11,.15)'};color:${daysLeft<=7?'#ef4444':'#f59e0b'}">${daysLeft}d</span></td>
+                </tr>`;
+              }).join('')}
+            </tbody>
+          </table></div>` : '';
+        const upcomingProgsList = programs
+          .filter(p => p.crdDate && (() => { const d = new Date(p.crdDate + 'T00:00:00'); return d >= today && d <= in30; })())
+          .sort((a, b) => a.crdDate.localeCompare(b.crdDate));
+
+        return `
+        ${sec('⚡ Action Items')}
+        <div class="kpi-alerts" style="display:flex;flex-direction:column;gap:8px">
+          ${expandKpi('🔥', 'At-risk programs (CRD ≤ 14d, not fully costed)', atRiskProgs.length,  '#ef4444', atRiskPanel)}
+          ${expandKpi('🤐', 'Stalled programs (TCs assigned, zero quotes)',   stalledProgs.length, '#a855f7', stalledPanel)}
+          ${expandKpi('↩',  'Re-costs Ready to Release to TC',                recostForProd,       '#f59e0b', recostProdPanel)}
+          ${expandKpi('↩',  'Re-costs Awaiting Sales (visibility)',           recostForSales,      '#3b82f6', recostSalesPanel)}
+          ${alertKpi('🚩', 'Flagged Prices', flagCount, '#ef4444', '')}
+          ${expandKpi('📅', 'CRDs Within 30 Days',                            upcomingCRDs,        '#6366f1', upcomingPanel(upcomingProgsList))}
+          ${isAdmin ? alertKpi('⏳', 'Pending Approvals', pendingCount, '#a855f7', 'pending-changes') : ''}
+        </div>`;
+      })()}
 
       ${tcCoverageRows.length ? `
       ${sec('🏭 Quote coverage by TC (active programs)')}
@@ -505,8 +589,6 @@ const AdminViews = (() => {
         </table></div>
       </div>` : ''}
 
-      ${urgentProgs.length > 0 ? `${sec('📅 Upcoming CRDs')}<div class="card" style="padding:16px">${crdRows}</div>` : ''}
-
       ${isAdminOrPC && avgFOB > 0 ? `
       ${sec('💰 Financials — Placed Styles Only')}
       <div class="kpi-grid">
@@ -520,7 +602,7 @@ const AdminViews = (() => {
       ? `<span class="badge badge-costing" style="font-size:0.8rem;padding:4px 10px;vertical-align:middle">${ip.name}</span>`
       : '';
     const teamFilter  = isAdminOrPC ? `
-      <select class="form-select" onchange="App.filterDashboardByIP(this.value)" style="width:200px"
+      <select class="form-select" onchange="App.filterDashboardByIP(this.value)" style="width:160px"
         title="Filter by team">
         <option value="">All Teams</option>
         ${API.cache.internalPrograms.map(p =>
@@ -528,14 +610,44 @@ const AdminViews = (() => {
         ).join('')}
       </select>` : '';
 
+    const optsToHtml = (opts, current) =>
+      `<option value="">All</option>` + opts.map(o => `<option value="${o}" ${current === o ? 'selected' : ''}>${o}</option>`).join('');
+    const filterSelect = (key, current, opts, placeholder) => `
+      <select class="form-select" onchange="App._dashFilterSet('${key}', this.value)" style="width:130px" title="Filter by ${placeholder}">
+        <option value="">${placeholder}: All</option>
+        ${opts.map(o => `<option value="${o}" ${String(current) === String(o) ? 'selected' : ''}>${o}</option>`).join('')}
+      </select>`;
+
+    const filterBar = `
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        ${teamFilter}
+        ${filterSelect('season', fSeason, seasonOpts, 'Season')}
+        ${filterSelect('year',   fYear,   yearOpts,   'Year')}
+        ${filterSelect('brand',  fBrand,  brandOpts,  'Brand')}
+        ${filterSelect('tier',   fTier,   tierOpts,   'Tier')}
+        ${filterCount > 0 ? `<button class="btn btn-ghost btn-sm" onclick="App._dashFilterClear()" title="Clear all filters">✕ Clear (${filterCount})</button>` : ''}
+      </div>`;
+
+    const filterSummary = filterCount > 0 ? `
+      <div class="card mb-3" style="padding:8px 12px;display:flex;align-items:center;gap:8px;background:rgba(99,102,241,0.06);border-left:3px solid var(--accent)">
+        <span class="text-sm">📍 Showing <strong>${programs.length}</strong> of ${ipScoped.length} programs</span>
+        ${[
+          fSeason ? `<span class="tag" style="font-size:0.72rem">${fSeason}</span>` : '',
+          fYear   ? `<span class="tag" style="font-size:0.72rem">${fYear}</span>` : '',
+          fBrand  ? `<span class="tag" style="font-size:0.72rem">${fBrand}</span>` : '',
+          fTier   ? `<span class="tag" style="font-size:0.72rem">${fTier}</span>` : '',
+        ].filter(Boolean).join('')}
+      </div>` : '';
+
     return `
     <div class="page-header">
       <div>
         <h1 class="page-title">Dashboard ${teamLabel}</h1>
         <p class="page-subtitle">${today.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'})}</p>
       </div>
-      ${teamFilter ? `<div style="display:flex;gap:8px;align-items:center">${teamFilter}</div>` : ''}
+      ${filterBar}
     </div>
+    ${filterSummary}
     ${mainSection}`;
   }
 

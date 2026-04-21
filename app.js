@@ -3614,6 +3614,21 @@ App.filterDashboardByIP = function(ipId) {
   if (mc) mc.innerHTML = AdminViews.renderDashboard(state.user.role, filteredUser);
 };
 
+// Set/clear one of the dashboard's Season/Year/Brand/Tier filters.
+// Persisted in localStorage so the dashboard view stays sticky.
+App._dashFilterSet = function(key, value) {
+  const allowed = ['season','year','brand','tier'];
+  if (!allowed.includes(key)) return;
+  const k = 'vcp_dash_f_' + key;
+  if (value) localStorage.setItem(k, value); else localStorage.removeItem(k);
+  App.navigate('dashboard');
+};
+
+App._dashFilterClear = function() {
+  ['season','year','brand','tier'].forEach(k => localStorage.removeItem('vcp_dash_f_' + k));
+  App.navigate('dashboard');
+};
+
 
 // ─ Design Handoffs ──────────────────────────────────────────────
 App.openNewHandoffModal = function(preSrId) {
