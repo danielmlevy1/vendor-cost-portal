@@ -407,6 +407,10 @@ App = (() => {
       setupColumnToggles('summary-table-controls', 'cost-summary-table');
       setupColumnToggles('cp-table-controls', 'cp-table');
       initVendorDragDrop(routeParam);
+      // Wire Excel-style column filters on any table that opted in.
+      document.querySelectorAll('table[data-column-filter]').forEach(t => {
+        if (App.initColumnFilters) App.initColumnFilters(t);
+      });
     }, 0);
   }
 
@@ -6501,4 +6505,152 @@ App._toggleAllTcRows = function(checked) {
     chk.checked = checked;
     App._syncTcRowCoos(chk);
   });
+};
+
+// ── Excel-style column filters ──────────────────────────────────
+// Pass a <table> element. Each <th data-filter-col="key"> on it gets
+// a clickable filter dropdown built from distinct values in the
+// matching tbody row attribute (data-flt-<key>). Filters AND together
+// across columns. Selections persist per-table in localStorage.
+//
+// Markup contract (in the view):
+//   <table id="programs-tbl" data-column-filter>
+//     <thead><tr><th data-filter-col="season">Season</th>…</tr></thead>
+//     <tbody>
+//       <tr data-flt-season="Q2" data-flt-year="2027" …>…</tr>
+//     </tbody>
+//   </table>
+App.initColumnFilters = function(table) {
+  if (!table || table.dataset.colFiltersInit === '1') return;
+  table.dataset.colFiltersInit = '1';
+
+  const tableKey = table.id || 'tbl';
+  const STORAGE_PREFIX = 'vcp_colf_' + tableKey + '__';
+  const headers = [...table.querySelectorAll('thead th[data-filter-col]')];
+  if (!headers.length) return;
+
+  const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
+  const dataKey = k => 'flt' + cap(k);                   // matches dataset access for data-flt-<k>
+  const blank = '(blank)';
+
+  // Per-column selection state. Empty Set = no filter on that column.
+  const state = {};
+  const loadState = () => {
+    headers.forEach(th => {
+      const k = th.dataset.filterCol;
+      const stored = localStorage.getItem(STORAGE_PREFIX + k);
+      state[k] = stored ? new Set(JSON.parse(stored)) : new Set();
+    });
+  };
+  const saveState = (k) => {
+    if (state[k] && state[k].size > 0) localStorage.setItem(STORAGE_PREFIX + k, JSON.stringify([...state[k]]));
+    else localStorage.removeItem(STORAGE_PREFIX + k);
+  };
+
+  const collectValues = (k) => {
+    const vals = new Set();
+    table.querySelectorAll('tbody tr').forEach(tr => {
+      const v = tr.dataset[dataKey(k)];
+      vals.add(v != null && v !== '' ? v : blank);
+    });
+    return [...vals].sort((a, b) => String(a).localeCompare(String(b), undefined, { numeric: true }));
+  };
+
+  const applyFilters = () => {
+    table.querySelectorAll('tbody tr').forEach(tr => {
+      let show = true;
+      for (const th of headers) {
+        const k = th.dataset.filterCol;
+        if (!state[k] || state[k].size === 0) continue;
+        const v = tr.dataset[dataKey(k)] || blank;
+        if (!state[k].has(v)) { show = false; break; }
+      }
+      tr.style.display = show ? '' : 'none';
+    });
+    headers.forEach(th => {
+      const k = th.dataset.filterCol;
+      const btn = th.querySelector('.col-flt-btn');
+      if (btn) btn.classList.toggle('col-flt-active', state[k] && state[k].size > 0);
+    });
+  };
+
+  loadState();
+  headers.forEach(th => {
+    const k = th.dataset.filterCol;
+    const labelText = th.textContent.trim();
+    th.innerHTML = `
+      <button class="col-flt-btn" type="button" title="Filter ${labelText}">
+        <span>${labelText}</span><span class="col-flt-icon">▾</span>
+      </button>
+      <div class="col-flt-dropdown" hidden></div>`;
+    const btn = th.querySelector('.col-flt-btn');
+    const dropdown = th.querySelector('.col-flt-dropdown');
+
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      // Close any other open dropdowns on this table.
+      table.querySelectorAll('.col-flt-dropdown:not([hidden])').forEach(d => {
+        if (d !== dropdown) d.hidden = true;
+      });
+      if (!dropdown.hidden) { dropdown.hidden = true; return; }
+
+      const values = collectValues(k);
+      const sel = state[k];
+      const isAllSelected = sel.size === 0;
+      const escAttr = s => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+      dropdown.innerHTML = `
+        <input type="search" class="col-flt-search" placeholder="Search ${labelText.toLowerCase()}…">
+        <div class="col-flt-actions">
+          <button type="button" class="col-flt-link" data-act="all">Select all</button>
+          <button type="button" class="col-flt-link" data-act="none">Clear</button>
+        </div>
+        <div class="col-flt-list">
+          ${values.map(v => `<label><input type="checkbox" value="${escAttr(v)}" ${isAllSelected || sel.has(v) ? 'checked' : ''}> <span>${escAttr(v)}</span></label>`).join('')}
+        </div>
+        <div class="col-flt-footer">
+          <button type="button" class="btn btn-secondary btn-sm" data-act="close">Cancel</button>
+          <button type="button" class="btn btn-primary btn-sm" data-act="apply">Apply</button>
+        </div>`;
+      dropdown.hidden = false;
+      const search = dropdown.querySelector('.col-flt-search');
+      search.focus();
+      search.addEventListener('input', () => {
+        const q = search.value.toLowerCase();
+        dropdown.querySelectorAll('.col-flt-list label').forEach(lbl => {
+          lbl.style.display = lbl.textContent.toLowerCase().includes(q) ? '' : 'none';
+        });
+      });
+      dropdown.addEventListener('click', (ev) => {
+        const target = ev.target.closest('[data-act]');
+        if (!target) { ev.stopPropagation(); return; }
+        ev.stopPropagation();
+        const act = target.dataset.act;
+        const checks = [...dropdown.querySelectorAll('.col-flt-list input')];
+        if (act === 'all')   checks.forEach(c => { c.checked = true; });
+        if (act === 'none')  checks.forEach(c => { c.checked = false; });
+        if (act === 'close') dropdown.hidden = true;
+        if (act === 'apply') {
+          const checkedSet = new Set();
+          let allChecked = true;
+          checks.forEach(c => {
+            if (c.checked) checkedSet.add(c.value); else allChecked = false;
+          });
+          state[k] = allChecked ? new Set() : checkedSet;     // "Select all" = no filter
+          saveState(k);
+          applyFilters();
+          dropdown.hidden = true;
+        }
+      });
+    });
+  });
+
+  // Click outside any dropdown closes them.
+  if (!App._colFiltersOutsideHandler) {
+    App._colFiltersOutsideHandler = true;
+    document.addEventListener('click', () => {
+      document.querySelectorAll('.col-flt-dropdown:not([hidden])').forEach(d => { d.hidden = true; });
+    });
+  }
+
+  applyFilters();
 };

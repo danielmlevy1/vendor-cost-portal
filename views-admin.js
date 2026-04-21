@@ -741,7 +741,13 @@ const AdminViews = (() => {
     const isAdminOrPC = _role === 'admin' || _role === 'pc';
 
     const thead = `<thead><tr>
-      <th>Season</th><th>Year</th><th>Gender</th><th>Brand</th><th>Tier</th><th>Stage</th><th>SR #</th><th>Ver.</th>
+      <th data-filter-col="season">Season</th>
+      <th data-filter-col="year">Year</th>
+      <th data-filter-col="gender">Gender</th>
+      <th data-filter-col="brand">Brand</th>
+      <th data-filter-col="tier">Tier</th>
+      <th data-filter-col="stage">Stage</th>
+      <th>SR #</th><th>Ver.</th>
       <th style="text-align:center">Styles</th>
       <th style="text-align:center">Costed</th>
       <th style="text-align:center">Placed</th>
@@ -765,7 +771,13 @@ const AdminViews = (() => {
         ? `<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px">${assignedTCs.map(tc =>
             `<span class="tag" style="font-size:0.7rem;padding:2px 6px">${tc.code}</span>`).join('')}</div>`
         : `<span class="text-muted" style="font-size:0.75rem">None assigned</span>`;
-      return `<tr style="background:rgba(124,58,237,0.03)">
+      return `<tr style="background:rgba(124,58,237,0.03)"
+        data-flt-season="${h.season || ''}"
+        data-flt-year="${h.year || ''}"
+        data-flt-gender=""
+        data-flt-brand="${(h.retailer || h.brand || '').replace(/"/g, '&quot;')}"
+        data-flt-tier="${(h.tier || '').replace(/"/g, '&quot;')}"
+        data-flt-stage="Design Submitted">
         <td>${h.season || dash}</td>
         <td>${h.year || dash}</td>
         <td>${dash}</td>
@@ -812,7 +824,13 @@ const AdminViews = (() => {
         ? `<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px">${reqTCs.map(tc =>
             `<span class="tag" style="font-size:0.7rem;padding:2px 6px">${tc.code}</span>`).join('')}</div>`
         : `<span class="text-muted" style="font-size:0.75rem">None assigned</span>`;
-      return `<tr style="background:rgba(245,158,11,0.03)">
+      return `<tr style="background:rgba(245,158,11,0.03)"
+        data-flt-season="${r.season || ''}"
+        data-flt-year="${r.year || ''}"
+        data-flt-gender="${(r.gender || '').replace(/"/g, '&quot;')}"
+        data-flt-brand="${(r.brand || '').replace(/"/g, '&quot;')}"
+        data-flt-tier="${(r.retailer || '').replace(/"/g, '&quot;')}"
+        data-flt-stage="Sales Request">
         <td>${r.season || dash}</td>
         <td>${r.year || dash}</td>
         <td>${dash}</td>
@@ -857,7 +875,13 @@ const AdminViews = (() => {
       const isDraft  = p.status === 'Draft';
       const handoff  = API.DesignHandoffs.all().find(h => h.linkedProgramId === p.id);
       const srNum    = handoff?.supplierRequestNumber || '';
-      return `<tr style="cursor:${isDraft ? 'default' : 'pointer'}" onclick="${isDraft ? '' : `App.openProgram('${p.id}')`}">
+      return `<tr style="cursor:${isDraft ? 'default' : 'pointer'}" onclick="${isDraft ? '' : `App.openProgram('${p.id}')`}"
+        data-flt-season="${(p.season || '').replace(/"/g, '&quot;')}"
+        data-flt-year="${p.year || ''}"
+        data-flt-gender="${(p.gender || '').replace(/"/g, '&quot;')}"
+        data-flt-brand="${(p.brand || '').replace(/"/g, '&quot;')}"
+        data-flt-tier="${(p.retailer || '').replace(/"/g, '&quot;')}"
+        data-flt-stage="${(p.status || '').replace(/"/g, '&quot;')}">
         <td onclick="App._inlineEdit(event,'${p.id}','season')" style="cursor:pointer;user-select:none" title="Click to edit season">${p.season || '<span class="text-muted">—</span>'}</td>
         <td onclick="App._inlineEdit(event,'${p.id}','year')" style="cursor:pointer;user-select:none" title="Click to edit year">${p.year || '<span class="text-muted">—</span>'}</td>
         <td onclick="App._inlineEdit(event,'${p.id}','gender')" style="cursor:pointer;user-select:none" title="Click to edit gender">${p.gender ? `<span class="tag">${p.gender}</span>` : '<span class="text-muted">—</span>'}</td>
@@ -897,7 +921,7 @@ const AdminViews = (() => {
     const allRows = handoffRows + requestRows + programRows;
     if (!allRows.trim()) return `<div class="empty-state"><div class="icon">📋</div><h3>No programs yet</h3></div>`;
 
-    return `<div class="card" style="padding:0"><div class="table-wrap"><table id="programs-tbl">${thead}<tbody>${allRows}</tbody></table></div></div>`;
+    return `<div class="card" style="padding:0"><div class="table-wrap"><table id="programs-tbl" data-column-filter>${thead}<tbody>${allRows}</tbody></table></div></div>`;
   }
 
   function programCard(p) {

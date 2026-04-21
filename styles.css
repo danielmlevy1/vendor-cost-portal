@@ -3339,3 +3339,45 @@ body.printing-fabric-matrix #content > *:not(#fabric-matrix-print-area):not(.tex
   #fabric-matrix-print-area .badge { background: transparent !important; color: #555 !important; border: 1px solid #ccc !important; }
   @page { size: landscape; margin: 12mm; }
 }
+
+/* ── Excel-style column header filters ──────────────────────────
+   Wired by App.initColumnFilters() on tables with [data-column-filter].
+   Each filterable <th data-filter-col="key"> gets a clickable chip;
+   clicking opens a dropdown of distinct values to AND-filter rows. */
+th[data-filter-col] { position: relative; }
+
+.col-flt-btn {
+  background: transparent; border: 0; color: inherit;
+  font-weight: inherit; font-size: inherit; text-align: left;
+  padding: 0; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;
+}
+.col-flt-btn:hover .col-flt-icon { opacity: 1; }
+.col-flt-icon { opacity: 0.4; font-size: 0.7rem; }
+.col-flt-active .col-flt-icon,
+.col-flt-active { color: var(--accent); }
+.col-flt-active .col-flt-icon::after { content: '●'; margin-left: 2px; font-size: 0.5rem; }
+
+.col-flt-dropdown {
+  position: absolute; top: calc(100% + 4px); left: 0;
+  z-index: 50; min-width: 220px; max-width: 320px;
+  background: var(--bg-surface); border: 1px solid var(--border);
+  border-radius: 6px; box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+  padding: 8px; font-weight: normal; text-transform: none; letter-spacing: 0;
+  font-size: 0.85rem; color: var(--text-primary);
+}
+.col-flt-search {
+  width: 100%; padding: 6px 8px; margin-bottom: 6px;
+  border: 1px solid var(--border); border-radius: 4px;
+  background: var(--bg-elevated); color: inherit; font-size: 0.85rem;
+}
+.col-flt-actions { display: flex; gap: 8px; padding: 0 4px 6px; border-bottom: 1px solid var(--border); margin-bottom: 6px; }
+.col-flt-link { background: transparent; border: 0; color: var(--accent); cursor: pointer; font-size: 0.78rem; padding: 0; }
+.col-flt-link:hover { text-decoration: underline; }
+.col-flt-list { max-height: 240px; overflow-y: auto; }
+.col-flt-list label {
+  display: flex; align-items: center; gap: 6px; padding: 3px 4px;
+  cursor: pointer; border-radius: 3px; font-size: 0.82rem;
+}
+.col-flt-list label:hover { background: var(--bg-elevated); }
+.col-flt-list input[type="checkbox"] { margin: 0; }
+.col-flt-footer { display: flex; justify-content: flex-end; gap: 6px; margin-top: 8px; padding-top: 6px; border-top: 1px solid var(--border); }
