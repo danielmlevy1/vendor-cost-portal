@@ -702,15 +702,6 @@ const AdminViews = (() => {
     </div>
     <div class="filter-bar mb-3">
       <div class="search-input-wrap"><span class="search-icon">🔍</span><input class="form-input" id="prog-search" placeholder="Search programs…" oninput="App.filterPrograms()"></div>
-      <select class="form-select" id="prog-status-filter" onchange="App.filterPrograms()" style="max-width:200px">
-        <option value="">All Stages</option>
-        <option>Design Submitted</option>
-        <option>Sales Request</option>
-        <option>Draft</option>
-        <option>Costing</option>
-        <option>Placed</option>
-        <option>Cancelled</option>
-      </select>
     </div>
     ${pendingBanner}
     <div id="programs-grid">
@@ -1997,18 +1988,28 @@ const AdminViews = (() => {
     }
 
 
-    let html = `<table id="cp-table"><thead><tr>
-      <th data-col="prog">Program</th><th data-col="sn">Style #</th><th data-col="name">Style Name</th>
-      <th data-col="fab">Fabrication</th><th data-col="cat">Category</th>
+    let html = `<table id="cp-table" data-column-filter><thead><tr>
+      <th data-col="prog" data-filter-col="program">Program</th>
+      <th data-col="sn">Style #</th>
+      <th data-col="name">Style Name</th>
+      <th data-col="fab" data-filter-col="fabrication">Fabrication</th>
+      <th data-col="cat" data-filter-col="category">Category</th>
       <th data-col="sell">Proj Sell</th><th data-col="ldp">Target LDP</th>
       <th data-col="q">Quotes</th><th data-col="best">Best LDP</th>
-      <th data-col="bestV">Best TC</th><th data-col="status">Status</th><th data-col="actions"></th>
+      <th data-col="bestV" data-filter-col="besttc">Best TC</th>
+      <th data-col="status" data-filter-col="status">Status</th>
+      <th data-col="actions"></th>
     </tr></thead><tbody>`;
     Object.entries(grouped).forEach(([group, items]) => {
       if (groupBy) html += `<tr class="group-row"><td colspan="12">📁 ${group} (${items.length})</td></tr>`;
       items.forEach(r => {
         const onTarget = r.bestLDP && r.targetLDP && r.bestLDP <= r.targetLDP;
-        html += `<tr>
+        html += `<tr
+          data-flt-program="${(r.prog?.name || '').replace(/"/g, '&quot;')}"
+          data-flt-fabrication="${(r.fabrication || '').replace(/"/g, '&quot;')}"
+          data-flt-category="${(r.category || '').replace(/"/g, '&quot;')}"
+          data-flt-besttc="${(r.bestTC?.code || '').replace(/"/g, '&quot;')}"
+          data-flt-status="${(r.status || 'open').replace(/"/g, '&quot;')}">
           <td data-col="prog" class="text-sm">${r.prog?.name || '—'}</td>
           <td data-col="sn" class="primary">${r.styleNumber}</td>
           <td data-col="name">${r.styleName}</td>
@@ -2700,7 +2701,12 @@ const AdminViews = (() => {
       const fabricsBadge = h.fabricsUploaded
         ? `<span class="status-dot dot-green"></span><span class="tag">${fabricCount} fabrics</span>`
         : `<span class="status-dot dot-amber"></span><button class="btn btn-ghost btn-xs" onclick="App.openAddFabricListModal('${h.id}')">+ Add Fabric List</button>`;
-      return `<tr>
+      return `<tr
+        data-flt-season="${(h.season || '').replace(/"/g, '&quot;')}"
+        data-flt-year="${h.year || ''}"
+        data-flt-brand="${(h.brand || '').replace(/"/g, '&quot;')}"
+        data-flt-gender="${(h.gender || '').replace(/"/g, '&quot;')}"
+        data-flt-tier="${(h.tier || '').replace(/"/g, '&quot;')}">
         <td class="font-bold">${h.season || '—'} ${h.year || ''}</td>
         <td class="text-sm">${h.brand || '—'}</td>
         <td class="text-sm">${h.gender || '—'}</td>
@@ -2721,15 +2727,22 @@ const AdminViews = (() => {
       </tr>`;
     };  // end buildRow
 
+    // Season/Year is displayed as a combined cell; leaving it off the
+    // filter-col list and exposing Brand / Gender / Tier instead. Year
+    // can be filtered via the dashboard top bar anyway.
     const handoffThead = `<thead><tr>
-      <th>Season / Year</th><th>Brand</th><th>Gender</th><th>Tier</th><th>SR #</th><th>Date</th><th>Submitted By</th>
+      <th>Season / Year</th>
+      <th data-filter-col="brand">Brand</th>
+      <th data-filter-col="gender">Gender</th>
+      <th data-filter-col="tier">Tier</th>
+      <th>SR #</th><th>Date</th><th>Submitted By</th>
       <th>Styles</th><th>Fabrics</th><th>Program</th><th>Actions</th>
     </tr></thead>`;
 
-    const bucketSection = (label, list, { open = true, accent = 'var(--accent)' } = {}) => {
+    const bucketSection = (label, list, key, { open = true, accent = 'var(--accent)' } = {}) => {
       if (!list.length) return '';
       const body = `
-        <div class="card" style="padding:0;margin-top:8px"><div class="table-wrap"><table>
+        <div class="card" style="padding:0;margin-top:8px"><div class="table-wrap"><table id="handoffs-${key}-tbl" data-column-filter>
           ${handoffThead}
           <tbody>${list.map(buildRow).join('')}</tbody>
         </table></div></div>`;
@@ -2747,9 +2760,9 @@ const AdminViews = (() => {
 
     const handoffSections = handoffs.length
       ? [
-          bucketSection('🟢 In Progress', handoffBuckets.inProgress, { open: true,  accent: '#22c55e' }),
-          bucketSection('✅ Complete',    handoffBuckets.complete,   { open: false, accent: '#6366f1' }),
-          bucketSection('✕ Cancelled',    handoffBuckets.cancelled,  { open: false, accent: '#94a3b8' }),
+          bucketSection('🟢 In Progress', handoffBuckets.inProgress, 'inProgress', { open: true,  accent: '#22c55e' }),
+          bucketSection('✅ Complete',    handoffBuckets.complete,   'complete',   { open: false, accent: '#6366f1' }),
+          bucketSection('✕ Cancelled',    handoffBuckets.cancelled,  'cancelled',  { open: false, accent: '#94a3b8' }),
         ].join('')
       : `<div class="card text-center text-muted" style="padding:40px">No design handoffs yet. Click "+ New Handoff" to upload a style list from Design.</div>`;
 
@@ -2828,7 +2841,12 @@ const AdminViews = (() => {
       const reconcileBadge = matchingHandoff
         ? `<button class="btn btn-ghost btn-xs ml-1" title="Reconcile with Design handoff" onclick="App.openReconcileModal('${r.id}','${matchingHandoff.id}')">⚡ Reconcile</button>`
         : '';
-      return `<tr>
+      return `<tr
+        data-flt-brand="${(r.brand || '').replace(/"/g, '&quot;')}"
+        data-flt-tier="${(r.retailer || '').replace(/"/g, '&quot;')}"
+        data-flt-gender="${(r.gender || '').replace(/"/g, '&quot;')}"
+        data-flt-source="${r.sourceHandoffId ? 'Handoff' : 'Fresh'}"
+        data-flt-status="${(r.status || 'submitted').replace(/"/g, '&quot;')}">
         <td class="font-bold">${r.season || '—'} ${r.year || ''}</td>
         <td><span class="badge">${r.brand || '—'}</span></td>
         <td class="text-sm">${r.retailer || '—'}</td>
@@ -2852,14 +2870,21 @@ const AdminViews = (() => {
     };  // end buildRow
 
     const srThead = `<thead><tr>
-      <th>Season / Year</th><th>Brand</th><th>Tier / Retailer</th><th>Gender</th><th>In-Whse</th><th>Cost Due</th><th>Date</th><th>Submitted By</th>
-      <th>Styles</th><th>Source</th><th>Status</th><th>Program</th><th>Actions</th>
+      <th>Season / Year</th>
+      <th data-filter-col="brand">Brand</th>
+      <th data-filter-col="tier">Tier / Retailer</th>
+      <th data-filter-col="gender">Gender</th>
+      <th>In-Whse</th><th>Cost Due</th><th>Date</th><th>Submitted By</th>
+      <th>Styles</th>
+      <th data-filter-col="source">Source</th>
+      <th data-filter-col="status">Status</th>
+      <th>Program</th><th>Actions</th>
     </tr></thead>`;
 
-    const bucketSection = (label, list, { open = true, accent = 'var(--accent)' } = {}) => {
+    const bucketSection = (label, list, key, { open = true, accent = 'var(--accent)' } = {}) => {
       if (!list.length) return '';
       const body = `
-        <div class="card" style="padding:0;margin-top:8px"><div class="table-wrap"><table>
+        <div class="card" style="padding:0;margin-top:8px"><div class="table-wrap"><table id="sr-${key}-tbl" data-column-filter>
           ${srThead}
           <tbody>${list.map(buildRow).join('')}</tbody>
         </table></div></div>`;
@@ -2876,9 +2901,9 @@ const AdminViews = (() => {
 
     const srSections = requests.length
       ? [
-          bucketSection('🟢 In Progress', srBuckets.inProgress, { open: true,  accent: '#22c55e' }),
-          bucketSection('✅ Complete',    srBuckets.complete,   { open: false, accent: '#6366f1' }),
-          bucketSection('✕ Cancelled',    srBuckets.cancelled,  { open: false, accent: '#94a3b8' }),
+          bucketSection('🟢 In Progress', srBuckets.inProgress, 'inProgress', { open: true,  accent: '#22c55e' }),
+          bucketSection('✅ Complete',    srBuckets.complete,   'complete',   { open: false, accent: '#6366f1' }),
+          bucketSection('✕ Cancelled',    srBuckets.cancelled,  'cancelled',  { open: false, accent: '#94a3b8' }),
         ].join('')
       : `<div class="card text-center text-muted" style="padding:40px">No sales requests yet. Build one from a Design Handoff above, or click "+ New Request" to create manually.</div>`;
 
@@ -3392,24 +3417,34 @@ const AdminViews = (() => {
                 <button class="btn btn-primary btn-sm" onclick="App.openCreateFabricPackage('${esc(tcId)}')">📦 Pass to Production</button>
               </div>` : ''}
           </div>
-          <div class="table-wrap"><table>
+          <div class="table-wrap"><table id="fabric-outstanding-${esc(tcId)}-tbl" data-column-filter>
             <thead><tr>
               ${canAction ? '<th style="width:36px"></th>' : ''}
-              <th>Code</th><th>Name</th><th>Content</th>
+              <th data-filter-col="code">Code</th>
+              <th data-filter-col="name">Name</th>
+              <th data-filter-col="content">Content</th>
               <th style="text-align:center">Qty</th>
-              <th>Program</th><th>Requested</th><th></th>
+              <th data-filter-col="program">Program</th>
+              <th>Requested</th><th></th>
             </tr></thead>
             <tbody>
-              ${reqs.map(r => `<tr>
-                ${canAction ? `<td style="text-align:center"><input type="checkbox" class="fab-pd-chk" data-tc="${esc(tcId)}" value="${esc(r.id)}"></td>` : ''}
-                <td class="font-bold primary">${esc(r.fabricCode)}</td>
-                <td>${esc(r.fabricName || '—')}</td>
-                <td class="text-sm text-muted">${esc(r.content || '—')}</td>
-                <td class="text-center">${r.swatchQty ?? '—'}</td>
-                <td class="text-sm">${esc((API.Programs.get(r.programId)?.name) || '—')}</td>
-                <td class="text-sm text-muted">${fmtDate(r.requestedAt)}</td>
-                <td>${canAction ? `<button class="btn btn-danger btn-sm" onclick="App.deleteFabricRequest('${esc(r.id)}')" title="Remove">🗑</button>` : ''}</td>
-              </tr>`).join('')}
+              ${reqs.map(r => {
+                const progName = (API.Programs.get(r.programId)?.name) || '';
+                return `<tr
+                  data-flt-code="${esc(r.fabricCode || '')}"
+                  data-flt-name="${esc(r.fabricName || '')}"
+                  data-flt-content="${esc(r.content || '')}"
+                  data-flt-program="${esc(progName)}">
+                  ${canAction ? `<td style="text-align:center"><input type="checkbox" class="fab-pd-chk" data-tc="${esc(tcId)}" value="${esc(r.id)}"></td>` : ''}
+                  <td class="font-bold primary">${esc(r.fabricCode)}</td>
+                  <td>${esc(r.fabricName || '—')}</td>
+                  <td class="text-sm text-muted">${esc(r.content || '—')}</td>
+                  <td class="text-center">${r.swatchQty ?? '—'}</td>
+                  <td class="text-sm">${esc(progName || '—')}</td>
+                  <td class="text-sm text-muted">${fmtDate(r.requestedAt)}</td>
+                  <td>${canAction ? `<button class="btn btn-danger btn-sm" onclick="App.deleteFabricRequest('${esc(r.id)}')" title="Remove">🗑</button>` : ''}</td>
+                </tr>`;
+              }).join('')}
             </tbody>
           </table></div>
         </div>`).join('');
@@ -3719,10 +3754,15 @@ const AdminViews = (() => {
   function renderAllDesignChanges() {
     const changes = API.DesignChanges.all().slice().reverse();
     const fmtDate = d => new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
     const rows = changes.length ? changes.map(c => {
       const style = API.Styles.get(c.styleId);
       const prog  = style ? API.Programs.get(style.programId) : null;
-      return `<tr>
+      return `<tr
+        data-flt-style="${esc(c.styleNumber || c.styleId || '')}"
+        data-flt-program="${esc(prog?.name || '')}"
+        data-flt-field="${esc(c.field || '')}"
+        data-flt-by="${esc(c.changedByName || c.changedBy || '')}">
         <td class="text-sm text-muted">${fmtDate(c.changedAt)}</td>
         <td class="primary font-bold" style="cursor:pointer" onclick="App.navigate('styles','${style?.programId}')">${c.styleNumber || c.styleId}</td>
         <td class="text-sm">${prog?.name || '—'}</td>
@@ -3738,8 +3778,15 @@ const AdminViews = (() => {
       <div><h1 class="page-title">Design Change Log</h1>
         <p class="page-subtitle">All logged design changes across programs, newest first</p></div>
     </div>
-    <div class="card" style="padding:0"><div class="table-wrap"><table>
-      <thead><tr><th>Date</th><th>Style #</th><th>Program</th><th>Field</th><th>Description</th><th>Previous</th><th>New Value</th><th>Logged By</th></tr></thead>
+    <div class="card" style="padding:0"><div class="table-wrap"><table id="design-changes-tbl" data-column-filter>
+      <thead><tr>
+        <th>Date</th>
+        <th data-filter-col="style">Style #</th>
+        <th data-filter-col="program">Program</th>
+        <th data-filter-col="field">Field</th>
+        <th>Description</th><th>Previous</th><th>New Value</th>
+        <th data-filter-col="by">Logged By</th>
+      </tr></thead>
       <tbody>${rows}</tbody>
     </table></div></div>`;
   }
