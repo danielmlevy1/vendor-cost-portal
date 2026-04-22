@@ -55,8 +55,8 @@ body[data-theme="light"] {
   --border-light: rgba(17, 24, 39, 0.04);
   --border-hover: rgba(17, 24, 39, 0.24);
 
-  --accent:      #111827;     /* black accent — understated */
-  --accent-glow: rgba(17, 24, 39, 0.06);
+  --accent:      #002855;     /* Pantone 295C — parent brand navy */
+  --accent-glow: rgba(0, 40, 85, 0.08);
 
   --text-primary:   #111827;  /* near-black for headings */
   --text-secondary: #1f2937;  /* charcoal body */
@@ -283,16 +283,16 @@ body[data-theme="light"] .page-title {
 }
 body[data-theme="light"] .page-header { margin-bottom: 32px; }
 
-/* Primary button — solid black, no glow. The hero CTA look. */
+/* Primary button — Pantone 295C navy (parent brand). No glow. */
 body[data-theme="light"] .btn-primary {
-  background: #111827;
+  background: #002855;
   color: #ffffff;
-  border-color: #111827;
+  border-color: #002855;
   box-shadow: none;
 }
 body[data-theme="light"] .btn-primary:hover {
-  background: #000000;
-  border-color: #000000;
+  background: #001f42;
+  border-color: #001f42;
   box-shadow: none;
   transform: none;
 }
