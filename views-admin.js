@@ -4329,18 +4329,14 @@ const AdminViews = (() => {
 
   // ── Program Overview page ───────────────────────────────────────
   // Margin recap for placed styles, KPI roll-ups, vendor + factory
-  // mix. Market defaults to program.market; users can toggle to see
-  // the other market's LDP (useful when a program might also sell
-  // into the other market).
+  // mix. Each program ships to exactly one market (USA or Canada),
+  // so LDP is always computed against program.market — no toggle.
   function renderOverview(programId, role) {
     const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
     const prog = API.Programs.get(programId);
     if (!prog) return `<div class="empty-state"><div class="icon">⚠</div><h3>Program not found</h3></div>`;
 
-    // Market toggle — sticky per program in localStorage. Falls back
-    // to the program's configured market.
-    const mktKey = 'vcp_overview_market_' + programId;
-    const market = localStorage.getItem(mktKey) || prog.market || 'USA';
+    const market = prog.market || 'USA';
     const fmt$   = v => v == null || isNaN(v) ? '—' : '$' + Number(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     const fmt$0  = v => v == null || isNaN(v) ? '—' : '$' + Math.round(Number(v)).toLocaleString();
     const fmtPct = v => v == null || isNaN(v) ? '—' : (Number(v) * 100).toFixed(1) + '%';
@@ -4436,16 +4432,6 @@ const AdminViews = (() => {
       ? '<span class="tag" style="background:rgba(239,68,68,0.15);color:#ef4444">🇨🇦 Canada</span>'
       : '<span class="tag" style="background:rgba(59,130,246,0.15);color:#3b82f6">🇺🇸 USA</span>';
 
-    const marketMismatch = market !== (prog.market || 'USA')
-      ? `<div class="alert alert-warning" style="margin-bottom:12px">⚠ Viewing <strong>${esc(market)}</strong> LDP — program's configured market is <strong>${esc(prog.market || 'USA')}</strong>. Margins recomputed with ${esc(market)} duty & freight.</div>`
-      : '';
-
-    const marketToggle = `
-      <div style="display:inline-flex;gap:0;border-radius:var(--radius-sm);overflow:hidden;border:1px solid var(--border)">
-        <button class="btn ${market === 'USA' ? 'btn-primary' : 'btn-secondary'} btn-sm" style="border-radius:0" onclick="App.setOverviewMarket('${esc(programId)}','USA')">🇺🇸 USA</button>
-        <button class="btn ${market === 'Canada' ? 'btn-primary' : 'btn-secondary'} btn-sm" style="border-radius:0" onclick="App.setOverviewMarket('${esc(programId)}','Canada')">🇨🇦 Canada</button>
-      </div>`;
-
     // Empty state — program isn't placed yet.
     if (rows.length === 0) {
       return `
@@ -4455,7 +4441,6 @@ const AdminViews = (() => {
           <h1 class="page-title">📈 Overview — ${esc(prog.name)}</h1>
           <p class="page-subtitle">${marketBadge} · Target margin ${prog.targetMargin ? fmtPct(prog.targetMargin) : '—'}</p>
         </div>
-        ${marketToggle}
       </div>
       <div class="card" style="padding:40px;text-align:center">
         <div class="empty-state">
@@ -4518,10 +4503,7 @@ const AdminViews = (() => {
         <h1 class="page-title">📈 Overview — ${esc(prog.name)}</h1>
         <p class="page-subtitle">${marketBadge} · ${styleCount} placed ${styleCount === 1 ? 'style' : 'styles'} · Target margin ${prog.targetMargin ? fmtPct(prog.targetMargin) : '—'}</p>
       </div>
-      ${marketToggle}
     </div>
-
-    ${marketMismatch}
 
     <div class="kpi-grid" style="grid-template-columns:repeat(auto-fill,minmax(200px,1fr));margin-bottom:16px">
       ${kpiTile('Placed styles',  `${styleCount}`, `${hitCount} hit target · ${missCount} miss`, '#22c55e')}

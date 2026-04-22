@@ -7103,12 +7103,6 @@ App.rejectCapacityPlan = async function(programId, planId) {
   App.navigate('capacity-plan', programId);
 };
 
-// Overview market toggle — sticky per program in localStorage.
-App.setOverviewMarket = function(programId, market) {
-  localStorage.setItem('vcp_overview_market_' + programId, market);
-  App.navigate('overview', programId);
-};
-
 // Set (or clear) the factory on a placement. Used by both the
 // vendor's per-program factory-allocation panel and the admin's
 // style cost-comparison placement header. Server enforces role
