@@ -1163,6 +1163,26 @@ const API = (() => {
     },
   };
 
+  // ── Performance (cross-program rollups) ─────────────────────
+  // Admin/PC only. Server returns flat rows (one per placed style);
+  // client aggregates by TC or factory for the Performance view.
+  const Performance = {
+    rows:    [],
+    seasons: [],
+    async fetchSeasons() {
+      this.seasons = await GET('/api/performance/seasons');
+      return this.seasons;
+    },
+    async fetchRows({ seasons, years } = {}) {
+      const qs = new URLSearchParams();
+      if (seasons && seasons.length) qs.set('seasons', seasons.join(','));
+      if (years   && years.length)   qs.set('years',   years.join(','));
+      const url = '/api/performance/rows' + (qs.toString() ? '?' + qs.toString() : '');
+      this.rows = await GET(url);
+      return this.rows;
+    },
+  };
+
   // Vendor-only: available fabrics across all their assigned programs,
   // sourced from design handoffs. Each entry is annotated with the
   // vendor's existing request (if any) so the UI can disable already-
@@ -1358,6 +1378,14 @@ const API = (() => {
       const costingProgs = cache.programs.filter(p => p.status === 'Costing');
       await Promise.all(costingProgs.map(p => Styles.fetchByProgram(p.id)));
     },
+    async performance(seasons, years) {
+      await Promise.all([
+        preload.global(),
+        Performance.fetchSeasons().catch(() => {}),
+        Performance.fetchRows({ seasons, years }).catch(() => {}),
+        preload.nav(),
+      ]);
+    },
     // Pull everything a vendor needs to render their dashboard and all
     // their styles across programs: assignments (filtered to self by the
     // server), styles, submissions, cell flags. One call per program but
@@ -1389,7 +1417,7 @@ const API = (() => {
     Submissions, Placements, CustomerAssignments, CustomerBuys,
     StyleLinks, DesignChanges, RecostRequests, CellFlags, Revisions,
     PendingChanges, DesignHandoffs, FabricLibrary, FabricRequests, FabricPackages, AvailableFabrics,
-    Factories, DeliveryPlans, CapacityPlans, SalesRequests, CostHistory,
+    Factories, DeliveryPlans, CapacityPlans, SalesRequests, CostHistory, Performance,
     calcLDP, computeTargetLDP, parseCSV, csvRowToStyle,
     cache, preload,
   };

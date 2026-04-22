@@ -2290,4 +2290,124 @@ router.delete('/programs/:id/capacity-plan', requireAuth, requireRole('admin'), 
   res.json({ ok: true });
 });
 
+// =============================================================
+// PERFORMANCE (cross-program rollups)
+// =============================================================
+// Admin/PC only. Returns a flat list of "performance rows" — one
+// per placed style — with the raw data needed to aggregate by TC
+// or factory client-side (FOB, buys roll-up, delivery-late flags,
+// capacity plan status). Client does the aggregation in JS so we
+// can iterate on columns without round-trips.
+
+// GET /api/performance/seasons — distinct (season, year) tuples on
+// placed-style programs, sorted newest first.
+router.get('/performance/seasons', requireAuth, requireRole('admin', 'pc'), (req, res) => {
+  const rows = db.prepare(`
+    SELECT DISTINCT p.season, p.year
+    FROM programs p
+    WHERE p.season IS NOT NULL AND p.year IS NOT NULL
+    ORDER BY p.year DESC,
+      CASE LOWER(p.season)
+        WHEN 'holiday' THEN 4
+        WHEN 'fall'    THEN 3
+        WHEN 'summer'  THEN 2
+        WHEN 'spring'  THEN 1
+        ELSE 0
+      END DESC
+  `).all();
+  res.json(rows);
+});
+
+// GET /api/performance/rows?seasons=SS25,FW24&years=2025,2024
+// Returns one row per placed style.
+router.get('/performance/rows', requireAuth, requireRole('admin', 'pc'), (req, res) => {
+  const seasonList = (req.query.seasons || '').split(',').map(s => s.trim()).filter(Boolean);
+  const yearList   = (req.query.years   || '').split(',').map(s => s.trim()).filter(Boolean);
+
+  // Build WHERE clause. Empty filter = all programs.
+  let where = `p.status != 'Cancelled'`;
+  const params = [];
+  if (seasonList.length) {
+    where += ` AND p.season IN (${seasonList.map(() => '?').join(',')})`;
+    params.push(...seasonList);
+  }
+  if (yearList.length) {
+    where += ` AND p.year IN (${yearList.map(() => '?').join(',')})`;
+    params.push(...yearList);
+  }
+
+  // Core placed-style data + buys rollup + delivery comparison
+  // columns + capacity plan status.
+  const sql = `
+    SELECT
+      p.id                 AS program_id,
+      p.name               AS program_name,
+      p.season, p.year,
+      p.market,
+      p.target_margin,
+      p.status             AS program_status,
+      pl.style_id,
+      s.style_number, s.style_name,
+      s.duty_rate, s.est_freight, s.special_packaging,
+      pl.tc_id, pl.factory_id, pl.coo, pl.confirmed_fob,
+      sub.fob              AS sub_fob,
+      sub.payment_terms    AS sub_payment_terms,
+      sub.factory_cost     AS sub_factory_cost,
+      bu.total_qty         AS units,
+      bu.revenue           AS revenue,
+      dpl.factory_cargo_ready_date,
+      dpl.production_cargo_ready_vendor,
+      dpl.production_cargo_ready_sales,
+      dpl.sales_in_whse_date,
+      cp.status            AS capacity_status
+    FROM placements pl
+      INNER JOIN styles   s ON s.id = pl.style_id
+      INNER JOIN programs p ON p.id = s.program_id
+      LEFT  JOIN submissions sub ON sub.style_id = pl.style_id AND sub.tc_id = pl.tc_id AND sub.coo = pl.coo
+      LEFT  JOIN (
+        SELECT style_id,
+               SUM(COALESCE(qty,0)) AS total_qty,
+               SUM(COALESCE(qty,0) * COALESCE(sell_price,0)) AS revenue
+        FROM customer_buys
+        GROUP BY style_id
+      ) bu ON bu.style_id = pl.style_id
+      LEFT  JOIN delivery_plans   dp  ON dp.program_id  = p.id
+      LEFT  JOIN delivery_plan_lines dpl ON dpl.plan_id = dp.id AND dpl.style_id = pl.style_id
+      LEFT  JOIN capacity_plans   cp  ON cp.program_id  = p.id
+    WHERE ${where}
+    ORDER BY p.year DESC, p.season DESC, p.name
+  `;
+
+  const rows = db.prepare(sql).all(...params).map(r => ({
+    programId:                 r.program_id,
+    programName:               r.program_name,
+    season:                    r.season,
+    year:                      r.year,
+    market:                    r.market,
+    targetMargin:              r.target_margin,
+    programStatus:             r.program_status,
+    styleId:                   r.style_id,
+    styleNumber:               r.style_number,
+    styleName:                 r.style_name,
+    dutyRate:                  r.duty_rate,
+    estFreight:                r.est_freight,
+    specialPackaging:          r.special_packaging,
+    tcId:                      r.tc_id,
+    factoryId:                 r.factory_id,
+    coo:                       r.coo,
+    fob:                       r.confirmed_fob ?? r.sub_fob,
+    paymentTerms:              r.sub_payment_terms,
+    factoryCost:               r.sub_factory_cost,
+    units:                     r.units,
+    revenue:                   r.revenue,
+    factoryCargoReadyDate:     r.factory_cargo_ready_date,
+    productionCargoReadyVendor: r.production_cargo_ready_vendor,
+    productionCargoReadySales: r.production_cargo_ready_sales,
+    salesInWhseDate:           r.sales_in_whse_date,
+    capacityStatus:            r.capacity_status,
+  }));
+
+  res.json(rows);
+});
+
 module.exports = router;

@@ -4746,6 +4746,246 @@ const AdminViews = (() => {
     `;
   }
 
+  // ── Performance page (cross-program rollups) ───────────────────
+  // Admin/PC only. Two tabs: Vendors vs Factories. Season multi-
+  // select filter sticky in localStorage. Drill-down: click a row
+  // to expand per-program breakdown in an overlay card.
+  function renderPerformance(tab) {
+    const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+    const activeTab = (tab === 'factories') ? 'factories' : 'vendors';
+    const rows = API.Performance.rows || [];
+    const seasons = API.Performance.seasons || [];
+    const tcMap  = Object.fromEntries((API.cache.tradingCompanies || []).map(t => [t.id, t]));
+    const facMap = Object.fromEntries((API.Factories?.all() || []).map(f => [f.id, f]));
+    const cooMap = Object.fromEntries((API.cache.cooRates || []).map(c => [c.code, c]));
+
+    const fmt$   = v => v == null || isNaN(v) ? '—' : '$' + Number(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const fmt$0  = v => v == null || isNaN(v) ? '—' : '$' + Math.round(Number(v)).toLocaleString();
+    const fmtPct = v => v == null || isNaN(v) ? '—' : (Number(v) * 100).toFixed(1) + '%';
+    const fmtQty = v => v == null || isNaN(v) ? '—' : Number(v).toLocaleString();
+    const dayDiff = (a, b) => {
+      if (!a || !b) return null;
+      const da = new Date(String(a).slice(0, 10) + 'T00:00:00');
+      const db = new Date(String(b).slice(0, 10) + 'T00:00:00');
+      return Math.round((da - db) / 86400000);
+    };
+    const addDays = (iso, n) => {
+      if (!iso) return null;
+      const d = new Date(String(iso).slice(0, 10) + 'T00:00:00');
+      d.setDate(d.getDate() + Number(n || 0));
+      return d.toISOString().slice(0, 10);
+    };
+
+    // ── Season filter (multi-select checkboxes) ─────────────────
+    // Default to the newest season/year if nothing has been checked.
+    const savedRaw = localStorage.getItem('vcp_perf_seasons') || '';
+    const defaultKey = seasons.length
+      ? `${seasons[0].season}|${seasons[0].year}`
+      : '';
+    const selected = savedRaw
+      ? new Set(savedRaw.split(',').filter(Boolean))
+      : new Set(defaultKey ? [defaultKey] : []);
+
+    const filterRows = rows.filter(r => {
+      if (!selected.size) return true;
+      return selected.has(`${r.season}|${r.year}`);
+    });
+
+    // ── Per-row derived metrics ─────────────────────────────────
+    // For each placed style: compute LDP + margin + two delivery
+    // lateness measures. fob/paymentTerms/factoryCost come from the
+    // winning submission; duty/freight meta come from the style.
+    const derive = (r) => {
+      const fob = Number(r.fob) || 0;
+      const styleLike = {
+        dutyRate:         r.dutyRate,
+        estFreight:       r.estFreight,
+        specialPackaging: r.specialPackaging,
+      };
+      const ldpCalc = fob > 0 ? API.calcLDP(fob, styleLike, r.coo, r.market || 'USA', null, r.paymentTerms || 'FOB', r.factoryCost) : null;
+      const ldp   = ldpCalc ? ldpCalc.ldp : null;
+      const units = Number(r.units) || 0;
+      const revenue = Number(r.revenue) || 0;
+      const wtdSell = units > 0 ? revenue / units : null;
+      const cost    = (ldp != null && units > 0) ? ldp * units : null;
+      const marginPct = (wtdSell != null && ldp != null && wtdSell > 0) ? (wtdSell - ldp) / wtdSell : null;
+      const target    = r.targetMargin || null;
+      const hitTarget = (marginPct != null && target != null) ? marginPct >= target : null;
+
+      // Delivery: TC's factory CRD + sea lead → projected in-whse.
+      // Late vs Sales In-Whse: projected > sales_in_whse.
+      // Late vs Prod CRD (Sales): vendor CRD > sales CRD.
+      const seaDays = cooMap[r.coo]?.seaLeadDays ?? null;
+      const projInWhse = (r.factoryCargoReadyDate && seaDays != null)
+        ? addDays(r.factoryCargoReadyDate, seaDays) : null;
+      const daysLateInWhse = dayDiff(projInWhse, r.salesInWhseDate);
+      const lateInWhse = (daysLateInWhse != null) ? daysLateInWhse > 0 : null;
+      const daysLateProdCrd = dayDiff(r.productionCargoReadyVendor, r.productionCargoReadySales);
+      const lateProdCrd = (daysLateProdCrd != null) ? daysLateProdCrd > 0 : null;
+
+      return {
+        ...r, units, revenue, fob, ldp, wtdSell, cost, marginPct, hitTarget,
+        daysLateInWhse, lateInWhse, daysLateProdCrd, lateProdCrd,
+      };
+    };
+    const derived = filterRows.map(derive);
+
+    // ── Aggregation by TC or Factory ────────────────────────────
+    const groupKey = activeTab === 'factories' ? (r => r.factoryId) : (r => r.tcId);
+    const groupLabel = activeTab === 'factories'
+      ? (r => facMap[r.factoryId]?.factoryName || (r.factoryId ? '(unknown factory)' : '(no factory)'))
+      : (r => tcMap[r.tcId]?.code || '(unknown)');
+    const groupName = activeTab === 'factories'
+      ? (r => facMap[r.factoryId]?.factoryName || '')
+      : (r => tcMap[r.tcId]?.name || '');
+
+    const groups = {};
+    for (const r of derived) {
+      const k = groupKey(r) || '__none__';
+      if (!groups[k]) groups[k] = {
+        id: k, label: groupLabel(r), name: groupName(r),
+        programs: new Set(),
+        placedCount: 0, units: 0, revenue: 0, cost: 0, fobUnits: 0,
+        hitCount: 0, missCount: 0,
+        lateInWhseCount: 0, daysLateInWhseSum: 0, inWhseSamples: 0,
+        lateProdCrdCount: 0, daysLateProdCrdSum: 0, prodCrdSamples: 0,
+        capacitySubmitted: 0, capacityApproved: 0, capacityRejected: 0,
+        capacityPrograms: new Set(),
+        rows: [],
+      };
+      const g = groups[k];
+      g.programs.add(r.programId);
+      g.placedCount += 1;
+      g.units += r.units || 0;
+      g.revenue += r.revenue || 0;
+      if (r.cost != null) g.cost += r.cost;
+      g.fobUnits += r.fob * (r.units || 0);
+      if (r.hitTarget === true) g.hitCount += 1;
+      if (r.hitTarget === false) g.missCount += 1;
+      if (r.daysLateInWhse != null) { g.inWhseSamples += 1; g.daysLateInWhseSum += r.daysLateInWhse; if (r.lateInWhse) g.lateInWhseCount += 1; }
+      if (r.daysLateProdCrd != null) { g.prodCrdSamples += 1; g.daysLateProdCrdSum += r.daysLateProdCrd; if (r.lateProdCrd) g.lateProdCrdCount += 1; }
+      // Capacity: count once per program per group (not once per style)
+      if (r.capacityStatus && !g.capacityPrograms.has(r.programId)) {
+        g.capacityPrograms.add(r.programId);
+        if (r.capacityStatus === 'submitted') g.capacitySubmitted += 1;
+        if (r.capacityStatus === 'approved')  g.capacityApproved  += 1;
+        if (r.capacityStatus === 'rejected')  g.capacityRejected  += 1;
+      }
+      g.rows.push(r);
+    }
+
+    const groupList = Object.values(groups).map(g => ({
+      ...g,
+      programsCount: g.programs.size,
+      wtdFob:        g.units > 0 ? g.fobUnits / g.units : null,
+      wtdMargin:     g.revenue > 0 ? (g.revenue - g.cost) / g.revenue : null,
+      avgDaysLateInWhse: g.inWhseSamples > 0 ? g.daysLateInWhseSum / g.inWhseSamples : null,
+      avgDaysLateProdCrd: g.prodCrdSamples > 0 ? g.daysLateProdCrdSum / g.prodCrdSamples : null,
+    })).sort((a, b) => b.revenue - a.revenue);
+
+    // ── Season filter HTML ──────────────────────────────────────
+    const seasonFilterHtml = seasons.length
+      ? seasons.map(s => {
+          const key = `${s.season}|${s.year}`;
+          const checked = selected.has(key) ? 'checked' : '';
+          return `<label class="col-toggle-item" style="display:inline-flex;gap:6px;margin:0 10px 6px 0;white-space:nowrap">
+            <input type="checkbox" value="${esc(key)}" ${checked} onchange="App.togglePerfSeason(this)">
+            <span>${esc(s.season)} ${esc(s.year)}</span>
+          </label>`;
+        }).join('')
+      : '<span class="text-muted text-sm">No seasons yet</span>';
+
+    // ── Tab header ──────────────────────────────────────────────
+    const tabBtn = (key, label, icon) => `
+      <button class="btn ${activeTab === key ? 'btn-primary' : 'btn-secondary'} btn-sm"
+        onclick="App.navigate('performance','${key}')">${icon} ${label}</button>`;
+
+    // ── Main row rendering ──────────────────────────────────────
+    const tableHtml = groupList.length ? `
+      <div class="card" style="padding:0;margin-bottom:16px">
+        <div class="table-wrap">
+          <table style="font-size:0.82rem" data-column-filter="1">
+            <thead><tr>
+              <th>${activeTab === 'factories' ? 'Factory' : 'Vendor'}</th>
+              <th class="text-right">Programs</th>
+              <th class="text-right">Placed</th>
+              <th class="text-right">Units</th>
+              <th class="text-right">Wtd FOB</th>
+              <th class="text-right">Revenue</th>
+              <th class="text-right">Wtd Margin</th>
+              <th class="text-center" title="Programs where wtd margin ≥ target">Hit / Miss</th>
+              <th class="text-center" title="Lines where projected in-whse (Factory CRD + sea lead) > Sales In-Whse date">Late vs Sales In-Whse</th>
+              <th class="text-center" title="Lines where vendor Prod CRD > sales Prod CRD">Late vs Prod CRD</th>
+              <th class="text-center" title="Capacity plans: submitted / approved / rejected">Capacity</th>
+              <th></th>
+            </tr></thead>
+            <tbody>
+              ${groupList.map(g => `
+                <tr style="cursor:pointer" onclick="App.openPerformanceDrill('${esc(activeTab)}','${esc(g.id)}')">
+                  <td>
+                    <div class="font-bold">${esc(g.label)}</div>
+                    ${g.name && g.name !== g.label ? `<div class="text-sm text-muted">${esc(g.name)}</div>` : ''}
+                  </td>
+                  <td class="text-right">${g.programsCount}</td>
+                  <td class="text-right">${g.placedCount}</td>
+                  <td class="text-right">${fmtQty(g.units)}</td>
+                  <td class="text-right">${fmt$(g.wtdFob)}</td>
+                  <td class="text-right">${fmt$0(g.revenue)}</td>
+                  <td class="text-right font-bold" style="color:${g.wtdMargin == null ? 'inherit' : g.wtdMargin < 0 ? '#ef4444' : g.wtdMargin < 0.2 ? '#f59e0b' : '#22c55e'}">${fmtPct(g.wtdMargin)}</td>
+                  <td class="text-center">
+                    <span style="color:#22c55e">${g.hitCount}</span> / <span style="color:#ef4444">${g.missCount}</span>
+                  </td>
+                  <td class="text-center">
+                    ${g.inWhseSamples === 0
+                      ? '<span class="text-muted">—</span>'
+                      : `<div><strong style="color:${g.lateInWhseCount > 0 ? '#ef4444' : '#22c55e'}">${g.lateInWhseCount}</strong> / ${g.inWhseSamples}</div>
+                         <div class="text-sm text-muted">${g.avgDaysLateInWhse != null ? (g.avgDaysLateInWhse >= 0 ? '+' : '') + g.avgDaysLateInWhse.toFixed(1) + 'd avg' : ''}</div>`}
+                  </td>
+                  <td class="text-center">
+                    ${g.prodCrdSamples === 0
+                      ? '<span class="text-muted">—</span>'
+                      : `<div><strong style="color:${g.lateProdCrdCount > 0 ? '#ef4444' : '#22c55e'}">${g.lateProdCrdCount}</strong> / ${g.prodCrdSamples}</div>
+                         <div class="text-sm text-muted">${g.avgDaysLateProdCrd != null ? (g.avgDaysLateProdCrd >= 0 ? '+' : '') + g.avgDaysLateProdCrd.toFixed(1) + 'd avg' : ''}</div>`}
+                  </td>
+                  <td class="text-center text-sm">
+                    ${g.capacityApproved}/${g.capacitySubmitted + g.capacityApproved}/${g.capacityRejected}
+                  </td>
+                  <td class="text-right text-sm text-muted">▸</td>
+                </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>`
+      : `<div class="empty-state" style="padding:40px">
+          <div class="icon">📊</div>
+          <h3>No data matches the current filter</h3>
+          <p class="text-muted">Try checking more seasons above, or place styles on a program first.</p>
+        </div>`;
+
+    return `
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">📊 Performance</h1>
+        <p class="page-subtitle">Cross-program rollup · ${activeTab === 'factories' ? 'grouped by factory' : 'grouped by vendor'} · ${filterRows.length} placed ${filterRows.length === 1 ? 'style' : 'styles'}</p>
+      </div>
+      <div style="display:flex;gap:6px">
+        ${tabBtn('vendors',   'Vendors',   '🏣')}
+        ${tabBtn('factories', 'Factories', '🏭')}
+      </div>
+    </div>
+
+    <div class="card" style="padding:12px 16px;margin-bottom:12px">
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+        <span class="font-bold text-sm">Seasons:</span>
+        ${seasonFilterHtml}
+        <button class="btn btn-ghost btn-sm" onclick="App.clearPerfSeasons()" title="Show all seasons">Clear</button>
+      </div>
+    </div>
+
+    ${tableHtml}
+    `;
+  }
+
   // ── Factories page ───────────────────────────────────────────────
   // One render, driven by the caller's role. Admin/PC get the full
   // tabbed queue with review actions. Other internal roles see a
@@ -4981,6 +5221,8 @@ const AdminViews = (() => {
     renderCapacityPlan,
     // Program Overview (margin recap)
     renderOverview,
+    // Cross-program performance (admin/PC)
+    renderPerformance,
   };
 
   Object.defineProperty(api, '_programsView', {

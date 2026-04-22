@@ -56,6 +56,13 @@ App = (() => {
       }
       else if (route === 'cross-program')
         await API.preload.crossProgram();
+      else if (route === 'performance') {
+        // Read selected seasons from localStorage; server returns all
+        // rows if no seasons specified (first visit).
+        const raw = localStorage.getItem('vcp_perf_seasons') || '';
+        const seasons = raw.split(',').filter(Boolean);
+        await API.preload.performance(seasons);
+      }
       else if (route === 'trading-companies' || route === 'my-company')
         await API.preload.tradingCompanies();
       else if (route === 'customers' || route === 'internal' || route === 'coo')
@@ -283,6 +290,7 @@ App = (() => {
         <button class="nav-item ${state.route === 'dashboard' ? 'active' : ''}" onclick="App.navigate('dashboard')"><span class="icon">🏡</span> Dashboard</button>
         ${programsGroup}
         <button class="nav-item ${state.route === 'cross-program' ? 'active' : ''}" onclick="App.navigate('cross-program')"><span class="icon">🌐</span> All Open Programs</button>
+        <button class="nav-item ${state.route === 'performance' ? 'active' : ''}" onclick="App.navigate('performance')"><span class="icon">📊</span> Performance</button>
         <div class="sidebar-section"><div class="sidebar-section-label">Pre-Costing</div></div>
         <button class="nav-item ${state.route === 'design-handoff' ? 'active' : ''}" onclick="App.navigate('design-handoff')"><span class="icon">🎨</span> Design Handoffs</button>
         <button class="nav-item ${state.route === 'sales-request' ? 'active' : ''}" onclick="App.navigate('sales-request')"><span class="icon">📝</span> Sales Requests</button>
@@ -382,6 +390,7 @@ App = (() => {
       else if (route === 'buy-summary')   mc.innerHTML = AdminViews.renderBuySummary(routeParam, user.role);
       else if (route === 'compare')       mc.innerHTML = AdminViews.renderCostComparison(routeParam);
       else if (route === 'cross-program') mc.innerHTML = AdminViews.renderCrossProgram();
+      else if (route === 'performance')   mc.innerHTML = AdminViews.renderPerformance(routeParam);
       // Pre-costing workflow routes
       else if (route === 'design-handoff')       mc.innerHTML = AdminViews.renderDesignHandoff();
       else if (route === 'sales-request' || route === 'sales-requests') mc.innerHTML = AdminViews.renderSalesRequests();
@@ -6992,6 +7001,151 @@ App.toggleFactoryFirstSale = async function(id, on) {
     else    await API.Factories.revokeFirstSale(id);
   } catch (err) { alert('Could not update: ' + (err.message || 'unknown')); return; }
   App.navigate('factories');
+};
+
+// ── Performance page handlers ───────────────────────────────────
+
+App.togglePerfSeason = function(cb) {
+  const raw = localStorage.getItem('vcp_perf_seasons') || '';
+  const set = new Set(raw.split(',').filter(Boolean));
+  if (cb.checked) set.add(cb.value); else set.delete(cb.value);
+  localStorage.setItem('vcp_perf_seasons', [...set].join(','));
+  const st = App._getState?.();
+  App.navigate('performance', st?.routeParam || 'vendors');
+};
+
+App.clearPerfSeasons = function() {
+  localStorage.removeItem('vcp_perf_seasons');
+  const st = App._getState?.();
+  App.navigate('performance', st?.routeParam || 'vendors');
+};
+
+// Drill-down: show the per-program breakdown for a TC or factory
+// in a modal. Reuses the already-loaded API.Performance.rows, so no
+// extra round-trip.
+App.openPerformanceDrill = function(tab, groupId) {
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+  const rows = API.Performance.rows || [];
+  const cooMap = Object.fromEntries((API.cache.cooRates || []).map(c => [c.code, c]));
+  const tcMap  = Object.fromEntries((API.cache.tradingCompanies || []).map(t => [t.id, t]));
+  const facMap = Object.fromEntries((API.Factories?.all() || []).map(f => [f.id, f]));
+
+  // Filter rows — same key logic as renderPerformance.
+  const savedRaw = localStorage.getItem('vcp_perf_seasons') || '';
+  const selected = new Set(savedRaw.split(',').filter(Boolean));
+  const filtered = rows.filter(r => {
+    if (selected.size && !selected.has(`${r.season}|${r.year}`)) return false;
+    return tab === 'factories' ? r.factoryId === groupId : r.tcId === groupId;
+  });
+
+  const fmt$0  = v => v == null || isNaN(v) ? '—' : '$' + Math.round(Number(v)).toLocaleString();
+  const fmtPct = v => v == null || isNaN(v) ? '—' : (Number(v) * 100).toFixed(1) + '%';
+  const fmtQty = v => v == null || isNaN(v) ? '—' : Number(v).toLocaleString();
+  const dayDiff = (a, b) => {
+    if (!a || !b) return null;
+    const da = new Date(String(a).slice(0,10) + 'T00:00:00');
+    const db = new Date(String(b).slice(0,10) + 'T00:00:00');
+    return Math.round((da - db) / 86400000);
+  };
+  const addDays = (iso, n) => {
+    if (!iso) return null;
+    const d = new Date(String(iso).slice(0,10) + 'T00:00:00');
+    d.setDate(d.getDate() + Number(n || 0));
+    return d.toISOString().slice(0,10);
+  };
+
+  // Per-program aggregate (a group might have multiple styles on
+  // one program; aggregate them for the drill-down row).
+  const byProg = {};
+  for (const r of filtered) {
+    if (!byProg[r.programId]) byProg[r.programId] = {
+      programId: r.programId, programName: r.programName, season: r.season, year: r.year,
+      market: r.market, targetMargin: r.targetMargin,
+      styles: 0, units: 0, revenue: 0, cost: 0, fobUnits: 0,
+      hit: 0, miss: 0, inWhseLate: 0, inWhseN: 0, prodCrdLate: 0, prodCrdN: 0,
+      capacityStatus: r.capacityStatus,
+    };
+    const p = byProg[r.programId];
+    const fob = Number(r.fob) || 0;
+    const styleLike = { dutyRate: r.dutyRate, estFreight: r.estFreight, specialPackaging: r.specialPackaging };
+    const ldpCalc = fob > 0 ? API.calcLDP(fob, styleLike, r.coo, r.market || 'USA', null, r.paymentTerms || 'FOB', r.factoryCost) : null;
+    const ldp = ldpCalc ? ldpCalc.ldp : null;
+    const units = Number(r.units) || 0;
+    const revenue = Number(r.revenue) || 0;
+    const wtdSell = units > 0 ? revenue / units : null;
+    const marginPct = (wtdSell != null && ldp != null && wtdSell > 0) ? (wtdSell - ldp) / wtdSell : null;
+
+    p.styles += 1;
+    p.units += units;
+    p.revenue += revenue;
+    if (ldp != null) p.cost += ldp * units;
+    p.fobUnits += fob * units;
+    if (marginPct != null && r.targetMargin != null) {
+      if (marginPct >= r.targetMargin) p.hit += 1; else p.miss += 1;
+    }
+
+    const seaDays = cooMap[r.coo]?.seaLeadDays ?? null;
+    const projInWhse = (r.factoryCargoReadyDate && seaDays != null) ? addDays(r.factoryCargoReadyDate, seaDays) : null;
+    const dIn = dayDiff(projInWhse, r.salesInWhseDate);
+    if (dIn != null) { p.inWhseN += 1; if (dIn > 0) p.inWhseLate += 1; }
+    const dCr = dayDiff(r.productionCargoReadyVendor, r.productionCargoReadySales);
+    if (dCr != null) { p.prodCrdN += 1; if (dCr > 0) p.prodCrdLate += 1; }
+  }
+
+  const progList = Object.values(byProg).map(p => ({
+    ...p,
+    wtdMargin: p.revenue > 0 ? (p.revenue - p.cost) / p.revenue : null,
+  })).sort((a, b) => b.revenue - a.revenue);
+
+  const label = tab === 'factories'
+    ? (facMap[groupId]?.factoryName || '(unknown factory)')
+    : (tcMap[groupId]?.code || '(unknown)');
+  const subLabel = tab === 'factories'
+    ? (facMap[groupId]?.factoryName ? (tcMap[facMap[groupId]?.tcId]?.code || '') : '')
+    : (tcMap[groupId]?.name || '');
+
+  const rowsHtml = progList.length ? progList.map(p => `
+    <tr style="cursor:pointer" onclick="App.closeModal();App.navigate('overview','${esc(p.programId)}')">
+      <td><div class="font-bold">${esc(p.programName || '—')}</div>
+        <div class="text-sm text-muted">${esc(p.season || '')} ${esc(p.year || '')} · ${esc(p.market || 'USA')}</div></td>
+      <td class="text-right">${p.styles}</td>
+      <td class="text-right">${fmtQty(p.units)}</td>
+      <td class="text-right">${fmt$0(p.revenue)}</td>
+      <td class="text-right font-bold" style="color:${p.wtdMargin == null ? 'inherit' : p.wtdMargin < 0 ? '#ef4444' : (p.targetMargin && p.wtdMargin >= p.targetMargin) ? '#22c55e' : '#f59e0b'}">${fmtPct(p.wtdMargin)}</td>
+      <td class="text-center text-sm">
+        <span style="color:#22c55e">${p.hit}</span> / <span style="color:#ef4444">${p.miss}</span>
+      </td>
+      <td class="text-center text-sm">${p.inWhseN ? `${p.inWhseLate}/${p.inWhseN}` : '—'}</td>
+      <td class="text-center text-sm">${p.prodCrdN ? `${p.prodCrdLate}/${p.prodCrdN}` : '—'}</td>
+      <td class="text-center text-sm">${p.capacityStatus || '—'}</td>
+    </tr>`).join('') : `<tr><td colspan="9" class="text-muted text-center" style="padding:20px">No programs in scope</td></tr>`;
+
+  App.showModal(`
+    <div class="modal-header">
+      <h2>📊 ${esc(label)} — Program breakdown</h2>
+      <button class="btn btn-ghost btn-icon" onclick="App.closeModal()">✕</button>
+    </div>
+    ${subLabel ? `<p class="text-muted text-sm" style="margin-top:-8px">${esc(subLabel)}</p>` : ''}
+    <p class="text-sm text-muted mb-2">Click a row to jump to that program's Overview.</p>
+    <div class="table-wrap" style="max-height:60vh;overflow:auto">
+      <table style="font-size:0.85rem;width:100%">
+        <thead><tr>
+          <th>Program</th>
+          <th class="text-right">Styles</th>
+          <th class="text-right">Units</th>
+          <th class="text-right">Revenue</th>
+          <th class="text-right">Margin</th>
+          <th class="text-center">Hit/Miss</th>
+          <th class="text-center" title="Late vs Sales In-Whse (lines)">In-Whse Late</th>
+          <th class="text-center" title="Late vs Prod CRD (lines)">Prod CRD Late</th>
+          <th class="text-center">Capacity</th>
+        </tr></thead>
+        <tbody>${rowsHtml}</tbody>
+      </table>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="App.closeModal()">Close</button>
+    </div>`);
 };
 
 // Admin Factories page — Country / TC filters (persisted in localStorage).
