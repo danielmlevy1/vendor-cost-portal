@@ -96,6 +96,7 @@ const API = (() => {
     availableFabrics:    [],   // vendor only: [{programId, fabrics[]}]
     factories:           [],
     deliveryPlans:       {},   // programId -> {plan, lines}  (null = 404 "no plan")
+    capacityPlans:       {},   // programId -> {plan, lines}  (null = 404 "no plan")
     recostByProgram:     {},   // programId -> [rcrs]
     recostPendingSales:      [],
     recostPendingProduction: [],
@@ -1104,6 +1105,64 @@ const API = (() => {
     },
   };
 
+  // ── Capacity Plans ──────────────────────────────────────────
+  // One plan per program. TC fills in production math per style×factory
+  // line (total lines, operators, daily output, cut/sew/pack/ex-factory
+  // dates). Submits for Production review; admin/PC approve or reject.
+  // Server filters lines to caller's TC for vendors.
+  const CapacityPlans = {
+    get(programId) { return cache.capacityPlans[programId] || null; },
+    async fetch(programId) {
+      try {
+        const payload = await GET(`/api/programs/${programId}/capacity-plan`);
+        cache.capacityPlans[programId] = payload;
+        return payload;
+      } catch (err) {
+        if (err.status === 404) {
+          cache.capacityPlans[programId] = null;
+          return null;
+        }
+        throw err;
+      }
+    },
+    async initialize(programId) {
+      const payload = await POST(`/api/programs/${programId}/capacity-plan`);
+      cache.capacityPlans[programId] = payload;
+      return payload;
+    },
+    async updateLine(programId, lineId, patch) {
+      const line = await PATCH(`/api/capacity-plan-lines/${lineId}`, patch);
+      const payload = cache.capacityPlans[programId];
+      if (payload) {
+        const idx = payload.lines.findIndex(l => l.id === lineId);
+        if (idx >= 0) payload.lines[idx] = line;
+      }
+      return line;
+    },
+    async submit(programId, planId) {
+      const plan = await POST(`/api/capacity-plans/${planId}/submit`);
+      const payload = cache.capacityPlans[programId];
+      if (payload) payload.plan = plan;
+      return plan;
+    },
+    async approve(programId, planId) {
+      const plan = await POST(`/api/capacity-plans/${planId}/approve`);
+      const payload = cache.capacityPlans[programId];
+      if (payload) payload.plan = plan;
+      return plan;
+    },
+    async reject(programId, planId, rejectionReason) {
+      const plan = await POST(`/api/capacity-plans/${planId}/reject`, { rejectionReason });
+      const payload = cache.capacityPlans[programId];
+      if (payload) payload.plan = plan;
+      return plan;
+    },
+    async reset(programId) {
+      await DEL(`/api/programs/${programId}/capacity-plan`);
+      delete cache.capacityPlans[programId];
+    },
+  };
+
   // Vendor-only: available fabrics across all their assigned programs,
   // sourced from design handoffs. Each entry is annotated with the
   // vendor's existing request (if any) so the UI can disable already-
@@ -1330,7 +1389,7 @@ const API = (() => {
     Submissions, Placements, CustomerAssignments, CustomerBuys,
     StyleLinks, DesignChanges, RecostRequests, CellFlags, Revisions,
     PendingChanges, DesignHandoffs, FabricLibrary, FabricRequests, FabricPackages, AvailableFabrics,
-    Factories, DeliveryPlans, SalesRequests, CostHistory,
+    Factories, DeliveryPlans, CapacityPlans, SalesRequests, CostHistory,
     calcLDP, computeTargetLDP, parseCSV, csvRowToStyle,
     cache, preload,
   };

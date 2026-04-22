@@ -2056,6 +2056,7 @@ const AdminViews = (() => {
     return `<div class="program-tabs">
       <button class="program-tab ${activeTab === 'cost' ? 'active' : ''}" onclick="App.navigate('cost-summary','${programId}')">📊 Cost Summary</button>
       <button class="program-tab ${activeTab === 'buys' ? 'active' : ''}" onclick="App.navigate('buy-summary','${programId}')">🛒 Buy Summary</button>
+      <button class="program-tab ${activeTab === 'capacity' ? 'active' : ''}" onclick="App.navigate('capacity-plan','${programId}')">🏭 Capacity Plan</button>
       <button class="program-tab ${activeTab === 'delivery' ? 'active' : ''}" onclick="App.navigate('delivery-plan','${programId}')">🚢 Delivery Plan</button>
     </div>`;
   }
@@ -4297,6 +4298,203 @@ const AdminViews = (() => {
     </div>`;
   }
 
+  // ── Capacity Plan page ──────────────────────────────────────────
+  // TC fills production math per style×factory line; submits to
+  // Production (admin/PC) for review. Admin/PC approve or reject.
+  // Roles:
+  //   admin/pc  → full edit + approve/reject/reset
+  //   vendor    → edit own lines only; submit for review
+  function renderCapacityPlan(programId, role, user) {
+    const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+    const prog = API.Programs.get(programId);
+    if (!prog) return `<div class="empty-state"><div class="icon">⚠</div><h3>Program not found</h3></div>`;
+
+    const fmtDate = d => d ? new Date(d).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' }) : '—';
+    const fmtISO  = d => d ? String(d).slice(0, 10) : '';
+    const isProd   = role === 'admin' || role === 'pc';
+    const isVendor = role === 'vendor';
+
+    const payload = API.CapacityPlans.get(programId);
+
+    const tabBar = isVendor
+      ? `<div style="margin-bottom:10px"><button class="btn btn-ghost btn-sm" onclick="App.navigateVendorProgram('${esc(user?.tcId || '')}','${esc(programId)}')">← Back to ${esc(prog.name)}</button></div>`
+      : programTabBar(programId, 'capacity', prog);
+
+    // No plan yet — Production can initialize.
+    if (!payload || !payload.plan) {
+      const placements = API.Placements.byProgram ? (API.Placements.byProgram(programId) || []) : [];
+      const placedCount = placements.length;
+      return `
+      ${tabBar}
+      <div class="page-header" style="margin-top:12px">
+        <div><h1 class="page-title">🏭 Capacity Plan — ${esc(prog.name)}</h1>
+          <p class="page-subtitle">No plan yet. ${isProd
+            ? `Initialize to pre-fill lines from the ${placedCount} placed ${placedCount === 1 ? 'style' : 'styles'} (one line per style × factory).`
+            : 'Production will initialize the plan once styles are placed.'}</p></div>
+        ${isProd ? `<button class="btn btn-primary" onclick="App.initCapacityPlan('${esc(programId)}')">＋ Initialize Capacity Plan</button>` : ''}
+      </div>
+      <div class="card" style="padding:40px;text-align:center">
+        <div class="empty-state">
+          <div class="icon">📭</div>
+          <h3>${isProd && placedCount === 0 ? 'No styles placed yet' : 'Waiting for Production'}</h3>
+          <p class="text-muted">${isProd && placedCount === 0 ? 'Place at least one style on the Cost Summary tab before initializing.' : ''}</p>
+        </div>
+      </div>`;
+    }
+
+    const { plan, lines } = payload;
+    const styleMap = API.Styles?.byProgram ? Object.fromEntries(API.Styles.byProgram(programId).map(s => [s.id, s])) : {};
+    const tcMap    = Object.fromEntries((API.cache.tradingCompanies || []).map(t => [t.id, t]));
+    const facMap   = Object.fromEntries((API.Factories?.all() || []).map(f => [f.id, f]));
+
+    // Edit permission per line:
+    //   admin/pc  → always
+    //   vendor    → only their own TC's lines (server also enforces)
+    const canEditLine = (line) => isProd || (isVendor && line.tcId === user?.tcId);
+
+    const statusInfo = ({
+      draft:     { label: '📝 Draft',      color: '#94a3b8', desc: 'Not yet submitted for review.' },
+      submitted: { label: '📤 Submitted',  color: '#f59e0b', desc: 'Awaiting Production review.' },
+      approved:  { label: '✓ Approved',    color: '#22c55e', desc: 'Approved by Production.' },
+      rejected:  { label: '✕ Rejected',    color: '#ef4444', desc: 'Production rejected — see reason.' },
+    }[plan.status] || { label: plan.status, color: '#94a3b8', desc: '' });
+
+    const numInput = (lineId, field, value, editable, width = 70) => editable
+      ? `<input type="number" class="form-input" style="font-size:0.82rem;padding:4px 6px;width:${width}px;text-align:right" value="${value == null ? '' : esc(String(value))}" onblur="App.updateCapacityLine('${esc(programId)}','${esc(lineId)}','${field}', this.value)">`
+      : `<span class="text-sm">${value == null ? '—' : Number(value).toLocaleString()}</span>`;
+
+    const dateInput = (lineId, field, value, editable) => editable
+      ? `<input type="date" class="form-input" style="font-size:0.82rem;padding:4px 6px;width:135px" value="${esc(fmtISO(value))}" onchange="App.updateCapacityLine('${esc(programId)}','${esc(lineId)}','${field}', this.value)">`
+      : `<span class="text-sm">${value ? fmtDate(value) : '<span class="text-muted">—</span>'}</span>`;
+
+    const textInput = (lineId, field, value, editable) => editable
+      ? `<input type="text" class="form-input" style="font-size:0.82rem;padding:4px 6px;width:100%" value="${esc(value || '')}" onblur="App.updateCapacityLine('${esc(programId)}','${esc(lineId)}','${field}', this.value)">`
+      : `<span class="text-sm">${esc(value || '—')}</span>`;
+
+    // Factory picker for vendors — only their own active factories.
+    const factoryPicker = (line, editable) => {
+      if (!editable) {
+        const f = line.factoryId ? facMap[line.factoryId] : null;
+        return `<span class="text-sm">${esc(f?.factoryName || '—')}</span>`;
+      }
+      const opts = (API.Factories?.all() || [])
+        .filter(f => f.tcId === line.tcId && f.status === 'active')
+        .map(f => `<option value="${esc(f.id)}" ${line.factoryId === f.id ? 'selected' : ''}>${esc(f.factoryName)}</option>`)
+        .join('');
+      return `<select class="form-select" style="font-size:0.82rem;padding:4px 6px;min-width:140px"
+          onchange="App.updateCapacityLine('${esc(programId)}','${esc(line.id)}','factoryId', this.value)">
+        <option value="">— select —</option>
+        ${opts}
+      </select>`;
+    };
+
+    const rows = lines.map(line => {
+      const style = styleMap[line.styleId];
+      const tc    = tcMap[line.tcId];
+      const editable = canEditLine(line);
+      return `<tr>
+        <td><span class="primary font-bold">${esc(style?.styleNumber || '—')}</span><div class="text-sm text-muted">${esc(style?.styleName || '')}</div></td>
+        <td class="text-sm">${esc(tc?.code || '—')}</td>
+        <td>${factoryPicker(line, editable)}</td>
+        <td class="text-right">${numInput(line.id, 'totalQty', line.totalQty, editable, 80)}</td>
+        <td>${dateInput(line.id, 'deliveryVslEtd', line.deliveryVslEtd, editable)}</td>
+        <td class="text-right">${numInput(line.id, 'factoryTotalLines', line.factoryTotalLines, editable, 60)}</td>
+        <td class="text-right">${numInput(line.id, 'allocatedLines', line.allocatedLines, editable, 60)}</td>
+        <td class="text-right">${numInput(line.id, 'operatorsPerLine', line.operatorsPerLine, editable, 60)}</td>
+        <td class="text-right">${numInput(line.id, 'garmentsPerOperatorDaily', line.garmentsPerOperatorDaily, editable, 70)}</td>
+        <td class="text-right">${numInput(line.id, 'plannedDailyOutputPerLine', line.plannedDailyOutputPerLine, editable, 70)}</td>
+        <td class="text-right">${numInput(line.id, 'plannedTotalDailyOutput', line.plannedTotalDailyOutput, editable, 80)}</td>
+        <td>${dateInput(line.id, 'plannedCuttingDate', line.plannedCuttingDate, editable)}</td>
+        <td>${dateInput(line.id, 'plannedSewingDate', line.plannedSewingDate, editable)}</td>
+        <td>${dateInput(line.id, 'plannedPackingDate', line.plannedPackingDate, editable)}</td>
+        <td>${dateInput(line.id, 'plannedExFactoryDate', line.plannedExFactoryDate, editable)}</td>
+        <td class="text-right">${numInput(line.id, 'sewingAvailableDays', line.sewingAvailableDays, editable, 60)}</td>
+        <td class="text-right">${numInput(line.id, 'totalOutputSewing', line.totalOutputSewing, editable, 80)}</td>
+        <td style="min-width:160px">${textInput(line.id, 'notes', line.notes, editable)}</td>
+      </tr>`;
+    }).join('');
+
+    const headCells = `
+      <th>Style</th>
+      <th>TC</th>
+      <th>Factory</th>
+      <th class="text-right">Total Qty</th>
+      <th>VSL ETD</th>
+      <th class="text-right" title="Total production lines at factory">Lines Total</th>
+      <th class="text-right" title="Lines allocated to this style">Lines Alloc</th>
+      <th class="text-right">Ops/Line</th>
+      <th class="text-right" title="Garments per operator per day">Gmts/Op/Day</th>
+      <th class="text-right" title="Planned daily output per line">Daily/Line</th>
+      <th class="text-right" title="Planned total daily output">Daily Total</th>
+      <th>Cutting</th>
+      <th>Sewing Start</th>
+      <th>Packing</th>
+      <th>Ex-Factory</th>
+      <th class="text-right" title="Available sewing days">Sew Days</th>
+      <th class="text-right" title="Total output from sewing">Out Sewing</th>
+      <th>Notes</th>
+    `;
+
+    const hasVendorLines = isVendor && lines.some(l => l.tcId === user?.tcId);
+    const vendorCanSubmit = isVendor && hasVendorLines && (plan.status === 'draft' || plan.status === 'rejected');
+
+    // Action bar — role-specific
+    let actions = '';
+    if (isProd) {
+      if (plan.status === 'submitted') {
+        actions += `<button class="btn btn-success" onclick="App.approveCapacityPlan('${esc(programId)}','${esc(plan.id)}')">✓ Approve</button>`;
+        actions += `<button class="btn btn-danger" onclick="App.rejectCapacityPlan('${esc(programId)}','${esc(plan.id)}')">✕ Reject</button>`;
+      }
+      if (role === 'admin') {
+        actions += `<button class="btn btn-ghost btn-sm" onclick="App.resetCapacityPlan('${esc(programId)}')" title="Delete plan and lines">🗑 Reset</button>`;
+      }
+    } else if (vendorCanSubmit) {
+      actions += `<button class="btn btn-primary" onclick="App.submitCapacityPlan('${esc(programId)}','${esc(plan.id)}')">📤 Submit for Review</button>`;
+    }
+
+    const subInfo = plan.submittedAt
+      ? `<span class="text-sm text-muted">Submitted ${fmtDate(plan.submittedAt)} by ${esc(plan.submittedBy || '—')}</span>`
+      : '';
+    const revInfo = plan.reviewedAt
+      ? `<span class="text-sm text-muted">Reviewed ${fmtDate(plan.reviewedAt)} by ${esc(plan.reviewedBy || '—')}</span>`
+      : '';
+
+    const rejectionBanner = plan.status === 'rejected' && plan.rejectionReason
+      ? `<div class="alert alert-danger" style="margin-bottom:12px">✕ <strong>Rejected:</strong> ${esc(plan.rejectionReason)}</div>`
+      : '';
+
+    return `
+    ${tabBar}
+    <div class="page-header" style="margin-top:12px">
+      <div>
+        <h1 class="page-title">🏭 Capacity Plan — ${esc(prog.name)}</h1>
+        <p class="page-subtitle">
+          <span class="badge" style="background:${statusInfo.color}22;color:${statusInfo.color};font-weight:600">${statusInfo.label}</span>
+          · ${lines.length} line${lines.length !== 1 ? 's' : ''}
+          ${subInfo ? ` · ${subInfo}` : ''}
+          ${revInfo ? ` · ${revInfo}` : ''}
+        </p>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">${actions}</div>
+    </div>
+
+    ${rejectionBanner}
+
+    ${lines.length === 0 ? `
+      <div class="card" style="padding:24px;text-align:center">
+        <div class="text-muted">No lines on this plan. ${isProd ? 'Place more styles on Cost Summary, then reset + re-initialize to refresh.' : ''}</div>
+      </div>` : `
+      <div class="card" style="padding:0">
+        <div class="table-wrap" style="overflow-x:auto">
+          <table style="font-size:0.82rem;min-width:2000px">
+            <thead><tr>${headCells}</tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+      </div>`}
+    `;
+  }
+
   // ── Factories page ───────────────────────────────────────────────
   // One render, driven by the caller's role. Admin/PC get the full
   // tabbed queue with review actions. Other internal roles see a
@@ -4528,6 +4726,8 @@ const AdminViews = (() => {
     renderFactories,
     // Delivery Plan
     renderDeliveryPlan,
+    // Capacity Plan
+    renderCapacityPlan,
   };
 
   Object.defineProperty(api, '_programsView', {

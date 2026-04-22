@@ -559,6 +559,59 @@ CREATE INDEX IF NOT EXISTS idx_delivery_lines_plan    ON delivery_plan_lines(pla
 CREATE INDEX IF NOT EXISTS idx_delivery_lines_tc      ON delivery_plan_lines(tc_id);
 CREATE INDEX IF NOT EXISTS idx_delivery_lines_factory ON delivery_plan_lines(factory_id);
 
+-- ── Capacity Plans ───────────────────────────────────────────
+-- TC submits a production capacity plan per program, grouped by
+-- factory × style. Columns mirror the "NewCapacityPlan" template:
+-- total qty, delivery ETD, production line allocation, operator
+-- math, and planned cutting / sewing / packing / ex-factory dates.
+-- Production reviews and approves; a submitted plan informs the
+-- delivery plan's vendor-side CRD projections.
+
+CREATE TABLE IF NOT EXISTS capacity_plans (
+  id                TEXT PRIMARY KEY,
+  program_id        TEXT NOT NULL UNIQUE,            -- one plan per program
+  status            TEXT NOT NULL DEFAULT 'draft',
+    -- draft | submitted | approved | rejected
+  created_by        TEXT,
+  created_at        TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_at        TEXT,
+  submitted_by      TEXT,
+  submitted_at      TEXT,
+  reviewed_by       TEXT,
+  reviewed_at       TEXT,
+  rejection_reason  TEXT,
+  notes             TEXT
+);
+
+CREATE TABLE IF NOT EXISTS capacity_plan_lines (
+  id                              TEXT PRIMARY KEY,
+  plan_id                         TEXT NOT NULL,
+  style_id                        TEXT NOT NULL,
+  tc_id                           TEXT,           -- copied from placement
+  factory_id                      TEXT,           -- copied from placement.factory_id
+  total_qty                       INTEGER,
+  delivery_vsl_etd                TEXT,
+  factory_total_lines             INTEGER,        -- lines at this factory in total
+  allocated_lines                 INTEGER,        -- lines allocated to this style
+  operators_per_line              INTEGER,
+  garments_per_operator_daily     INTEGER,
+  planned_daily_output_per_line   INTEGER,        -- computed by client: operators × garments
+  planned_total_daily_output      INTEGER,        -- computed: above × allocated_lines
+  planned_cutting_date            TEXT,
+  planned_sewing_date             TEXT,
+  planned_packing_date            TEXT,
+  planned_ex_factory_date         TEXT,
+  sewing_available_days           INTEGER,
+  total_output_sewing             INTEGER,        -- computed: total_daily × sewing_days
+  notes                           TEXT,
+  created_at                      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_at                      TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_capacity_lines_plan    ON capacity_plan_lines(plan_id);
+CREATE INDEX IF NOT EXISTS idx_capacity_lines_tc      ON capacity_plan_lines(tc_id);
+CREATE INDEX IF NOT EXISTS idx_capacity_lines_factory ON capacity_plan_lines(factory_id);
+
 -- ── Sales Requests ────────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS sales_requests (

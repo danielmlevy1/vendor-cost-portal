@@ -2037,4 +2037,257 @@ router.delete('/programs/:id/delivery-plan', requireAuth, requireRole('admin'), 
   res.json({ ok: true });
 });
 
+// =============================================================
+// CAPACITY PLANS
+// =============================================================
+// TC submits one plan per program describing which factory runs
+// which style, at what daily-output cadence, with target cut /
+// sew / pack / ex-factory dates. Admin + PC review and approve.
+//
+// Roles:
+//   vendor      — read/edit only lines tied to their TC; submit
+//                 the plan for Production review.
+//   admin, pc   — read everything + approve / reject / reset.
+//
+// Other roles denied to keep the surface small (can be added later
+// if Sales needs read access).
+
+const CP_ROLES_ADMIN = ['admin', 'pc'];
+
+function cpPlanFromRow(r) {
+  return {
+    id:               r.id,
+    programId:        r.program_id,
+    status:           r.status,
+    createdBy:        r.created_by,
+    createdAt:        r.created_at,
+    updatedAt:        r.updated_at,
+    submittedBy:      r.submitted_by,
+    submittedAt:      r.submitted_at,
+    reviewedBy:       r.reviewed_by,
+    reviewedAt:       r.reviewed_at,
+    rejectionReason:  r.rejection_reason,
+    notes:            r.notes,
+  };
+}
+
+function cpLineFromRow(r) {
+  return {
+    id:                         r.id,
+    planId:                     r.plan_id,
+    styleId:                    r.style_id,
+    tcId:                       r.tc_id,
+    factoryId:                  r.factory_id,
+    totalQty:                   r.total_qty,
+    deliveryVslEtd:             r.delivery_vsl_etd,
+    factoryTotalLines:          r.factory_total_lines,
+    allocatedLines:             r.allocated_lines,
+    operatorsPerLine:           r.operators_per_line,
+    garmentsPerOperatorDaily:   r.garments_per_operator_daily,
+    plannedDailyOutputPerLine:  r.planned_daily_output_per_line,
+    plannedTotalDailyOutput:    r.planned_total_daily_output,
+    plannedCuttingDate:         r.planned_cutting_date,
+    plannedSewingDate:          r.planned_sewing_date,
+    plannedPackingDate:         r.planned_packing_date,
+    plannedExFactoryDate:       r.planned_ex_factory_date,
+    sewingAvailableDays:        r.sewing_available_days,
+    totalOutputSewing:          r.total_output_sewing,
+    notes:                      r.notes,
+    createdAt:                  r.created_at,
+    updatedAt:                  r.updated_at,
+  };
+}
+
+// Fields the TC (or admin) can edit on a capacity line. Dates are
+// plain YYYY-MM-DD strings; numbers are integers.
+const CP_LINE_FIELDS = {
+  totalQty:                  'total_qty',
+  deliveryVslEtd:            'delivery_vsl_etd',
+  factoryTotalLines:         'factory_total_lines',
+  allocatedLines:            'allocated_lines',
+  operatorsPerLine:          'operators_per_line',
+  garmentsPerOperatorDaily:  'garments_per_operator_daily',
+  plannedDailyOutputPerLine: 'planned_daily_output_per_line',
+  plannedTotalDailyOutput:   'planned_total_daily_output',
+  plannedCuttingDate:        'planned_cutting_date',
+  plannedSewingDate:         'planned_sewing_date',
+  plannedPackingDate:        'planned_packing_date',
+  plannedExFactoryDate:      'planned_ex_factory_date',
+  sewingAvailableDays:       'sewing_available_days',
+  totalOutputSewing:         'total_output_sewing',
+  notes:                     'notes',
+  factoryId:                 'factory_id',
+};
+
+// GET /api/programs/:id/capacity-plan
+router.get('/programs/:id/capacity-plan', requireAuth, (req, res) => {
+  const role = req.user.role;
+  const prog = db.prepare('SELECT id FROM programs WHERE id = ?').get(req.params.id);
+  if (!prog) return res.status(404).json({ error: 'Program not found' });
+
+  if (role === 'vendor') {
+    const asg = db.prepare('SELECT 1 FROM assignments WHERE program_id = ? AND tc_id = ?').get(req.params.id, req.user.tcId);
+    if (!asg) return res.status(403).json({ error: 'Not assigned to this program' });
+  } else if (!CP_ROLES_ADMIN.includes(role)) {
+    return res.status(403).json({ error: 'Insufficient permissions' });
+  }
+
+  const plan = db.prepare('SELECT * FROM capacity_plans WHERE program_id = ?').get(req.params.id);
+  if (!plan) return res.status(404).json({ error: 'No capacity plan yet' });
+
+  let lineRows = db.prepare('SELECT * FROM capacity_plan_lines WHERE plan_id = ? ORDER BY created_at').all(plan.id);
+  if (role === 'vendor') lineRows = lineRows.filter(r => r.tc_id === req.user.tcId);
+
+  res.json({ plan: cpPlanFromRow(plan), lines: lineRows.map(cpLineFromRow) });
+});
+
+// POST /api/programs/:id/capacity-plan
+// Admin/PC initializes — pre-fills lines from placements so each
+// placed style appears with its TC + factory. TC fills in the
+// production math, submits, Production approves.
+router.post('/programs/:id/capacity-plan', requireAuth, requireRole('admin', 'pc'), (req, res) => {
+  const prog = db.prepare('SELECT * FROM programs WHERE id = ?').get(req.params.id);
+  if (!prog) return res.status(404).json({ error: 'Program not found' });
+
+  const existing = db.prepare('SELECT id FROM capacity_plans WHERE program_id = ?').get(req.params.id);
+  if (existing) return res.status(409).json({ error: 'Capacity plan already exists' });
+
+  const planId = uid();
+  const userLabel = req.user.name || req.user.email || req.user.id;
+
+  const tx = db.transaction(() => {
+    db.prepare(`
+      INSERT INTO capacity_plans (id, program_id, created_by, created_at, status)
+      VALUES (?,?,?,?,?)
+    `).run(planId, req.params.id, userLabel, now(), 'draft');
+
+    const placed = db.prepare(`
+      SELECT p.style_id, p.tc_id, p.factory_id, s.proj_qty
+      FROM placements p
+      JOIN styles s ON s.id = p.style_id
+      WHERE s.program_id = ? AND s.status != 'cancelled'
+    `).all(req.params.id);
+
+    const insertLine = db.prepare(`
+      INSERT INTO capacity_plan_lines
+        (id, plan_id, style_id, tc_id, factory_id, total_qty, created_at)
+      VALUES (?,?,?,?,?,?,?)
+    `);
+
+    for (const ps of placed) {
+      insertLine.run(uid(), planId, ps.style_id, ps.tc_id, ps.factory_id,
+        ps.proj_qty != null ? Math.round(ps.proj_qty) : null, now());
+    }
+  });
+  tx();
+
+  const plan  = db.prepare('SELECT * FROM capacity_plans WHERE id = ?').get(planId);
+  const lines = db.prepare('SELECT * FROM capacity_plan_lines WHERE plan_id = ? ORDER BY created_at').all(planId);
+  res.status(201).json({ plan: cpPlanFromRow(plan), lines: lines.map(cpLineFromRow) });
+});
+
+// PATCH /api/capacity-plan-lines/:id
+router.patch('/capacity-plan-lines/:id', requireAuth, (req, res) => {
+  const row = db.prepare('SELECT * FROM capacity_plan_lines WHERE id = ?').get(req.params.id);
+  if (!row) return res.status(404).json({ error: 'Not found' });
+
+  const role = req.user.role;
+  const isVendor = role === 'vendor';
+  if (isVendor && row.tc_id !== req.user.tcId) return res.status(403).json({ error: 'Forbidden' });
+  if (!isVendor && !CP_ROLES_ADMIN.includes(role)) {
+    return res.status(403).json({ error: 'Insufficient permissions' });
+  }
+
+  // Vendor extra guard: if they change factory_id, it must be one
+  // of their active factories.
+  if (req.body.factoryId !== undefined && req.body.factoryId) {
+    const f = db.prepare('SELECT id, tc_id, status FROM factories WHERE id = ?').get(req.body.factoryId);
+    if (!f) return res.status(400).json({ error: 'factoryId not found' });
+    if (isVendor && (f.tc_id !== req.user.tcId || f.status !== 'active')) {
+      return res.status(400).json({ error: 'factoryId must be one of your active factories' });
+    }
+  }
+
+  const sets = [];
+  const vals = [];
+  for (const [camel, col] of Object.entries(CP_LINE_FIELDS)) {
+    if (req.body[camel] === undefined) continue;
+    let v = req.body[camel];
+    // Blank string → null. Number-ish strings become numbers where appropriate.
+    if (v === '') v = null;
+    sets.push(`${col} = ?`); vals.push(v);
+  }
+  if (!sets.length) return res.json(cpLineFromRow(row));
+
+  sets.push('updated_at = ?'); vals.push(now());
+  vals.push(req.params.id);
+  db.prepare(`UPDATE capacity_plan_lines SET ${sets.join(', ')} WHERE id = ?`).run(...vals);
+
+  // Bump plan.updated_at; if it was approved, bumping back to 'submitted'
+  // signals Production should re-review.
+  const fresh = db.prepare('SELECT * FROM capacity_plan_lines WHERE id = ?').get(req.params.id);
+  const pl = db.prepare('SELECT * FROM capacity_plans WHERE id = ?').get(fresh.plan_id);
+  if (pl && pl.status === 'approved' && isVendor) {
+    db.prepare('UPDATE capacity_plans SET status = ?, updated_at = ? WHERE id = ?')
+      .run('submitted', now(), pl.id);
+  } else {
+    db.prepare('UPDATE capacity_plans SET updated_at = ? WHERE id = ?').run(now(), fresh.plan_id);
+  }
+
+  res.json(cpLineFromRow(fresh));
+});
+
+// POST /api/capacity-plans/:id/submit — vendor submits for review
+router.post('/capacity-plans/:id/submit', requireAuth, (req, res) => {
+  const role = req.user.role;
+  const pl = db.prepare('SELECT * FROM capacity_plans WHERE id = ?').get(req.params.id);
+  if (!pl) return res.status(404).json({ error: 'Not found' });
+  if (role !== 'vendor' && !CP_ROLES_ADMIN.includes(role)) {
+    return res.status(403).json({ error: 'Insufficient permissions' });
+  }
+  if (role === 'vendor') {
+    const has = db.prepare('SELECT 1 FROM capacity_plan_lines WHERE plan_id = ? AND tc_id = ? LIMIT 1').get(req.params.id, req.user.tcId);
+    if (!has) return res.status(403).json({ error: 'Not your plan' });
+  }
+
+  db.prepare('UPDATE capacity_plans SET status = ?, submitted_by = ?, submitted_at = ?, rejection_reason = NULL, updated_at = ? WHERE id = ?')
+    .run('submitted', req.user.name || req.user.email || req.user.id, now(), now(), req.params.id);
+
+  res.json(cpPlanFromRow(db.prepare('SELECT * FROM capacity_plans WHERE id = ?').get(req.params.id)));
+});
+
+// POST /api/capacity-plans/:id/approve — admin/PC only
+router.post('/capacity-plans/:id/approve', requireAuth, requireRole('admin', 'pc'), (req, res) => {
+  const pl = db.prepare('SELECT * FROM capacity_plans WHERE id = ?').get(req.params.id);
+  if (!pl) return res.status(404).json({ error: 'Not found' });
+
+  db.prepare('UPDATE capacity_plans SET status = ?, reviewed_by = ?, reviewed_at = ?, rejection_reason = NULL, updated_at = ? WHERE id = ?')
+    .run('approved', req.user.name || req.user.email || req.user.id, now(), now(), req.params.id);
+
+  res.json(cpPlanFromRow(db.prepare('SELECT * FROM capacity_plans WHERE id = ?').get(req.params.id)));
+});
+
+// POST /api/capacity-plans/:id/reject — admin/PC only, reason in body
+router.post('/capacity-plans/:id/reject', requireAuth, requireRole('admin', 'pc'), (req, res) => {
+  const pl = db.prepare('SELECT * FROM capacity_plans WHERE id = ?').get(req.params.id);
+  if (!pl) return res.status(404).json({ error: 'Not found' });
+
+  const reason = (req.body.rejectionReason || '').trim() || null;
+  db.prepare('UPDATE capacity_plans SET status = ?, reviewed_by = ?, reviewed_at = ?, rejection_reason = ?, updated_at = ? WHERE id = ?')
+    .run('rejected', req.user.name || req.user.email || req.user.id, now(), reason, now(), req.params.id);
+
+  res.json(cpPlanFromRow(db.prepare('SELECT * FROM capacity_plans WHERE id = ?').get(req.params.id)));
+});
+
+// DELETE /api/programs/:id/capacity-plan — admin only
+router.delete('/programs/:id/capacity-plan', requireAuth, requireRole('admin'), (req, res) => {
+  const pl = db.prepare('SELECT id FROM capacity_plans WHERE program_id = ?').get(req.params.id);
+  if (!pl) return res.status(404).json({ error: 'No plan' });
+  db.transaction(() => {
+    db.prepare('DELETE FROM capacity_plan_lines WHERE plan_id = ?').run(pl.id);
+    db.prepare('DELETE FROM capacity_plans WHERE id = ?').run(pl.id);
+  })();
+  res.json({ ok: true });
+});
+
 module.exports = router;

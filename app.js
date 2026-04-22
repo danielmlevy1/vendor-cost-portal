@@ -46,9 +46,10 @@ App = (() => {
     try {
       if (route === 'programs' || route === 'dashboard')
         await API.preload.programs();
-      else if (route === 'cost-summary' || route === 'styles' || route === 'buy-summary' || route === 'compare' || route === 'design-costing' || route === 'delivery-plan') {
+      else if (route === 'cost-summary' || route === 'styles' || route === 'buy-summary' || route === 'compare' || route === 'design-costing' || route === 'delivery-plan' || route === 'capacity-plan') {
         await API.preload.program(param);
         if (route === 'delivery-plan') await API.DeliveryPlans.fetch(param).catch(() => {});
+        if (route === 'capacity-plan') await API.CapacityPlans.fetch(param).catch(() => {});
       }
       else if (route === 'cross-program')
         await API.preload.crossProgram();
@@ -349,6 +350,7 @@ App = (() => {
       else if (route === 'recost-queue')          mc.innerHTML = AdminViews.renderRecostQueue();
       else if (route === 'factories')             mc.innerHTML = AdminViews.renderFactories(user.role);
       else if (route === 'delivery-plan')         mc.innerHTML = AdminViews.renderDeliveryPlan(routeParam, user.role, user);
+      else if (route === 'capacity-plan')         mc.innerHTML = AdminViews.renderCapacityPlan(routeParam, user.role, user);
       // Settings — Admin gets full CRUD; PC gets propose-mode
       else if (route === 'trading-companies') mc.innerHTML = isAdmin ? AdminViews.renderTradingCompanies() : AdminViews.renderTradingCompaniesPC();
       else if (route === 'customers')         mc.innerHTML = isAdmin ? AdminViews.renderCustomers() : mc.innerHTML;
@@ -383,6 +385,7 @@ App = (() => {
       else if (route === 'recost-queue')        mc.innerHTML = AdminViews.renderRecostQueue();
       else if (route === 'factories')           mc.innerHTML = AdminViews.renderFactories(user.role);
       else if (route === 'delivery-plan')       mc.innerHTML = AdminViews.renderDeliveryPlan(routeParam, user.role, user);
+      else if (route === 'capacity-plan')       mc.innerHTML = AdminViews.renderCapacityPlan(routeParam, user.role, user);
       else mc.innerHTML = AdminViews.renderDashboard(user.role, user);
     } else if (isTechDesign) {
       if (route === 'dashboard')           mc.innerHTML = AdminViews.renderDashboard(user.role, user);
@@ -415,6 +418,7 @@ App = (() => {
       else if (route === 'my-company')       mc.innerHTML = VendorViews.renderMyCompany(user.tcId);
       else if (route === 'my-factories')     mc.innerHTML = VendorViews.renderMyFactories(user.tcId);
       else if (route === 'delivery-plan')    mc.innerHTML = AdminViews.renderDeliveryPlan(routeParam, user.role, user);
+      else if (route === 'capacity-plan')    mc.innerHTML = AdminViews.renderCapacityPlan(routeParam, user.role, user);
       else                                   mc.innerHTML = VendorViews.renderPrograms(user.tcId);
     }
     // Post-render setup
@@ -7013,6 +7017,49 @@ App.postDeliveryComment = async function(programId, planId) {
   catch (err) { alert('Could not post: ' + (err.message || 'unknown')); return; }
   if (ta) ta.value = '';
   App.navigate('delivery-plan', programId);
+};
+
+// ── Capacity Plan handlers ──────────────────────────────────────
+
+App.initCapacityPlan = async function(programId) {
+  if (!confirm('Initialize the capacity plan? One line will be created per placed style × factory.')) return;
+  try { await API.CapacityPlans.initialize(programId); }
+  catch (err) { alert('Could not initialize: ' + (err.message || 'unknown')); return; }
+  App.navigate('capacity-plan', programId);
+};
+
+App.resetCapacityPlan = async function(programId) {
+  if (!confirm('Delete the capacity plan and all its lines? This cannot be undone.')) return;
+  try { await API.CapacityPlans.reset(programId); }
+  catch (err) { alert('Could not reset: ' + (err.message || 'unknown')); return; }
+  App.navigate('capacity-plan', programId);
+};
+
+App.updateCapacityLine = async function(programId, lineId, field, value) {
+  try { await API.CapacityPlans.updateLine(programId, lineId, { [field]: value }); }
+  catch (err) { alert('Could not save: ' + (err.message || 'unknown')); }
+};
+
+App.submitCapacityPlan = async function(programId, planId) {
+  if (!confirm('Submit the capacity plan for Production review?')) return;
+  try { await API.CapacityPlans.submit(programId, planId); }
+  catch (err) { alert('Could not submit: ' + (err.message || 'unknown')); return; }
+  App.navigate('capacity-plan', programId);
+};
+
+App.approveCapacityPlan = async function(programId, planId) {
+  if (!confirm('Approve this capacity plan?')) return;
+  try { await API.CapacityPlans.approve(programId, planId); }
+  catch (err) { alert('Could not approve: ' + (err.message || 'unknown')); return; }
+  App.navigate('capacity-plan', programId);
+};
+
+App.rejectCapacityPlan = async function(programId, planId) {
+  const reason = prompt('Reason for rejection (shown to the TC):', '');
+  if (reason === null) return;
+  try { await API.CapacityPlans.reject(programId, planId, reason.trim() || null); }
+  catch (err) { alert('Could not reject: ' + (err.message || 'unknown')); return; }
+  App.navigate('capacity-plan', programId);
 };
 
 // Set (or clear) the factory on a placement. Used by both the
