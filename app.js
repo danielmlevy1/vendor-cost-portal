@@ -49,7 +49,7 @@ App = (() => {
     try {
       if (route === 'programs' || route === 'dashboard')
         await API.preload.programs();
-      else if (route === 'cost-summary' || route === 'styles' || route === 'buy-summary' || route === 'compare' || route === 'design-costing' || route === 'delivery-plan' || route === 'capacity-plan') {
+      else if (route === 'cost-summary' || route === 'styles' || route === 'buy-summary' || route === 'compare' || route === 'design-costing' || route === 'delivery-plan' || route === 'capacity-plan' || route === 'overview') {
         await API.preload.program(param);
         if (route === 'delivery-plan') await API.DeliveryPlans.fetch(param).catch(() => {});
         if (route === 'capacity-plan') await API.CapacityPlans.fetch(param).catch(() => {});
@@ -93,6 +93,13 @@ App = (() => {
 
   function openProgram(id) {
     const u = state.user;
+    // Placed programs land on Overview (the margin recap is the most
+    // useful first look); still-costing programs land on the active
+    // costing surface for the role.
+    const prog = API.Programs.get(id);
+    if (prog && prog.status === 'Placed' && (u.role === 'admin' || u.role === 'pc' || u.role === 'planning')) {
+      return navigate('overview', id);
+    }
     // Sales Management (planning role + dept-sales-price) gets the full cost-summary view
     const isSalesMgmt = u.role === 'planning' && u.departmentId === 'dept-sales-price';
     if (!isSalesMgmt && (u.role === 'design' || u.role === 'planning')) navigate('design-costing', id);
@@ -243,12 +250,38 @@ App = (() => {
     const pendingCount = isAdmin ? API.PendingChanges.pending().length : 0;
     const badgeHtml  = pendingCount > 0 ? `<span class="pending-badge">${pendingCount}</span>` : '';
 
+    // Collapsible Programs group: Open / Placed / Cancelled sub-buckets.
+    // `route === 'programs'` always force-opens so the active leaf is
+    // visible; otherwise honor the user's last toggle (localStorage).
+    const progsAll    = API.cache.programs || [];
+    const nOpen       = progsAll.filter(p => p.status === 'Draft' || p.status === 'Costing').length;
+    const nPlaced     = progsAll.filter(p => p.status === 'Placed').length;
+    const nCancelled  = progsAll.filter(p => p.status === 'Cancelled').length;
+    const progRouteActive = state.route === 'programs';
+    const progBucket  = progRouteActive ? (state.routeParam || 'open') : null;
+    const progsOpenAttr = (progRouteActive || localStorage.getItem('vcp_nav_programs_open') === '1') ? 'open' : '';
+    const progLeaf = (bucket, icon, label, count) => `
+      <button class="nav-item nav-subitem ${progBucket === bucket ? 'active' : ''}"
+        onclick="App.navigate('programs','${bucket}')">
+        <span class="icon">${icon}</span> ${label}${count > 0 ? ` <span class="tag" style="margin-left:auto;font-size:0.7rem">${count}</span>` : ''}
+      </button>`;
+    const programsGroup = `
+      <details class="nav-group" ${progsOpenAttr}
+        ontoggle="localStorage.setItem('vcp_nav_programs_open', this.open ? '1' : '')">
+        <summary class="nav-item ${progRouteActive ? 'active' : ''}"><span class="icon">📋</span> Programs</summary>
+        <div style="padding-left:14px;display:flex;flex-direction:column;gap:2px;margin-top:2px">
+          ${progLeaf('open',      '📂', 'Open',      nOpen)}
+          ${progLeaf('placed',    '✅', 'Placed',    nPlaced)}
+          ${progLeaf('cancelled', '🗑', 'Cancelled', nCancelled)}
+        </div>
+      </details>`;
+
     if (navEl) navEl.innerHTML = `
       <div class="sidebar-section"><div class="sidebar-section-label">Navigation</div></div>
       <div style="padding:0 8px">
       ${(isAdmin || isPC) ? `
         <button class="nav-item ${state.route === 'dashboard' ? 'active' : ''}" onclick="App.navigate('dashboard')"><span class="icon">🏡</span> Dashboard</button>
-        <button class="nav-item ${state.route === 'programs' ? 'active' : ''}" onclick="App.navigate('programs')"><span class="icon">📋</span> Programs</button>
+        ${programsGroup}
         <button class="nav-item ${state.route === 'cross-program' ? 'active' : ''}" onclick="App.navigate('cross-program')"><span class="icon">🌐</span> All Open Programs</button>
         <div class="sidebar-section"><div class="sidebar-section-label">Pre-Costing</div></div>
         <button class="nav-item ${state.route === 'design-handoff' ? 'active' : ''}" onclick="App.navigate('design-handoff')"><span class="icon">🎨</span> Design Handoffs</button>
@@ -270,14 +303,14 @@ App = (() => {
         ` : ''}
       ` : isDesign ? `
         <button class="nav-item ${state.route === 'dashboard' ? 'active' : ''}" onclick="App.navigate('dashboard')"><span class="icon">🏡</span> Dashboard</button>
-        <button class="nav-item ${state.route === 'programs' || state.route === 'design-costing' || state.route === 'buy-summary' ? 'active' : ''}" onclick="App.navigate('programs')"><span class="icon">📋</span> Programs</button>
+        ${programsGroup}
         <button class="nav-item ${state.route === 'design-handoff' ? 'active' : ''}" onclick="App.navigate('design-handoff')"><span class="icon">🎨</span> Design Handoffs</button>
         <button class="nav-item ${state.route === 'design-changes' ? 'active' : ''}" onclick="App.navigate('design-changes')"><span class="icon">📌</span> Design Changes</button>
         <button class="nav-item ${state.route === 'factories' ? 'active' : ''}" onclick="App.navigate('factories')"><span class="icon">🏭</span> Factories</button>
         <button class="nav-item ${state.route === 'recost-queue' ? 'active' : ''}" onclick="App.navigate('recost-queue')"><span class="icon">↩</span> Re-cost Queue</button>
       ` : isTechDesign ? `
         <button class="nav-item ${state.route === 'dashboard' ? 'active' : ''}" onclick="App.navigate('dashboard')"><span class="icon">🏡</span> Dashboard</button>
-        <button class="nav-item ${state.route === 'programs' || state.route === 'design-costing' ? 'active' : ''}" onclick="App.navigate('programs')"><span class="icon">📋</span> Programs</button>
+        ${programsGroup}
         <button class="nav-item ${state.route === 'design-handoff' ? 'active' : ''}" onclick="App.navigate('design-handoff')"><span class="icon">🎨</span> Design Handoffs</button>
         <button class="nav-item ${state.route === 'design-changes' ? 'active' : ''}" onclick="App.navigate('design-changes')"><span class="icon">📌</span> Design Changes</button>
         <button class="nav-item ${state.route === 'factories' ? 'active' : ''}" onclick="App.navigate('factories')"><span class="icon">🏭</span> Factories</button>
@@ -288,7 +321,7 @@ App = (() => {
         <button class="nav-item ${state.route === 'factories' ? 'active' : ''}" onclick="App.navigate('factories')"><span class="icon">🏭</span> Factories</button>
       \` : isPlanning ? \`
         <button class="nav-item ${state.route === 'dashboard' ? 'active' : ''}" onclick="App.navigate('dashboard')"><span class="icon">🏡</span> Dashboard</button>
-        <button class="nav-item ${state.route === 'programs' || state.route === 'design-costing' || state.route === 'buy-summary' ? 'active' : ''}" onclick="App.navigate('programs')"><span class="icon">📋</span> Programs</button>
+        ${programsGroup}
         <button class="nav-item ${state.route === 'sales-request' ? 'active' : ''}" onclick="App.navigate('sales-request')"><span class="icon">📝</span> Sales Requests</button>
         <button class="nav-item ${state.route === 'design-handoff' ? 'active' : ''}" onclick="App.navigate('design-handoff')"><span class="icon">🎨</span> Design Handoffs</button>
         <button class="nav-item ${state.route === 'factories' ? 'active' : ''}" onclick="App.navigate('factories')"><span class="icon">🏭</span> Factories</button>
@@ -342,8 +375,9 @@ App = (() => {
     if (isAdmin || isPC) {
       // Shared program & cost views — both roles
       if (route === 'dashboard')     mc.innerHTML = AdminViews.renderDashboard(user.role, user);
-      else if (route === 'programs')      mc.innerHTML = AdminViews.renderPrograms();
+      else if (route === 'programs')      mc.innerHTML = AdminViews.renderPrograms(routeParam);
       else if (route === 'styles')        mc.innerHTML = AdminViews.renderStyleManager(routeParam);
+      else if (route === 'overview')      mc.innerHTML = AdminViews.renderOverview(routeParam, user.role);
       else if (route === 'cost-summary')  mc.innerHTML = AdminViews.renderCostSummary(routeParam);
       else if (route === 'buy-summary')   mc.innerHTML = AdminViews.renderBuySummary(routeParam, user.role);
       else if (route === 'compare')       mc.innerHTML = AdminViews.renderCostComparison(routeParam);
@@ -373,7 +407,7 @@ App = (() => {
       else if (route === 'design-changes') mc.innerHTML = AdminViews.renderAllDesignChanges();
       else if (route === 'recost-queue')   mc.innerHTML = AdminViews.renderRecostQueue();
       else if (route === 'factories')      mc.innerHTML = AdminViews.renderFactories(user.role);
-      else if (route === 'programs')       mc.innerHTML = AdminViews.renderPrograms();
+      else if (route === 'programs')       mc.innerHTML = AdminViews.renderPrograms(routeParam);
       else if (route === 'design-costing') mc.innerHTML = AdminViews.renderDesignCostingView(routeParam, user.role);
       else if (route === 'buy-summary')    mc.innerHTML = AdminViews.renderBuySummary(routeParam, user.role);
       else if (route === 'cost-summary')   mc.innerHTML = AdminViews.renderDesignCostingView(routeParam, user.role); // redirect to role view
@@ -381,7 +415,8 @@ App = (() => {
     } else if (isPlanning) {
       // Planning/Sales — programs, buy summaries, pre-costing
       if (route === 'dashboard')               mc.innerHTML = AdminViews.renderDashboard(user.role, user);
-      else if (route === 'programs')           mc.innerHTML = AdminViews.renderPrograms();
+      else if (route === 'programs')           mc.innerHTML = AdminViews.renderPrograms(routeParam);
+      else if (route === 'overview')           mc.innerHTML = AdminViews.renderOverview(routeParam, user.role);
       else if (route === 'design-costing')     mc.innerHTML = AdminViews.renderDesignCostingView(routeParam, user.role);
       else if (route === 'buy-summary')        mc.innerHTML = AdminViews.renderBuySummary(routeParam, user.role);
       else if (route === 'design-handoff')     mc.innerHTML = AdminViews.renderDesignHandoff();
@@ -397,7 +432,7 @@ App = (() => {
       if (route === 'dashboard')           mc.innerHTML = AdminViews.renderDashboard(user.role, user);
       else if (route === 'design-handoff') mc.innerHTML = AdminViews.renderDesignHandoff();
       else if (route === 'design-changes') mc.innerHTML = AdminViews.renderAllDesignChanges();
-      else if (route === 'programs')       mc.innerHTML = AdminViews.renderPrograms();
+      else if (route === 'programs')       mc.innerHTML = AdminViews.renderPrograms(routeParam);
       else if (route === 'design-costing') mc.innerHTML = AdminViews.renderDesignCostingView(routeParam, user.role);
       else if (route === 'cost-summary')   mc.innerHTML = AdminViews.renderDesignCostingView(routeParam, user.role);
       else if (route === 'recost-queue')   mc.innerHTML = AdminViews.renderRecostQueue();
@@ -1742,7 +1777,7 @@ App = (() => {
   function setProgramsView(view) {
     AdminViews._programsView = view;
     const mc = document.getElementById('content'); if (!mc) return;
-    mc.innerHTML = AdminViews.renderPrograms();
+    mc.innerHTML = AdminViews.renderPrograms(routeParam);
     // Restore filter values if any were typed before toggling
   }
 
@@ -7066,6 +7101,12 @@ App.rejectCapacityPlan = async function(programId, planId) {
   try { await API.CapacityPlans.reject(programId, planId, reason.trim() || null); }
   catch (err) { alert('Could not reject: ' + (err.message || 'unknown')); return; }
   App.navigate('capacity-plan', programId);
+};
+
+// Overview market toggle — sticky per program in localStorage.
+App.setOverviewMarket = function(programId, market) {
+  localStorage.setItem('vcp_overview_market_' + programId, market);
+  App.navigate('overview', programId);
 };
 
 // Set (or clear) the factory on a placement. Used by both the

@@ -493,6 +493,28 @@ body.sidebar-collapsed #sidebar-toggle {
   flex-shrink: 0;
 }
 
+/* Collapsible sidebar group (e.g. Programs → Open/Placed/Cancelled) */
+.nav-group {
+  margin: 0;
+}
+.nav-group > summary.nav-item {
+  list-style: none;
+  position: relative;
+}
+.nav-group > summary.nav-item::-webkit-details-marker { display: none; }
+.nav-group > summary.nav-item::after {
+  content: '▸';
+  margin-left: auto;
+  font-size: 0.7rem;
+  opacity: 0.6;
+  transition: transform var(--transition);
+}
+.nav-group[open] > summary.nav-item::after { transform: rotate(90deg); }
+.nav-subitem {
+  font-size: 0.82rem !important;
+  padding: 6px 10px !important;
+}
+
 .sidebar-footer {
   margin-top: auto;
   padding: 16px 12px;

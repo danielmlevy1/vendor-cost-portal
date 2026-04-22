@@ -652,16 +652,44 @@ const AdminViews = (() => {
   }
 
   // ── Programs ───────────────────────────────────────────────
-  function renderPrograms() {
+  function renderPrograms(statusFilter) {
+    // statusFilter: null | 'open' | 'placed' | 'cancelled'
+    //   null / 'open' → Draft + Costing (+ handoffs + sales requests)
+    //   'placed'      → Placed programs only (no handoffs/requests)
+    //   'cancelled'   → Cancelled programs only
+    const bucket = statusFilter || 'open';
     const allHandoffs = API.DesignHandoffs.all();
     const allRequests = API.SalesRequests.all();
     const allPrograms = API.cache.programs;
 
-    const openHandoffs = allHandoffs.filter(h => !allRequests.find(r => r.sourceHandoffId === h.id));
-    const openRequests = allRequests.filter(r => !r.linkedProgramId);
-    const draftPrograms = allPrograms.filter(p => p.status === 'Draft');
+    // Apply bucket filter to programs + decide whether to include
+    // pre-program stages (handoffs + SRs only in Open bucket).
+    let shownPrograms, shownHandoffs, shownRequests;
+    if (bucket === 'placed') {
+      shownPrograms = allPrograms.filter(p => p.status === 'Placed');
+      shownHandoffs = [];
+      shownRequests = [];
+    } else if (bucket === 'cancelled') {
+      shownPrograms = allPrograms.filter(p => p.status === 'Cancelled');
+      shownHandoffs = [];
+      shownRequests = [];
+    } else {
+      shownPrograms = allPrograms.filter(p => p.status === 'Draft' || p.status === 'Costing');
+      shownHandoffs = allHandoffs.filter(h => !allRequests.find(r => r.sourceHandoffId === h.id));
+      shownRequests = allRequests.filter(r => !r.linkedProgramId);
+    }
 
-    const totalEntries = openHandoffs.length + openRequests.length + allPrograms.length;
+    const openHandoffs = shownHandoffs;
+    const openRequests = shownRequests;
+    const draftPrograms = bucket === 'open' ? shownPrograms.filter(p => p.status === 'Draft') : [];
+
+    const totalEntries = openHandoffs.length + openRequests.length + shownPrograms.length;
+
+    const bucketMeta = {
+      open:      { title: '📂 Open Programs',      subtitle: `${totalEntries} entries — draft / costing / pre-costing` },
+      placed:    { title: '✅ Placed Programs',    subtitle: `${shownPrograms.length} placed` },
+      cancelled: { title: '🗑 Cancelled Programs', subtitle: `${shownPrograms.length} cancelled` },
+    }[bucket];
 
     const pendingBanner = draftPrograms.length ? `
     <div class="card mb-4" style="border-left:3px solid var(--warning);border-color:var(--warning);background:rgba(245,158,11,0.05)">
@@ -695,7 +723,7 @@ const AdminViews = (() => {
 
     return `
     <div class="page-header">
-      <div><h1 class="page-title">Programs</h1><p class="page-subtitle">Full pipeline · ${totalEntries} entries across all stages</p></div>
+      <div><h1 class="page-title">${bucketMeta.title}</h1><p class="page-subtitle">${bucketMeta.subtitle}</p></div>
       <div style="display:flex;gap:8px;align-items:center">
         <button class="btn btn-primary" onclick="App.openProgramModal()">＋ New Program</button>
       </div>
@@ -705,7 +733,7 @@ const AdminViews = (() => {
     </div>
     ${pendingBanner}
     <div id="programs-grid">
-      ${programsTable(openHandoffs, openRequests, allPrograms)}
+      ${programsTable(openHandoffs, openRequests, shownPrograms)}
     </div>`;
   }
 
@@ -2054,6 +2082,7 @@ const AdminViews = (() => {
   // ── Program Tab Bar ────────────────────────────────────────
   function programTabBar(programId, activeTab, prog) {
     return `<div class="program-tabs">
+      <button class="program-tab ${activeTab === 'overview' ? 'active' : ''}" onclick="App.navigate('overview','${programId}')">📈 Overview</button>
       <button class="program-tab ${activeTab === 'cost' ? 'active' : ''}" onclick="App.navigate('cost-summary','${programId}')">📊 Cost Summary</button>
       <button class="program-tab ${activeTab === 'buys' ? 'active' : ''}" onclick="App.navigate('buy-summary','${programId}')">🛒 Buy Summary</button>
       <button class="program-tab ${activeTab === 'capacity' ? 'active' : ''}" onclick="App.navigate('capacity-plan','${programId}')">🏭 Capacity Plan</button>
@@ -4298,6 +4327,246 @@ const AdminViews = (() => {
     </div>`;
   }
 
+  // ── Program Overview page ───────────────────────────────────────
+  // Margin recap for placed styles, KPI roll-ups, vendor + factory
+  // mix. Market defaults to program.market; users can toggle to see
+  // the other market's LDP (useful when a program might also sell
+  // into the other market).
+  function renderOverview(programId, role) {
+    const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+    const prog = API.Programs.get(programId);
+    if (!prog) return `<div class="empty-state"><div class="icon">⚠</div><h3>Program not found</h3></div>`;
+
+    // Market toggle — sticky per program in localStorage. Falls back
+    // to the program's configured market.
+    const mktKey = 'vcp_overview_market_' + programId;
+    const market = localStorage.getItem(mktKey) || prog.market || 'USA';
+    const fmt$   = v => v == null || isNaN(v) ? '—' : '$' + Number(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const fmt$0  = v => v == null || isNaN(v) ? '—' : '$' + Math.round(Number(v)).toLocaleString();
+    const fmtPct = v => v == null || isNaN(v) ? '—' : (Number(v) * 100).toFixed(1) + '%';
+    const fmtQty = v => v == null || isNaN(v) ? '—' : Number(v).toLocaleString();
+
+    const styles   = API.Styles.byProgram(programId).filter(s => s.status !== 'cancelled');
+    const allSubs  = API.Submissions.all();
+    const allBuys  = API.CustomerBuys.byProgram(programId);
+    const tcMap    = Object.fromEntries((API.cache.tradingCompanies || []).map(t => [t.id, t]));
+    const facMap   = Object.fromEntries((API.Factories?.all() || []).map(f => [f.id, f]));
+    const custMap  = Object.fromEntries((API.cache.customers || []).map(c => [c.id, c]));
+
+    // Per-style rollup: weighted sell from buys, LDP from winning FOB
+    // + COO rate + market, and projected margin. Only considers placed
+    // styles — the whole point of Overview is margin on actual awards.
+    const rows = styles.map(s => {
+      const pl = API.Placements.get(s.id);
+      if (!pl) return null;
+      const winSub = allSubs.find(x => x.styleId === s.id && x.tcId === pl.tcId && x.coo === pl.coo);
+      const fob = parseFloat(pl.confirmedFob ?? winSub?.fob ?? 0) || 0;
+      if (!fob) return null;
+
+      // Weighted sell from Buy Summary (qty-weighted).
+      const buys = allBuys.filter(b => b.styleId === s.id);
+      const units = buys.reduce((a, b) => a + (parseFloat(b.qty) || 0), 0);
+      const revenue = buys.reduce((a, b) => a + ((parseFloat(b.qty) || 0) * (parseFloat(b.sellPrice) || 0)), 0);
+      const wtdSell = units > 0 ? revenue / units : null;
+
+      // LDP against the selected market (not the program's market if user toggled).
+      const ldpCalc = API.calcLDP(fob, s, pl.coo, market, null, winSub?.paymentTerms || 'FOB', winSub?.factoryCost);
+      const ldp = ldpCalc ? ldpCalc.ldp : null;
+      const cost = (ldp != null && units > 0) ? ldp * units : null;
+      const marginPerUnit = (wtdSell != null && ldp != null) ? (wtdSell - ldp) : null;
+      const marginPct     = (wtdSell != null && ldp != null && wtdSell > 0) ? (wtdSell - ldp) / wtdSell : null;
+      const targetPct = prog.targetMargin || null;
+      const hitTarget = (marginPct != null && targetPct != null) ? marginPct >= targetPct : null;
+
+      return {
+        style: s, placement: pl, tc: tcMap[pl.tcId], factory: pl.factoryId ? facMap[pl.factoryId] : null,
+        coo: pl.coo, fob, units, revenue, wtdSell, ldp, cost,
+        marginPerUnit, marginPct, targetPct, hitTarget,
+      };
+    }).filter(Boolean);
+
+    // Program rollups — weighted by units (revenue) so a single huge
+    // order can't swing with its own small styles.
+    const totalUnits    = rows.reduce((a, r) => a + (r.units || 0), 0);
+    const totalRevenue  = rows.reduce((a, r) => a + (r.revenue || 0), 0);
+    const totalCost     = rows.reduce((a, r) => a + (r.cost || 0), 0);
+    const grossProfit   = totalRevenue - totalCost;
+    const wtdAvgMargin  = totalRevenue > 0 ? grossProfit / totalRevenue : null;
+    const wtdAvgSell    = totalUnits > 0 ? totalRevenue / totalUnits : null;
+    const wtdAvgLdp     = totalUnits > 0 ? totalCost / totalUnits : null;
+    const wtdAvgFob     = totalUnits > 0
+      ? rows.reduce((a, r) => a + (r.fob * r.units), 0) / totalUnits
+      : null;
+    const styleCount    = rows.length;
+    const hitCount      = rows.filter(r => r.hitTarget === true).length;
+    const missCount     = rows.filter(r => r.hitTarget === false).length;
+
+    // Vendor & factory mix tables.
+    const groupBy = (key) => {
+      const map = {};
+      rows.forEach(r => {
+        const k = typeof key === 'function' ? key(r) : r[key];
+        if (!k) return;
+        if (!map[k]) map[k] = { key: k, label: k, styles: 0, units: 0, revenue: 0, cost: 0, fobSum: 0, fobUnits: 0 };
+        const g = map[k];
+        g.styles += 1;
+        g.units += r.units || 0;
+        g.revenue += r.revenue || 0;
+        g.cost += r.cost || 0;
+        g.fobSum += (r.fob * r.units);
+        g.fobUnits += r.units || 0;
+      });
+      return Object.values(map).map(g => ({
+        ...g,
+        wtdFob:    g.fobUnits > 0 ? g.fobSum / g.fobUnits : null,
+        wtdMargin: g.revenue > 0 ? (g.revenue - g.cost) / g.revenue : null,
+      })).sort((a, b) => b.revenue - a.revenue);
+    };
+    const vendorMix  = groupBy(r => r.tc?.code || '—');
+    const factoryMix = groupBy(r => r.factory?.factoryName || '—');
+
+    const kpiTile = (label, value, sub, color) => `
+      <div class="kpi-card-wide" style="border-left:3px solid ${color}">
+        <div class="kpi-wide-title">${label}</div>
+        <div class="kpi-wide-big">${value}</div>
+        ${sub ? `<div class="text-sm text-muted" style="margin-top:4px">${sub}</div>` : ''}
+      </div>`;
+
+    const marketBadge = market === 'Canada'
+      ? '<span class="tag" style="background:rgba(239,68,68,0.15);color:#ef4444">🇨🇦 Canada</span>'
+      : '<span class="tag" style="background:rgba(59,130,246,0.15);color:#3b82f6">🇺🇸 USA</span>';
+
+    const marketMismatch = market !== (prog.market || 'USA')
+      ? `<div class="alert alert-warning" style="margin-bottom:12px">⚠ Viewing <strong>${esc(market)}</strong> LDP — program's configured market is <strong>${esc(prog.market || 'USA')}</strong>. Margins recomputed with ${esc(market)} duty & freight.</div>`
+      : '';
+
+    const marketToggle = `
+      <div style="display:inline-flex;gap:0;border-radius:var(--radius-sm);overflow:hidden;border:1px solid var(--border)">
+        <button class="btn ${market === 'USA' ? 'btn-primary' : 'btn-secondary'} btn-sm" style="border-radius:0" onclick="App.setOverviewMarket('${esc(programId)}','USA')">🇺🇸 USA</button>
+        <button class="btn ${market === 'Canada' ? 'btn-primary' : 'btn-secondary'} btn-sm" style="border-radius:0" onclick="App.setOverviewMarket('${esc(programId)}','Canada')">🇨🇦 Canada</button>
+      </div>`;
+
+    // Empty state — program isn't placed yet.
+    if (rows.length === 0) {
+      return `
+      ${programTabBar(programId, 'overview', prog)}
+      <div class="page-header" style="margin-top:12px">
+        <div>
+          <h1 class="page-title">📈 Overview — ${esc(prog.name)}</h1>
+          <p class="page-subtitle">${marketBadge} · Target margin ${prog.targetMargin ? fmtPct(prog.targetMargin) : '—'}</p>
+        </div>
+        ${marketToggle}
+      </div>
+      <div class="card" style="padding:40px;text-align:center">
+        <div class="empty-state">
+          <div class="icon">📭</div>
+          <h3>No placed styles yet</h3>
+          <p class="text-muted">Place styles with FOB prices on the Cost Summary tab. Overview shows margins once there's something to recap.</p>
+          <button class="btn btn-primary" style="margin-top:12px" onclick="App.navigate('cost-summary','${esc(programId)}')">📊 Go to Cost Summary</button>
+        </div>
+      </div>`;
+    }
+
+    const rowTr = rows.map(r => {
+      const targetCell = r.targetPct != null
+        ? (r.hitTarget ? '<span class="tag" style="background:rgba(34,197,94,0.15);color:#22c55e">✓</span>'
+                       : '<span class="tag" style="background:rgba(239,68,68,0.15);color:#ef4444">✕</span>')
+        : '<span class="text-muted">—</span>';
+      return `<tr>
+        <td><span class="primary font-bold">${esc(r.style.styleNumber || '—')}</span><div class="text-sm text-muted">${esc(r.style.styleName || '')}</div></td>
+        <td class="text-sm">${esc(r.tc?.code || '—')}</td>
+        <td class="text-sm">${esc(r.factory?.factoryName || '—')}</td>
+        <td class="text-sm">${esc(r.coo || '—')}</td>
+        <td class="text-right">${fmtQty(r.units)}</td>
+        <td class="text-right">${fmt$(r.fob)}</td>
+        <td class="text-right">${fmt$(r.ldp)}</td>
+        <td class="text-right">${fmt$(r.wtdSell)}</td>
+        <td class="text-right">${fmt$(r.marginPerUnit)}</td>
+        <td class="text-right font-bold" style="color:${r.marginPct == null ? 'inherit' : r.hitTarget ? '#22c55e' : r.marginPct < 0 ? '#ef4444' : '#f59e0b'}">${fmtPct(r.marginPct)}</td>
+        <td class="text-center">${targetCell}</td>
+        <td class="text-right">${fmt$0(r.revenue)}</td>
+      </tr>`;
+    }).join('');
+
+    const mixTable = (title, data) => `
+      <div class="card" style="padding:14px 16px">
+        <div class="font-bold mb-2">${title}</div>
+        <table style="width:100%;font-size:0.85rem">
+          <thead><tr>
+            <th style="text-align:left">Name</th>
+            <th style="text-align:right">Styles</th>
+            <th style="text-align:right">Units</th>
+            <th style="text-align:right">Wtd FOB</th>
+            <th style="text-align:right">Revenue</th>
+            <th style="text-align:right">Wtd Margin</th>
+          </tr></thead>
+          <tbody>${data.map(g => `<tr>
+            <td>${esc(g.label)}</td>
+            <td class="text-right">${g.styles}</td>
+            <td class="text-right">${fmtQty(g.units)}</td>
+            <td class="text-right">${fmt$(g.wtdFob)}</td>
+            <td class="text-right">${fmt$0(g.revenue)}</td>
+            <td class="text-right font-bold">${fmtPct(g.wtdMargin)}</td>
+          </tr>`).join('')}</tbody>
+        </table>
+      </div>`;
+
+    return `
+    ${programTabBar(programId, 'overview', prog)}
+    <div class="page-header" style="margin-top:12px">
+      <div>
+        <h1 class="page-title">📈 Overview — ${esc(prog.name)}</h1>
+        <p class="page-subtitle">${marketBadge} · ${styleCount} placed ${styleCount === 1 ? 'style' : 'styles'} · Target margin ${prog.targetMargin ? fmtPct(prog.targetMargin) : '—'}</p>
+      </div>
+      ${marketToggle}
+    </div>
+
+    ${marketMismatch}
+
+    <div class="kpi-grid" style="grid-template-columns:repeat(auto-fill,minmax(200px,1fr));margin-bottom:16px">
+      ${kpiTile('Placed styles',  `${styleCount}`, `${hitCount} hit target · ${missCount} miss`, '#22c55e')}
+      ${kpiTile('Units sold',     fmtQty(totalUnits), `from Buy Summary`, '#6366f1')}
+      ${kpiTile('Revenue',        fmt$0(totalRevenue), `sell × qty`, '#a855f7')}
+      ${kpiTile('Cost (LDP)',     fmt$0(totalCost), `LDP × qty`, '#f97316')}
+      ${kpiTile('Gross profit',   fmt$0(grossProfit), `revenue − cost`, '#0ea5e9')}
+      ${kpiTile('Wtd avg margin', fmtPct(wtdAvgMargin), prog.targetMargin ? `vs ${fmtPct(prog.targetMargin)} target` : '', wtdAvgMargin != null && prog.targetMargin != null && wtdAvgMargin >= prog.targetMargin ? '#22c55e' : '#ef4444')}
+      ${kpiTile('Wtd avg sell',   fmt$(wtdAvgSell),  `weighted by qty`, '#8b5cf6')}
+      ${kpiTile('Wtd avg FOB',    fmt$(wtdAvgFob),   `winning vendor`, '#f59e0b')}
+    </div>
+
+    <div class="card" style="padding:0;margin-bottom:16px">
+      <div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
+        <div class="font-bold">Margin recap — placed styles only</div>
+        <div class="text-sm text-muted">Sell is qty-weighted from Buy Summary · LDP uses ${esc(market)} duty & freight</div>
+      </div>
+      <div class="table-wrap">
+        <table style="font-size:0.85rem">
+          <thead><tr>
+            <th>Style</th>
+            <th>TC</th>
+            <th>Factory</th>
+            <th>COO</th>
+            <th class="text-right">Qty</th>
+            <th class="text-right">FOB</th>
+            <th class="text-right">LDP</th>
+            <th class="text-right">Wtd Sell</th>
+            <th class="text-right">$ / unit</th>
+            <th class="text-right">Margin %</th>
+            <th class="text-center">Target</th>
+            <th class="text-right">Revenue</th>
+          </tr></thead>
+          <tbody>${rowTr}</tbody>
+        </table>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:16px">
+      ${mixTable('🏣 Vendor mix',  vendorMix)}
+      ${mixTable('🏭 Factory mix', factoryMix)}
+    </div>
+    `;
+  }
+
   // ── Capacity Plan page ──────────────────────────────────────────
   // TC fills production math per style×factory line; submits to
   // Production (admin/PC) for review. Admin/PC approve or reject.
@@ -4728,6 +4997,8 @@ const AdminViews = (() => {
     renderDeliveryPlan,
     // Capacity Plan
     renderCapacityPlan,
+    // Program Overview (margin recap)
+    renderOverview,
   };
 
   Object.defineProperty(api, '_programsView', {
