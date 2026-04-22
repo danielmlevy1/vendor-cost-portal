@@ -29,7 +29,10 @@ App = (() => {
           API.TradingCompanies.all().catch(() => {}),
           API.preload.nav(),
         ]);
-        renderApp();
+        // Route-based preload for the landing page (otherwise Programs
+        // renders before cache.programs is warmed).
+        const landingRoute = user.role === 'vendor' ? '' : 'programs';
+        await navigate(landingRoute);
       } else {
         renderLogin();
       }
@@ -131,7 +134,10 @@ App = (() => {
         API.TradingCompanies.all().catch(() => {}),
         API.preload.nav(),
       ]);
-      renderApp();
+      // Route-based preload for the landing page (otherwise Programs
+      // renders before cache.programs is warmed).
+      const landingRoute = user.role === 'vendor' ? '' : 'programs';
+      await navigate(landingRoute);
     } catch (err) {
       if (errEl) { errEl.style.display = ''; errEl.textContent = err.message || 'Invalid email or password'; }
     }
