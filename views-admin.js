@@ -1470,7 +1470,13 @@ const AdminViews = (() => {
             const hist = revCount > 0
               ? `<span class="revision-badge${isReviewed ? ' revision-badge-seen' : ' revision-badge-new'}" title="Quote history (${revCount})${isReviewed ? ' — reviewed' : ' — NEW'}" onclick="App.openRevisionHistory('${subId}','${field}')">&#128338;${revCount > 1 ? ' '+revCount : ''}</span>`
               : '';
-            return `<div class="flaggable-cell${flag?' has-flag':''}" oncontextmenu="App.openFlagMenu(event,'${subId}','${field}');return false;">${inputHtml}${dot}${hist}</div>`;
+            // Hover-reveal flag opener (⚐) — shown only on cells that
+            // have a submission and no existing flag. Right-click
+            // anywhere in the cell still works as a power-user shortcut.
+            const addBtn = (subId && !flag)
+              ? `<span class="flag-add-btn" title="Flag this cell (or right-click)" onclick="App.openFlagMenu(event,'${subId}','${field}')">⚐</span>`
+              : '';
+            return `<div class="flaggable-cell${flag?' has-flag':''}" oncontextmenu="App.openFlagMenu(event,'${subId}','${field}');return false;">${inputHtml}${dot}${hist}${addBtn}</div>`;
           };
 
           const dutyPct = r ? pct(r.dutyRate) : '—';
@@ -1648,7 +1654,10 @@ const AdminViews = (() => {
         const cw = (inputHtml, flag, revCount, subId, field) => {
           const dot  = flag ? `<span class="flag-dot flag-${flag.color}" title="${(flag.note||flag.color).replace(/"/g,'&quot;')}" oncontextmenu="App.openFlagMenu(event,'${subId}','${field}');return false;"></span>` : '';
           const hist = revCount > 0 ? `<span class="revision-badge revision-badge-new" onclick="App.openRevisionHistory('${subId}','${field}')">&#128338;${revCount>1?' '+revCount:''}</span>` : '';
-          return `<div class="flaggable-cell${flag?' has-flag':''}" oncontextmenu="App.openFlagMenu(event,'${subId}','${field}');return false;">${inputHtml}${dot}${hist}</div>`;
+          const addBtn = (subId && !flag)
+            ? `<span class="flag-add-btn" title="Flag this cell (or right-click)" onclick="App.openFlagMenu(event,'${subId}','${field}')">⚐</span>`
+            : '';
+          return `<div class="flaggable-cell${flag?' has-flag':''}" oncontextmenu="App.openFlagMenu(event,'${subId}','${field}');return false;">${inputHtml}${dot}${hist}${addBtn}</div>`;
         };
         const dutyPct = r ? pct(r.dutyRate) : '—';
         const dutyAmt = r ? fmt(r.duty) : '—';
@@ -1674,7 +1683,9 @@ const AdminViews = (() => {
         rowHtml += `<td data-col="repeat" style="font-size:0.78rem;white-space:nowrap;padding:6px 10px"><div style="font-weight:600;color:var(--accent)">${last.tcCode} · ${last.coo}</div><div style="color:var(--text-secondary)">${last.season}&nbsp; FOB $${last.fob.toFixed(2)}</div></td>`;
       }
       const rowClass2 = bestLDP !== null && targetLDP ? (bestLDP <= targetLDP ? 'row-on-target' : 'row-over-target') : '';
-      return `<tr class="style-link-guest-row ${rowClass2}" style="background:${colorAlpha}">${rowHtml}</tr>`;
+      // Leading empty sel-col cell so guest rows align with native
+      // rows (which start with the bulk-select checkbox column).
+      return `<tr class="style-link-guest-row ${rowClass2}" data-style-id="${s.id}" style="background:${colorAlpha}"><td class="sel-col sticky-col mat-cell-white" style="width:36px;min-width:36px"></td>${rowHtml}</tr>`;
     }
 
     // Build active rows — optionally grouped

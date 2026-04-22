@@ -2270,6 +2270,24 @@ td.col-best, th.col-best {
 .has-flag { background: rgba(255,255,255,0.03); border-radius: 4px; }
 .cell-flaggable { cursor: context-menu; }
 
+/* Hover-reveal "add flag" affordance — outlined ⚐ shown only when
+   the row is hovered. Different glyph + weight from the solid
+   colored flag-dot so users don't mistake it for an active flag. */
+.flag-add-btn {
+  opacity: 0;
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  color: var(--text-muted);
+  padding: 2px 4px;
+  border-radius: 4px;
+  transition: opacity 0.12s, color 0.12s, background 0.12s;
+  user-select: none;
+  flex-shrink: 0;
+}
+.flaggable-cell:hover .flag-add-btn { opacity: 0.7; }
+.flag-add-btn:hover { opacity: 1 !important; color: var(--accent); background: rgba(99,102,241,0.1); }
+
 /* Flag colour swatches in menu */
 .flag-swatch             { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:6px; }
 .flag-swatch.flag-red    { background:#ef4444; }
@@ -2282,7 +2300,10 @@ td.col-best, th.col-best {
 
 /* Right-click context menu */
 .flag-context-menu {
-  position: absolute;
+  /* JS positions using event.clientX/Y (viewport coords), so we must
+     use fixed here — absolute was causing the menu to render off-screen
+     once the cost-summary table was scrolled. */
+  position: fixed;
   z-index: 9999;
   background: var(--bg-card);
   border: 1px solid var(--border);
