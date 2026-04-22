@@ -346,8 +346,8 @@ App = (() => {
       `}
       <div style="padding:4px 8px 8px">
         <button class="nav-item theme-toggle-btn" id="theme-toggle-btn" onclick="App.toggleTheme()" title="Toggle light / dark mode">
-          <span id="theme-icon">${localStorage.getItem('vcp_theme') === 'light' ? '☀️' : '🌙'}</span>
-          <span id="theme-label">${localStorage.getItem('vcp_theme') === 'light' ? 'Light Mode' : 'Dark Mode'}</span>
+          <span id="theme-icon">${(localStorage.getItem('vcp_theme') || 'light') === 'light' ? '☀️' : '🌙'}</span>
+          <span id="theme-label">${(localStorage.getItem('vcp_theme') || 'light') === 'light' ? 'Light Mode' : 'Dark Mode'}</span>
         </button>
       </div>
       </div>`;
@@ -3658,7 +3658,7 @@ App.openMarginRecap = function(programId, justPlaced) {
 // =============================================================
 App.toggleTheme = function() {
 
-  const current = document.body.getAttribute('data-theme') || 'dark';
+  const current = document.body.getAttribute('data-theme') || 'light';
   const next = current === 'light' ? 'dark' : 'light';
   document.body.setAttribute('data-theme', next);
   localStorage.setItem('vcp_theme', next);
@@ -3667,9 +3667,10 @@ App.toggleTheme = function() {
   document.querySelectorAll('#theme-label').forEach(el => { el.textContent = next === 'light' ? 'Light Mode' : 'Dark Mode'; });
 };
 
-// Apply saved theme immediately (before first render) to avoid flash
+// Apply saved theme immediately (before first render) to avoid flash.
+// Default is light — matches the corporate feel of the parent brand.
 (function applyThemeOnLoad() {
-  const saved = localStorage.getItem('vcp_theme') || 'dark';
+  const saved = localStorage.getItem('vcp_theme') || 'light';
   document.body.setAttribute('data-theme', saved);
 })();
 

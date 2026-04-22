@@ -44,26 +44,34 @@
    Applied via: document.body.setAttribute('data-theme','light')
    ═══════════════════════════════════════════════════════ */
 body[data-theme="light"] {
-  --bg-base:     #eef2f7;
+  /* Editorial white/charcoal — evokes the parent brand's
+     corporate site (clean sans-serif, lots of breathing room,
+     flat surfaces over glossy gradients). */
+  --bg-base:     #ffffff;
   --bg-surface:  #ffffff;
-  --bg-elevated: #f4f7fb;
-  --bg-card:     rgba(255, 255, 255, 0.95);
-  --border:      rgba(15, 23, 42, 0.09);
-  --border-light: rgba(15, 23, 42, 0.05);
-  --border-hover: rgba(59, 130, 246, 0.5);
+  --bg-elevated: #fafafa;
+  --bg-card:     #ffffff;
+  --border:      rgba(17, 24, 39, 0.08);
+  --border-light: rgba(17, 24, 39, 0.04);
+  --border-hover: rgba(17, 24, 39, 0.24);
 
-  --accent-glow: rgba(59, 130, 246, 0.15);
+  --accent:      #111827;     /* black accent — understated */
+  --accent-glow: rgba(17, 24, 39, 0.06);
 
-  --text-primary:   #0f172a;
-  --text-secondary: #334155;
-  --text-muted:     #64748b;
+  --text-primary:   #111827;  /* near-black for headings */
+  --text-secondary: #1f2937;  /* charcoal body */
+  --text-muted:     #6b7280;  /* neutral gray */
 
-  --shadow:    0 4px 24px rgba(15, 23, 42, 0.07);
-  --shadow-lg: 0 8px 48px rgba(15, 23, 42, 0.12);
+  --shadow:    none;          /* flat cards — no tech glow */
+  --shadow-lg: 0 1px 2px rgba(17, 24, 39, 0.06), 0 4px 12px rgba(17, 24, 39, 0.05);
 
-  --hover-overlay: rgba(15, 23, 42, 0.04);
-  --active-overlay: rgba(15, 23, 42, 0.07);
+  --hover-overlay:  rgba(17, 24, 39, 0.03);
+  --active-overlay: rgba(17, 24, 39, 0.06);
   --input-bg: #ffffff;
+
+  --radius: 4px;              /* tighter corners — less tech, more editorial */
+  --radius-sm: 3px;
+  --radius-lg: 6px;
 
   color-scheme: light;
 }
@@ -83,8 +91,9 @@ body[data-theme="light"] .sidebar-section-label { color: #94a3b8; }
 body[data-theme="light"] .nav-item { color: var(--text-secondary); }
 body[data-theme="light"] .nav-item:hover { background: var(--hover-overlay); color: var(--text-primary); }
 body[data-theme="light"] .nav-item.active {
-  background: rgba(59,130,246,0.1);
+  background: rgba(17,24,39,0.05);
   color: var(--accent);
+  box-shadow: inset 2px 0 0 var(--accent);
 }
 body[data-theme="light"] .nav-item.active .icon { filter: none; }
 
@@ -252,6 +261,105 @@ body[data-theme="light"] td[data-col$="_fob"] {
   border-left: 2.5px solid rgba(99,102,241,0.35) !important;
 }
 
+/* ═══════════════════════════════════════════════════════
+   LIGHT MODE — EDITORIAL POLISH
+   Flatter surfaces, heavier titles, more breathing room.
+   Echoes the parent brand's corporate-minimal aesthetic.
+   ═══════════════════════════════════════════════════════ */
+
+/* Flat cards — kill the dark-mode backdrop blur + hover glow */
+body[data-theme="light"] .card {
+  backdrop-filter: none;
+  background: var(--bg-card);
+  box-shadow: none;
+}
+body[data-theme="light"] .card:hover { border-color: var(--border); }
+
+/* Heavier, tighter page titles */
+body[data-theme="light"] .page-title {
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+}
+body[data-theme="light"] .page-header { margin-bottom: 32px; }
+
+/* Primary button — solid black, no glow. The hero CTA look. */
+body[data-theme="light"] .btn-primary {
+  background: #111827;
+  color: #ffffff;
+  border-color: #111827;
+  box-shadow: none;
+}
+body[data-theme="light"] .btn-primary:hover {
+  background: #000000;
+  border-color: #000000;
+  box-shadow: none;
+  transform: none;
+}
+
+/* Secondary button — ghost with hairline border */
+body[data-theme="light"] .btn-secondary {
+  background: #ffffff;
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  box-shadow: none;
+}
+body[data-theme="light"] .btn-secondary:hover {
+  background: var(--hover-overlay);
+  border-color: rgba(17,24,39,0.2);
+}
+
+/* Sidebar — pure white, hairline divider */
+body[data-theme="light"] #sidebar {
+  background: #ffffff;
+  border-right: 1px solid var(--border);
+}
+
+/* Tables — uppercase small-caps headers, hairline rows */
+body[data-theme="light"] table thead th {
+  background: #ffffff;
+  color: var(--text-muted);
+  font-weight: 600;
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--border);
+}
+
+/* Modals — crisp border, no glow */
+body[data-theme="light"] .modal-box {
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-lg);
+}
+
+/* Tags/badges — keep status colors but flatten the neutral tag */
+body[data-theme="light"] .tag {
+  background: #f3f4f6;
+  color: #374151;
+  border: none;
+}
+
+/* Program tabs — underline-style instead of pill */
+body[data-theme="light"] .program-tab {
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  color: var(--text-muted);
+  font-weight: 500;
+  padding: 10px 4px;
+  margin-right: 20px;
+}
+body[data-theme="light"] .program-tab:hover { color: var(--text-primary); }
+body[data-theme="light"] .program-tab.active {
+  background: transparent;
+  color: var(--text-primary);
+  border-bottom-color: var(--text-primary);
+}
+
+/* Kill the blue radial hero glow on login */
+body[data-theme="light"] body::before,
+body[data-theme="light"] #login-screen::before { background: none !important; }
 
 /* ── Theme toggle button in sidebar ── */
 .theme-toggle-btn {
