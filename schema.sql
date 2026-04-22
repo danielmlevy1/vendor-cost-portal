@@ -503,6 +503,62 @@ CREATE TABLE IF NOT EXISTS factories (
 CREATE INDEX IF NOT EXISTS idx_factories_tc_id  ON factories(tc_id);
 CREATE INDEX IF NOT EXISTS idx_factories_status ON factories(status);
 
+-- ── Delivery Plans ───────────────────────────────────────────
+-- Post-placement negotiation surface between Production, Sales, and
+-- the Trading Company. One plan per program; line items span all
+-- (style, customer) rows that need delivery commits. Created by
+-- Production from the Cost Summary page once the program is placed.
+
+CREATE TABLE IF NOT EXISTS delivery_plans (
+  id              TEXT PRIMARY KEY,
+  program_id      TEXT NOT NULL UNIQUE,             -- one plan per costing program
+  created_by      TEXT,
+  created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_at      TEXT,
+  -- Shared discussion log — append-only JSON array of
+  -- { at, authorId, authorName, role, text }. Both Production, Sales,
+  -- and TC can append; all parties read.
+  history         TEXT NOT NULL DEFAULT '[]',
+  notes           TEXT
+);
+
+CREATE TABLE IF NOT EXISTS delivery_plan_lines (
+  id                              TEXT PRIMARY KEY,
+  plan_id                         TEXT NOT NULL,
+  style_id                        TEXT NOT NULL,
+  customer_id                     TEXT,                -- null = "all customers" / no split
+  tc_id                           TEXT,                -- copied from placement at creation
+  factory_id                      TEXT,                -- copied from placement at creation
+  coo                             TEXT,
+  shipping_destination            TEXT,                -- e.g. 'NJ', 'LA', 'NC'
+  qty                             INTEGER,
+  -- Core dates (see role-mask matrix; server returns null for
+  -- fields the caller can't see):
+  --   sales_in_whse_date               Sales + Prod
+  --   factory_cargo_ready_date         TC + Prod
+  --   production_cargo_ready_vendor    Prod-only (internal buffer)
+  --   production_cargo_ready_sales     Sales + Prod
+  sales_in_whse_date              TEXT,
+  factory_cargo_ready_date        TEXT,
+  production_cargo_ready_vendor   TEXT,
+  production_cargo_ready_sales    TEXT,
+  -- Multi-wave shipment splits; JSON array of { date, qty }.
+  vendor_waves                    TEXT NOT NULL DEFAULT '[]',
+  sales_waves                     TEXT NOT NULL DEFAULT '[]',
+  -- Per-line per-role comment fields (quick annotations).
+  vendor_comments                 TEXT,
+  production_comments             TEXT,
+  sales_comments                  TEXT,
+  status                          TEXT NOT NULL DEFAULT 'open',
+    -- open | agreed | shipped | received | cancelled
+  created_at                      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_at                      TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_delivery_lines_plan    ON delivery_plan_lines(plan_id);
+CREATE INDEX IF NOT EXISTS idx_delivery_lines_tc      ON delivery_plan_lines(tc_id);
+CREATE INDEX IF NOT EXISTS idx_delivery_lines_factory ON delivery_plan_lines(factory_id);
+
 -- ── Sales Requests ────────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS sales_requests (

@@ -46,8 +46,10 @@ App = (() => {
     try {
       if (route === 'programs' || route === 'dashboard')
         await API.preload.programs();
-      else if (route === 'cost-summary' || route === 'styles' || route === 'buy-summary' || route === 'compare' || route === 'design-costing')
+      else if (route === 'cost-summary' || route === 'styles' || route === 'buy-summary' || route === 'compare' || route === 'design-costing' || route === 'delivery-plan') {
         await API.preload.program(param);
+        if (route === 'delivery-plan') await API.DeliveryPlans.fetch(param).catch(() => {});
+      }
       else if (route === 'cross-program')
         await API.preload.crossProgram();
       else if (route === 'trading-companies' || route === 'my-company')
@@ -346,6 +348,7 @@ App = (() => {
       else if (route === 'design-changes')       mc.innerHTML = AdminViews.renderAllDesignChanges();
       else if (route === 'recost-queue')          mc.innerHTML = AdminViews.renderRecostQueue();
       else if (route === 'factories')             mc.innerHTML = AdminViews.renderFactories(user.role);
+      else if (route === 'delivery-plan')         mc.innerHTML = AdminViews.renderDeliveryPlan(routeParam, user.role, user);
       // Settings — Admin gets full CRUD; PC gets propose-mode
       else if (route === 'trading-companies') mc.innerHTML = isAdmin ? AdminViews.renderTradingCompanies() : AdminViews.renderTradingCompaniesPC();
       else if (route === 'customers')         mc.innerHTML = isAdmin ? AdminViews.renderCustomers() : mc.innerHTML;
@@ -379,6 +382,7 @@ App = (() => {
       else if (route === 'design-changes')     mc.innerHTML = AdminViews.renderAllDesignChanges();
       else if (route === 'recost-queue')        mc.innerHTML = AdminViews.renderRecostQueue();
       else if (route === 'factories')           mc.innerHTML = AdminViews.renderFactories(user.role);
+      else if (route === 'delivery-plan')       mc.innerHTML = AdminViews.renderDeliveryPlan(routeParam, user.role, user);
       else mc.innerHTML = AdminViews.renderDashboard(user.role, user);
     } else if (isTechDesign) {
       if (route === 'dashboard')           mc.innerHTML = AdminViews.renderDashboard(user.role, user);
@@ -410,6 +414,7 @@ App = (() => {
       else if (route === 'my-styles')        mc.innerHTML = VendorViews.renderMyStyles(user.tcId);
       else if (route === 'my-company')       mc.innerHTML = VendorViews.renderMyCompany(user.tcId);
       else if (route === 'my-factories')     mc.innerHTML = VendorViews.renderMyFactories(user.tcId);
+      else if (route === 'delivery-plan')    mc.innerHTML = AdminViews.renderDeliveryPlan(routeParam, user.role, user);
       else                                   mc.innerHTML = VendorViews.renderPrograms(user.tcId);
     }
     // Post-render setup
@@ -6960,6 +6965,54 @@ App._myFactoryFilterSet = function(value) {
   if (value) localStorage.setItem('vcp_my_factory_f_country', value);
   else       localStorage.removeItem('vcp_my_factory_f_country');
   App.navigate('my-factories');
+};
+
+// ── Delivery Plan handlers ──────────────────────────────────────
+
+App.initDeliveryPlan = async function(programId) {
+  if (!confirm('Initialize the delivery plan? One line will be created per placed style (split by customer if Buy Summary is filled).')) return;
+  try { await API.DeliveryPlans.initialize(programId); }
+  catch (err) { alert('Could not initialize: ' + (err.message || 'unknown')); return; }
+  App.navigate('delivery-plan', programId);
+};
+
+App.resetDeliveryPlan = async function(programId) {
+  if (!confirm('Delete the delivery plan and all its lines? This cannot be undone.')) return;
+  try { await API.DeliveryPlans.reset(programId); }
+  catch (err) { alert('Could not reset: ' + (err.message || 'unknown')); return; }
+  App.navigate('delivery-plan', programId);
+};
+
+// Scalar field update (dates, text).
+App.updateDeliveryLine = async function(programId, lineId, field, value) {
+  try { await API.DeliveryPlans.updateLine(programId, lineId, { [field]: value }); }
+  catch (err) { alert('Could not save: ' + (err.message || 'unknown')); }
+};
+
+// Waves field — accept "YYYY-MM-DD:qty, YYYY-MM-DD:qty, …" and
+// persist as an array of { date, qty }. Empty values clear the field.
+App.updateDeliveryWaves = async function(programId, lineId, field, value) {
+  const raw = (value || '').trim();
+  const waves = raw
+    ? raw.split(',').map(pair => {
+        const [date, qtyStr] = pair.split(':').map(s => (s || '').trim());
+        if (!date) return null;
+        const qty = Number(qtyStr);
+        return { date, qty: isNaN(qty) ? null : qty };
+      }).filter(Boolean)
+    : [];
+  try { await API.DeliveryPlans.updateLine(programId, lineId, { [field]: waves }); }
+  catch (err) { alert('Could not save waves: ' + (err.message || 'unknown')); }
+};
+
+App.postDeliveryComment = async function(programId, planId) {
+  const ta = document.getElementById('dp-comment-' + planId);
+  const text = (ta?.value || '').trim();
+  if (!text) return;
+  try { await API.DeliveryPlans.addComment(programId, planId, text); }
+  catch (err) { alert('Could not post: ' + (err.message || 'unknown')); return; }
+  if (ta) ta.value = '';
+  App.navigate('delivery-plan', programId);
 };
 
 // Set (or clear) the factory on a placement. Used by both the

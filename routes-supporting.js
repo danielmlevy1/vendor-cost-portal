@@ -1750,4 +1750,291 @@ router.delete('/factories/:id', requireAuth, requireRole('admin'), (req, res) =>
   res.json({ ok: true });
 });
 
+// =============================================================
+// DELIVERY PLANS
+// =============================================================
+// Per-program negotiation surface: Production ↔ Sales ↔ TC.
+// Server masks date fields based on the caller's role so each
+// party only sees what they should:
+//
+//   Field                             Sales  Prod  TC
+//   --------------------------------- -----  ----  ---
+//   sales_in_whse_date                 ✓      ✓    —
+//   factory_cargo_ready_date           —      ✓    ✓
+//   production_cargo_ready_vendor      —      ✓    —   (Prod internal buffer)
+//   production_cargo_ready_sales       ✓      ✓    —
+//
+// (admin sees everything; design/tech_design/prod_dev are denied.)
+// Waves and per-role comment fields follow the same role slice.
+
+const DP_ROLES_ADMIN = ['admin', 'pc'];
+const DP_ROLES_SALES = ['planning'];
+const DP_ROLES_ALL   = ['admin', 'pc', 'planning', 'vendor'];
+
+function dpLineFromRow(r) {
+  return {
+    id:                          r.id,
+    planId:                      r.plan_id,
+    styleId:                     r.style_id,
+    customerId:                  r.customer_id,
+    tcId:                        r.tc_id,
+    factoryId:                   r.factory_id,
+    coo:                         r.coo,
+    shippingDestination:         r.shipping_destination,
+    qty:                         r.qty,
+    salesInWhseDate:             r.sales_in_whse_date,
+    factoryCargoReadyDate:       r.factory_cargo_ready_date,
+    productionCargoReadyVendor:  r.production_cargo_ready_vendor,
+    productionCargoReadySales:   r.production_cargo_ready_sales,
+    vendorWaves:                 JSON.parse(r.vendor_waves || '[]'),
+    salesWaves:                  JSON.parse(r.sales_waves  || '[]'),
+    vendorComments:              r.vendor_comments,
+    productionComments:          r.production_comments,
+    salesComments:               r.sales_comments,
+    status:                      r.status,
+    createdAt:                   r.created_at,
+    updatedAt:                   r.updated_at,
+  };
+}
+
+function dpPlanFromRow(r) {
+  return {
+    id:         r.id,
+    programId:  r.program_id,
+    createdBy:  r.created_by,
+    createdAt:  r.created_at,
+    updatedAt:  r.updated_at,
+    history:    JSON.parse(r.history || '[]'),
+    notes:      r.notes,
+  };
+}
+
+// Role-aware mask: return a COPY of a line with fields the caller
+// can't see blanked out. Keep null (not undefined) so the UI can
+// detect and render a placeholder.
+function maskLineForRole(line, role) {
+  const l = { ...line };
+  const canSeeSales  = DP_ROLES_ADMIN.includes(role) || DP_ROLES_SALES.includes(role);
+  const canSeeTc     = DP_ROLES_ADMIN.includes(role) || role === 'vendor';
+  const canSeeProd   = DP_ROLES_ADMIN.includes(role);   // internal buffer, Prod only
+  if (!canSeeSales) {
+    l.salesInWhseDate            = null;
+    l.productionCargoReadySales  = null;
+    l.salesWaves                 = [];
+    l.salesComments              = null;
+  }
+  if (!canSeeTc) {
+    l.factoryCargoReadyDate      = null;
+    l.vendorWaves                = [];
+    l.vendorComments             = null;
+  }
+  if (!canSeeProd) {
+    l.productionCargoReadyVendor = null;
+    l.productionComments         = null;
+  }
+  return l;
+}
+
+// Role gate: which fields can this role edit on an existing line?
+function allowedDpLineFields(role) {
+  if (DP_ROLES_ADMIN.includes(role)) return {
+    // Admin/PC can touch everything.
+    qty:'qty', shippingDestination:'shipping_destination', factoryId:'factory_id',
+    salesInWhseDate:'sales_in_whse_date',
+    factoryCargoReadyDate:'factory_cargo_ready_date',
+    productionCargoReadyVendor:'production_cargo_ready_vendor',
+    productionCargoReadySales:'production_cargo_ready_sales',
+    vendorWaves:'vendor_waves', salesWaves:'sales_waves',
+    vendorComments:'vendor_comments', productionComments:'production_comments', salesComments:'sales_comments',
+    status:'status',
+  };
+  if (role === 'planning') return {
+    salesInWhseDate:'sales_in_whse_date',
+    productionCargoReadySales:'production_cargo_ready_sales',     // Sales can edit their own view of it
+    salesWaves:'sales_waves', salesComments:'sales_comments',
+  };
+  if (role === 'vendor') return {
+    factoryCargoReadyDate:'factory_cargo_ready_date',
+    vendorWaves:'vendor_waves', vendorComments:'vendor_comments',
+  };
+  return {};
+}
+
+function dpProgramOrThrow(res, programId, role, tcId) {
+  const prog = db.prepare('SELECT * FROM programs WHERE id = ?').get(programId);
+  if (!prog) { res.status(404).json({ error: 'Program not found' }); return null; }
+  if (role === 'vendor') {
+    // Vendor only sees delivery plan for programs they're assigned to.
+    const asg = db.prepare('SELECT 1 FROM assignments WHERE program_id = ? AND tc_id = ?').get(programId, tcId);
+    if (!asg) { res.status(403).json({ error: 'Not assigned to this program' }); return null; }
+  }
+  return prog;
+}
+
+// GET /api/programs/:id/delivery-plan
+// Returns { plan, lines } with role-masked fields. Vendor only sees
+// lines where tc_id matches their own TC. Returns 404 if no plan.
+router.get('/programs/:id/delivery-plan', requireAuth, (req, res) => {
+  const role = req.user.role;
+  if (!DP_ROLES_ALL.includes(role)) return res.status(403).json({ error: 'Insufficient permissions' });
+  if (!dpProgramOrThrow(res, req.params.id, role, req.user.tcId)) return;
+
+  const plan = db.prepare('SELECT * FROM delivery_plans WHERE program_id = ?').get(req.params.id);
+  if (!plan) return res.status(404).json({ error: 'No delivery plan yet' });
+
+  let lineRows = db.prepare('SELECT * FROM delivery_plan_lines WHERE plan_id = ? ORDER BY created_at').all(plan.id);
+  if (role === 'vendor') lineRows = lineRows.filter(r => r.tc_id === req.user.tcId);
+
+  res.json({
+    plan: dpPlanFromRow(plan),
+    lines: lineRows.map(r => maskLineForRole(dpLineFromRow(r), role)),
+  });
+});
+
+// POST /api/programs/:id/delivery-plan
+// Initialize the plan for a program. Admin/PC only. Auto-prefills one
+// line per (placed style × customer-buy), inheriting tc_id / factory_id
+// / coo from the placement. If the style has no customer buys, a single
+// line covers the whole qty.
+router.post('/programs/:id/delivery-plan', requireAuth, requireRole('admin', 'pc'), (req, res) => {
+  const prog = db.prepare('SELECT * FROM programs WHERE id = ?').get(req.params.id);
+  if (!prog) return res.status(404).json({ error: 'Program not found' });
+
+  const existing = db.prepare('SELECT id FROM delivery_plans WHERE program_id = ?').get(req.params.id);
+  if (existing) return res.status(409).json({ error: 'Delivery plan already exists' });
+
+  const planId = uid();
+  const userLabel = req.user.name || req.user.email || req.user.id;
+
+  const tx = db.transaction(() => {
+    db.prepare(`
+      INSERT INTO delivery_plans (id, program_id, created_by, created_at, history)
+      VALUES (?,?,?,?,?)
+    `).run(planId, req.params.id, userLabel, now(), JSON.stringify([
+      { at: now(), authorId: req.user.id, authorName: userLabel, role: req.user.role, text: 'Delivery plan created.' },
+    ]));
+
+    // Pull placements for this program (we only care about placed styles).
+    const placedStyles = db.prepare(`
+      SELECT p.style_id, p.tc_id, p.factory_id, p.coo, s.proj_qty
+      FROM placements p
+      JOIN styles s ON s.id = p.style_id
+      WHERE s.program_id = ? AND s.status != 'cancelled'
+    `).all(req.params.id);
+
+    const insertLine = db.prepare(`
+      INSERT INTO delivery_plan_lines
+        (id, plan_id, style_id, customer_id, tc_id, factory_id, coo, qty, created_at)
+      VALUES (?,?,?,?,?,?,?,?,?)
+    `);
+
+    for (const ps of placedStyles) {
+      // Customer buys for this style (one row per customer with qty > 0).
+      const buys = db.prepare(
+        `SELECT customer_id, qty FROM customer_buys WHERE program_id = ? AND style_id = ? AND qty IS NOT NULL AND qty > 0`
+      ).all(req.params.id, ps.style_id);
+
+      if (buys.length) {
+        for (const b of buys) {
+          insertLine.run(uid(), planId, ps.style_id, b.customer_id, ps.tc_id, ps.factory_id, ps.coo, b.qty, now());
+        }
+      } else {
+        // No customer split — one line for the full projected qty.
+        insertLine.run(uid(), planId, ps.style_id, null, ps.tc_id, ps.factory_id, ps.coo,
+          ps.proj_qty != null ? Math.round(ps.proj_qty) : null, now());
+      }
+    }
+  });
+  tx();
+
+  const plan  = db.prepare('SELECT * FROM delivery_plans WHERE id = ?').get(planId);
+  const lines = db.prepare('SELECT * FROM delivery_plan_lines WHERE plan_id = ? ORDER BY created_at').all(planId);
+  res.status(201).json({
+    plan:  dpPlanFromRow(plan),
+    lines: lines.map(r => maskLineForRole(dpLineFromRow(r), req.user.role)),
+  });
+});
+
+// PATCH /api/delivery-plan-lines/:id
+// Per-role field allow-list enforced server-side.
+router.patch('/delivery-plan-lines/:id', requireAuth, (req, res) => {
+  const role = req.user.role;
+  const row = db.prepare('SELECT * FROM delivery_plan_lines WHERE id = ?').get(req.params.id);
+  if (!row) return res.status(404).json({ error: 'Not found' });
+
+  if (role === 'vendor') {
+    if (row.tc_id !== req.user.tcId) return res.status(403).json({ error: 'Forbidden' });
+  } else if (!DP_ROLES_ALL.includes(role)) {
+    return res.status(403).json({ error: 'Insufficient permissions' });
+  }
+
+  const FIELDS = allowedDpLineFields(role);
+  const sets = [];
+  const vals = [];
+  for (const [camel, col] of Object.entries(FIELDS)) {
+    if (req.body[camel] === undefined) continue;
+    let v = req.body[camel];
+    if (col.endsWith('_waves')) v = JSON.stringify(Array.isArray(v) ? v : []);
+    else if (v === '') v = null;
+    sets.push(`${col} = ?`); vals.push(v);
+  }
+  if (!sets.length) return res.json(maskLineForRole(dpLineFromRow(row), role));
+
+  sets.push('updated_at = ?'); vals.push(now());
+  vals.push(req.params.id);
+  db.prepare(`UPDATE delivery_plan_lines SET ${sets.join(', ')} WHERE id = ?`).run(...vals);
+
+  const fresh = db.prepare('SELECT * FROM delivery_plan_lines WHERE id = ?').get(req.params.id);
+
+  // Also bump plan.updated_at for activity tracking.
+  db.prepare('UPDATE delivery_plans SET updated_at = ? WHERE id = ?').run(now(), fresh.plan_id);
+
+  res.json(maskLineForRole(dpLineFromRow(fresh), role));
+});
+
+// POST /api/delivery-plans/:id/comments
+// Append a comment to the shared history. Available to all three
+// role families (admin/pc, planning, vendor) — that's the whole
+// point of the shared log.
+router.post('/delivery-plans/:id/comments', requireAuth, (req, res) => {
+  const role = req.user.role;
+  if (!DP_ROLES_ALL.includes(role)) return res.status(403).json({ error: 'Insufficient permissions' });
+  const plan = db.prepare('SELECT * FROM delivery_plans WHERE id = ?').get(req.params.id);
+  if (!plan) return res.status(404).json({ error: 'Not found' });
+
+  // Vendor can only comment if they have any line on this plan.
+  if (role === 'vendor') {
+    const has = db.prepare(
+      'SELECT 1 FROM delivery_plan_lines WHERE plan_id = ? AND tc_id = ? LIMIT 1'
+    ).get(req.params.id, req.user.tcId);
+    if (!has) return res.status(403).json({ error: 'Not assigned to this plan' });
+  }
+
+  const text = (req.body.text || '').trim();
+  if (!text) return res.status(400).json({ error: 'text required' });
+
+  const history = JSON.parse(plan.history || '[]');
+  history.push({
+    at:         now(),
+    authorId:   req.user.id,
+    authorName: req.user.name || req.user.email,
+    role,
+    text,
+  });
+  db.prepare('UPDATE delivery_plans SET history = ?, updated_at = ? WHERE id = ?')
+    .run(JSON.stringify(history), now(), req.params.id);
+  res.status(201).json({ history });
+});
+
+// DELETE /api/programs/:id/delivery-plan — admin only, for resets.
+router.delete('/programs/:id/delivery-plan', requireAuth, requireRole('admin'), (req, res) => {
+  const plan = db.prepare('SELECT id FROM delivery_plans WHERE program_id = ?').get(req.params.id);
+  if (!plan) return res.status(404).json({ error: 'No plan' });
+  db.transaction(() => {
+    db.prepare('DELETE FROM delivery_plan_lines WHERE plan_id = ?').run(plan.id);
+    db.prepare('DELETE FROM delivery_plans WHERE id = ?').run(plan.id);
+  })();
+  res.json({ ok: true });
+});
+
 module.exports = router;

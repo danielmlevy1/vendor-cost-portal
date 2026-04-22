@@ -2045,6 +2045,7 @@ const AdminViews = (() => {
     return `<div class="program-tabs">
       <button class="program-tab ${activeTab === 'cost' ? 'active' : ''}" onclick="App.navigate('cost-summary','${programId}')">📊 Cost Summary</button>
       <button class="program-tab ${activeTab === 'buys' ? 'active' : ''}" onclick="App.navigate('buy-summary','${programId}')">🛒 Buy Summary</button>
+      <button class="program-tab ${activeTab === 'delivery' ? 'active' : ''}" onclick="App.navigate('delivery-plan','${programId}')">🚢 Delivery Plan</button>
     </div>`;
   }
 
@@ -4089,6 +4090,202 @@ const AdminViews = (() => {
   // Opens a modal showing cost history for a given style
   // Called from app.js: App.showCostHistory(styleId, styleName)
 
+  // ── Delivery Plan page ──────────────────────────────────────────
+  // Per-program shared negotiation surface. Reads role-masked payload
+  // from cache.deliveryPlans[programId]. Roles:
+  //   admin/pc    → can edit every field
+  //   planning    → edits Sales-version fields (in-whse, sales CRD,
+  //                 sales waves, sales comments)
+  //   vendor      → edits TC-version fields (factory CRD, vendor
+  //                 waves, vendor comments) and only sees their
+  //                 own TC's lines
+  function renderDeliveryPlan(programId, role, user) {
+    const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+    const prog = API.Programs.get(programId);
+    if (!prog) return `<div class="empty-state"><div class="icon">⚠</div><h3>Program not found</h3></div>`;
+
+    const fmtDate = d => d ? new Date(d).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' }) : '—';
+    const fmtISO  = d => d ? String(d).slice(0, 10) : '';
+    const addDays = (iso, n) => {
+      if (!iso) return null;
+      const d = new Date(iso + 'T00:00:00');
+      d.setDate(d.getDate() + Number(n || 0));
+      return d.toISOString().slice(0, 10);
+    };
+
+    const roleLabel = r => ({ admin:'Production', pc:'Production', planning:'Sales', vendor:'TC', design:'Design', tech_design:'Tech Design', prod_dev:'PD' }[r] || r);
+    const isProd   = role === 'admin' || role === 'pc';
+    const isSales  = role === 'planning';
+    const isVendor = role === 'vendor';
+
+    const payload = API.DeliveryPlans.get(programId);
+
+    // Admin/Sales see the standard program tab bar. Vendors don't
+    // have access to Cost Summary / Buy Summary pages, so they get a
+    // simple "Back to my program" link instead.
+    const tabBar = isVendor
+      ? `<div style="margin-bottom:10px"><button class="btn btn-ghost btn-sm" onclick="App.navigateVendorProgram('${esc(user?.tcId || '')}','${esc(programId)}')">← Back to ${esc(prog.name)}</button></div>`
+      : programTabBar(programId, 'delivery', prog);
+
+    // No plan yet — show initialize button (Production only) or an
+    // empty-state message for other roles.
+    if (!payload || !payload.plan) {
+      const placements = API.Placements.byProgram ? (API.Placements.byProgram(programId) || []) : [];
+      const placedCount = placements.length;
+      return `
+      ${tabBar}
+      <div class="page-header" style="margin-top:12px">
+        <div><h1 class="page-title">🚢 Delivery Plan — ${esc(prog.name)}</h1>
+          <p class="page-subtitle">No plan yet. ${isProd
+            ? `Initialize to pre-fill lines from the ${placedCount} placed ${placedCount === 1 ? 'style' : 'styles'} and customer buys.`
+            : 'Production will initialize the plan once the program is confirmed.'}</p></div>
+        ${isProd ? `<button class="btn btn-primary" onclick="App.initDeliveryPlan('${esc(programId)}')">＋ Initialize Delivery Plan</button>` : ''}
+      </div>
+      <div class="card" style="padding:40px;text-align:center">
+        <div class="empty-state">
+          <div class="icon">📭</div>
+          <h3>${isProd && placedCount === 0 ? 'No styles placed yet' : 'Waiting for Production'}</h3>
+          <p class="text-muted">${isProd && placedCount === 0 ? 'Place at least one style on the Cost Summary tab before initializing.' : ''}</p>
+        </div>
+      </div>`;
+    }
+
+    const { plan, lines } = payload;
+    const styleMap = API.Styles?.byProgram ? Object.fromEntries(API.Styles.byProgram(programId).map(s => [s.id, s])) : {};
+    const custMap  = Object.fromEntries((API.cache.customers || []).map(c => [c.id, c]));
+    const tcMap    = Object.fromEntries((API.cache.tradingCompanies || []).map(t => [t.id, t]));
+    const facMap   = Object.fromEntries((API.Factories?.all() || []).map(f => [f.id, f]));
+    const cooMap   = Object.fromEntries((API.cache.cooRates || []).map(c => [c.code, c]));
+
+    // Column visibility per role — server already masked the values,
+    // but we hide entire columns for clarity too.
+    const showSales  = isProd || isSales;
+    const showTc     = isProd || isVendor;
+    const showProdV  = isProd;            // Production's internal buffer
+
+    // Editable? Role-based — mirrors server allow-lists.
+    const canEditSales = isProd || isSales;
+    const canEditTc    = isProd || isVendor;
+    const canEditProd  = isProd;
+
+    const dateInput = (lineId, field, value, editable) => editable
+      ? `<input type="date" class="form-input" style="font-size:0.85rem;padding:4px 6px;width:135px" value="${esc(fmtISO(value))}" onchange="App.updateDeliveryLine('${esc(programId)}','${esc(lineId)}','${field}', this.value)">`
+      : `<span class="text-sm">${value ? fmtDate(value) : '<span class="text-muted">—</span>'}</span>`;
+
+    const textInput = (lineId, field, value, editable) => editable
+      ? `<input type="text" class="form-input" style="font-size:0.82rem;padding:4px 6px;width:100%" value="${esc(value || '')}" onblur="App.updateDeliveryLine('${esc(programId)}','${esc(lineId)}','${field}', this.value)">`
+      : `<span class="text-sm">${esc(value || '—')}</span>`;
+
+    // Compact wave editor: comma-separated "YYYY-MM-DD:qty" pairs.
+    // Keeps parity with the Brand Delivery Recap's 3-column weekly
+    // split without locking to fixed buckets.
+    const waveToStr = w => (w || []).map(x => `${(x.date || '').slice(0,10)}:${x.qty ?? ''}`).filter(Boolean).join(', ');
+    const waveInput = (lineId, field, value, editable) => editable
+      ? `<input type="text" class="form-input" style="font-size:0.78rem;padding:4px 6px;min-width:200px" placeholder="2026-05-01:200, 2026-05-15:300" value="${esc(waveToStr(value))}" onblur="App.updateDeliveryWaves('${esc(programId)}','${esc(lineId)}','${field}', this.value)">`
+      : `<span class="text-sm">${esc(waveToStr(value)) || '<span class="text-muted">—</span>'}</span>`;
+
+    // Production Cargo Ready (Sales) + sea lead → projected in-whse.
+    const computedInWhse = (line) => {
+      if (!line.productionCargoReadySales) return null;
+      const days = cooMap[line.coo]?.seaLeadDays;
+      if (!days) return null;
+      return addDays(fmtISO(line.productionCargoReadySales), days);
+    };
+
+    const rows = lines.map(line => {
+      const style = styleMap[line.styleId];
+      const cust  = line.customerId ? custMap[line.customerId] : null;
+      const tc    = tcMap[line.tcId];
+      const fac   = line.factoryId ? facMap[line.factoryId] : null;
+      const proj  = computedInWhse(line);
+      return `<tr>
+        <td><span class="primary font-bold">${esc(style?.styleNumber || '—')}</span><div class="text-sm text-muted">${esc(style?.styleName || '')}</div></td>
+        <td class="text-sm">${esc(cust?.code || cust?.name || '—')}</td>
+        <td class="text-sm">${esc(tc?.code || '—')}</td>
+        <td class="text-sm">${esc(fac?.factoryName || '—')}${line.coo ? ` <span class="tag" style="font-size:0.7rem">${esc(line.coo)}</span>` : ''}</td>
+        <td class="text-center">${line.qty != null ? Number(line.qty).toLocaleString() : '—'}</td>
+        ${showSales ? `<td>${dateInput(line.id, 'salesInWhseDate', line.salesInWhseDate, canEditSales)}</td>` : ''}
+        ${showTc    ? `<td>${dateInput(line.id, 'factoryCargoReadyDate', line.factoryCargoReadyDate, canEditTc)}</td>` : ''}
+        ${showProdV ? `<td>${dateInput(line.id, 'productionCargoReadyVendor', line.productionCargoReadyVendor, canEditProd)}</td>` : ''}
+        ${showSales ? `<td>${dateInput(line.id, 'productionCargoReadySales', line.productionCargoReadySales, isProd)}</td>` : ''}
+        ${showSales ? `<td class="text-sm text-accent">${proj ? fmtDate(proj) : '<span class="text-muted">—</span>'}${proj ? `<div class="text-sm text-muted" style="font-size:0.7rem">+${cooMap[line.coo]?.seaLeadDays}d</div>` : ''}</td>` : ''}
+        ${showTc    ? `<td>${waveInput(line.id, 'vendorWaves', line.vendorWaves, canEditTc)}</td>` : ''}
+        ${showSales ? `<td>${waveInput(line.id, 'salesWaves',  line.salesWaves,  canEditSales)}</td>` : ''}
+        ${showTc    ? `<td style="min-width:150px">${textInput(line.id, 'vendorComments',     line.vendorComments,     canEditTc)}</td>` : ''}
+        ${showProdV ? `<td style="min-width:150px">${textInput(line.id, 'productionComments', line.productionComments, canEditProd)}</td>` : ''}
+        ${showSales ? `<td style="min-width:150px">${textInput(line.id, 'salesComments',      line.salesComments,      canEditSales)}</td>` : ''}
+      </tr>`;
+    }).join('');
+
+    const headCells = [
+      `<th>Style</th>`,
+      `<th>Customer</th>`,
+      `<th>TC</th>`,
+      `<th>Factory / COO</th>`,
+      `<th class="text-center">Qty</th>`,
+      showSales  ? `<th>Sales In-Whse</th>`                          : '',
+      showTc     ? `<th>Factory CRD</th>`                            : '',
+      showProdV  ? `<th title="Production's internal buffer">Prod CRD (Vendor)</th>` : '',
+      showSales  ? `<th>Prod CRD (Sales)</th>`                       : '',
+      showSales  ? `<th title="Auto-computed from Prod CRD (Sales) + COO sea lead">Proj In-Whse</th>` : '',
+      showTc     ? `<th title="Comma-separated YYYY-MM-DD:qty">Vendor waves</th>` : '',
+      showSales  ? `<th>Sales waves</th>`                            : '',
+      showTc     ? `<th>Vendor comments</th>`                        : '',
+      showProdV  ? `<th>Prod comments</th>`                          : '',
+      showSales  ? `<th>Sales comments</th>`                         : '',
+    ].filter(Boolean).join('');
+
+    // Shared discussion log (all roles can see + append).
+    const history = plan.history || [];
+    const historyHtml = history.length
+      ? history.slice().reverse().map(h => `
+          <div style="padding:8px 10px;border-left:3px solid ${h.role==='vendor'?'#f59e0b':h.role==='planning'?'#6366f1':'#22c55e'};margin-bottom:6px;background:var(--bg-elevated);border-radius:4px">
+            <div class="text-sm" style="color:#94a3b8">
+              <strong>${esc(h.authorName || '—')}</strong>
+              <span class="tag" style="font-size:0.7rem;margin-left:4px">${esc(roleLabel(h.role))}</span>
+              · ${new Date(h.at).toLocaleString('en-US', { month:'short', day:'numeric', hour:'numeric', minute:'2-digit' })}
+            </div>
+            <div style="margin-top:2px;white-space:pre-wrap">${esc(h.text)}</div>
+          </div>`).join('')
+      : `<div class="text-sm text-muted" style="padding:10px">No comments yet. Add one below.</div>`;
+
+    return `
+    ${tabBar}
+    <div class="page-header" style="margin-top:12px">
+      <div>
+        <h1 class="page-title">🚢 Delivery Plan — ${esc(prog.name)}</h1>
+        <p class="page-subtitle">${lines.length} line${lines.length !== 1 ? 's' : ''} · role: ${esc(roleLabel(role))}${plan.updatedAt ? ` · updated ${fmtDate(plan.updatedAt)}` : ''}</p>
+      </div>
+      <div style="display:flex;gap:8px">
+        ${role === 'admin' ? `<button class="btn btn-ghost btn-sm" onclick="App.resetDeliveryPlan('${esc(programId)}')" title="Delete plan and lines">🗑 Reset</button>` : ''}
+      </div>
+    </div>
+
+    ${lines.length === 0 ? `
+      <div class="card" style="padding:24px;text-align:center">
+        <div class="text-muted">No lines on this plan. ${isProd ? 'Place more styles on Cost Summary, then reset + re-initialize to refresh.' : ''}</div>
+      </div>` : `
+      <div class="card" style="padding:0;margin-bottom:16px">
+        <div class="table-wrap">
+          <table style="font-size:0.85rem">
+            <thead><tr>${headCells}</tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+      </div>`}
+
+    <div class="card" style="padding:14px 16px">
+      <div class="font-bold mb-2">💬 Discussion</div>
+      <div style="max-height:320px;overflow-y:auto;margin-bottom:12px">
+        ${historyHtml}
+      </div>
+      <div style="display:flex;gap:8px">
+        <textarea id="dp-comment-${esc(plan.id)}" class="form-input" rows="2" placeholder="Add a comment visible to Production, Sales, and TC…" style="flex:1"></textarea>
+        <button class="btn btn-primary" onclick="App.postDeliveryComment('${esc(programId)}','${esc(plan.id)}')">Post</button>
+      </div>
+    </div>`;
+  }
+
   // ── Factories page ───────────────────────────────────────────────
   // One render, driven by the caller's role. Admin/PC get the full
   // tabbed queue with review actions. Other internal roles see a
@@ -4318,6 +4515,8 @@ const AdminViews = (() => {
     renderDesignCostingView, renderCostHistoryTimeline,
     // Factory matrix
     renderFactories,
+    // Delivery Plan
+    renderDeliveryPlan,
   };
 
   Object.defineProperty(api, '_programsView', {

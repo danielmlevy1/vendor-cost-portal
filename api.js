@@ -95,6 +95,7 @@ const API = (() => {
     fabricPackages:      [],
     availableFabrics:    [],   // vendor only: [{programId, fabrics[]}]
     factories:           [],
+    deliveryPlans:       {},   // programId -> {plan, lines}  (null = 404 "no plan")
     recostByProgram:     {},   // programId -> [rcrs]
     recostPendingSales:      [],
     recostPendingProduction: [],
@@ -1058,6 +1059,51 @@ const API = (() => {
     },
   };
 
+  // ── Delivery Plans ──────────────────────────────────────────
+  // One plan per program (the server returns role-masked fields, so
+  // the cache intentionally holds only what the current user can see).
+  // Cached per-programId to avoid re-fetch on tab switches.
+  const DeliveryPlans = {
+    get(programId) { return cache.deliveryPlans[programId] || null; },
+    async fetch(programId) {
+      try {
+        const payload = await GET(`/api/programs/${programId}/delivery-plan`);
+        cache.deliveryPlans[programId] = payload;
+        return payload;
+      } catch (err) {
+        if (err.status === 404) {
+          cache.deliveryPlans[programId] = null;  // "no plan yet"
+          return null;
+        }
+        throw err;
+      }
+    },
+    async initialize(programId) {
+      const payload = await POST(`/api/programs/${programId}/delivery-plan`);
+      cache.deliveryPlans[programId] = payload;
+      return payload;
+    },
+    async updateLine(programId, lineId, patch) {
+      const line = await PATCH(`/api/delivery-plan-lines/${lineId}`, patch);
+      const payload = cache.deliveryPlans[programId];
+      if (payload) {
+        const idx = payload.lines.findIndex(l => l.id === lineId);
+        if (idx >= 0) payload.lines[idx] = line;
+      }
+      return line;
+    },
+    async addComment(programId, planId, text) {
+      const r = await POST(`/api/delivery-plans/${planId}/comments`, { text });
+      const payload = cache.deliveryPlans[programId];
+      if (payload) payload.plan.history = r.history;
+      return r;
+    },
+    async reset(programId) {
+      await DEL(`/api/programs/${programId}/delivery-plan`);
+      delete cache.deliveryPlans[programId];
+    },
+  };
+
   // Vendor-only: available fabrics across all their assigned programs,
   // sourced from design handoffs. Each entry is annotated with the
   // vendor's existing request (if any) so the UI can disable already-
@@ -1284,7 +1330,7 @@ const API = (() => {
     Submissions, Placements, CustomerAssignments, CustomerBuys,
     StyleLinks, DesignChanges, RecostRequests, CellFlags, Revisions,
     PendingChanges, DesignHandoffs, FabricLibrary, FabricRequests, FabricPackages, AvailableFabrics,
-    Factories, SalesRequests, CostHistory,
+    Factories, DeliveryPlans, SalesRequests, CostHistory,
     calcLDP, computeTargetLDP, parseCSV, csvRowToStyle,
     cache, preload,
   };

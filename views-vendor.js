@@ -259,7 +259,8 @@ const VendorViews = (() => {
         <h1 class="page-title">${prog?.name || 'Program'}</h1>
         <p class="page-subtitle">${styles.length} style${styles.length !== 1 ? 's' : ''} to quote${flaggedSubs.length ? ` · <span class="text-warning">🚩 ${flaggedSubs.length} flagged</span>` : ''}</p>
       </div>
-      <div style="display:flex;gap:8px">
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-secondary" onclick="App.navigate('delivery-plan','${programId}')">🚢 Delivery Plan</button>
         <button class="btn btn-secondary" onclick="App.openVendorBulkUpload('${tcId}')">📤 Upload Quotes</button>
         <button class="btn btn-secondary" onclick="App.downloadVendorTemplate('${tcId}')">⬇ Template</button>
       </div>
