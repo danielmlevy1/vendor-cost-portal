@@ -339,7 +339,9 @@ body[data-theme="light"] .tag {
   border: none;
 }
 
-/* Program tabs — underline-style instead of pill */
+/* Program tabs — underline-style with coral (Pantone 7417C) active
+   marker. The pop against navy primary CTAs ties the two-color
+   palette together without competing for attention. */
 body[data-theme="light"] .program-tab {
   background: transparent;
   border: none;
@@ -354,7 +356,12 @@ body[data-theme="light"] .program-tab:hover { color: var(--text-primary); }
 body[data-theme="light"] .program-tab.active {
   background: transparent;
   color: var(--text-primary);
-  border-bottom-color: var(--text-primary);
+  border-bottom-color: #e04e39;
+}
+
+/* Pending-action badges — coral (Pantone 7417C). "You, go do this." */
+body[data-theme="light"] .pending-badge {
+  background: #e04e39;
 }
 
 /* Kill the blue radial hero glow on login */
