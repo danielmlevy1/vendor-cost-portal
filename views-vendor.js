@@ -217,6 +217,39 @@ const VendorViews = (() => {
     }
 
 
+    // Factory allocation section — shown when any of this vendor's
+    // styles in this program are placed. TC picks which of their
+    // active factories will produce each placed style.
+    const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+    const placements = API.Placements ? styles.map(s => ({ style: s, pl: API.Placements.get(s.id) })).filter(x => x.pl && x.pl.tcId === tcId) : [];
+    const myFactories = (API.Factories?.byTc(tcId) || []).filter(f => f.status === 'active');
+    const unassigned  = placements.filter(x => !x.pl.factoryId).length;
+
+    const factoryPanel = placements.length ? `
+      <div class="card mb-3" style="padding:14px 16px;border-left:3px solid ${unassigned ? '#f59e0b' : '#22c55e'}">
+        <div class="font-bold mb-2" style="display:flex;align-items:center;gap:8px">
+          🏭 Factory allocation
+          ${unassigned ? `<span class="badge badge-pending">${unassigned} need${unassigned !== 1 ? '' : 's'} assignment</span>` : `<span class="badge badge-placed">All assigned</span>`}
+        </div>
+        ${myFactories.length === 0 ? `
+          <div class="text-sm text-warning">No active factories on your account yet. <a href="#" onclick="event.preventDefault();App.navigate('my-factories')">Add a factory →</a></div>
+        ` : `
+        <div style="display:flex;flex-direction:column;gap:6px">
+          ${placements.map(({ style, pl }) => `
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:6px 0;border-bottom:1px solid var(--border)">
+              <div style="min-width:180px">
+                <span class="primary font-bold">${esc(style.styleNumber)}</span>
+                <span class="text-sm text-muted"> · ${esc(style.styleName || '')}</span>
+              </div>
+              <select class="form-select" style="max-width:280px" onchange="App.setPlacementFactory('${esc(style.id)}', this.value)">
+                <option value="">— Select factory —</option>
+                ${myFactories.map(f => `<option value="${esc(f.id)}" ${pl.factoryId === f.id ? 'selected' : ''}>${esc(f.factoryName)}${f.factoryCountry ? ' · ' + esc(f.factoryCountry) : ''}</option>`).join('')}
+              </select>
+            </div>
+          `).join('')}
+        </div>`}
+      </div>` : '';
+
     return `
     <div class="page-header">
       <div>
@@ -231,6 +264,7 @@ const VendorViews = (() => {
         <button class="btn btn-secondary" onclick="App.downloadVendorTemplate('${tcId}')">⬇ Template</button>
       </div>
     </div>
+    ${factoryPanel}
     ${flaggedSubs.length ? `<div class="alert alert-warning">🚩 ${flaggedSubs.length} cost(s) flagged for review. See the 🚩 notes below each style for details.</div>` : ''}
     <div class="card">
       <div class="table-wrap">

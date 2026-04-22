@@ -122,6 +122,7 @@ function placementFromRow(r) {
     styleId:      r.style_id,
     tcId:         r.tc_id,
     coo:          r.coo,
+    factoryId:    r.factory_id,
     confirmedFob: r.confirmed_fob,
     placedAt:     r.placed_at,
     placedBy:     r.placed_by,
@@ -289,11 +290,12 @@ const stmt = {
     WHERE s.program_id = ?
   `),
   upsertPlacement:     db.prepare(`
-    INSERT INTO placements (id, style_id, tc_id, coo, confirmed_fob, placed_at, placed_by, placed_by_name, notes)
-    VALUES (?,?,?,?,?,?,?,?,?)
+    INSERT INTO placements (id, style_id, tc_id, coo, factory_id, confirmed_fob, placed_at, placed_by, placed_by_name, notes)
+    VALUES (?,?,?,?,?,?,?,?,?,?)
     ON CONFLICT(style_id) DO UPDATE SET
       tc_id         = excluded.tc_id,
       coo           = excluded.coo,
+      factory_id    = COALESCE(excluded.factory_id, placements.factory_id),
       confirmed_fob = excluded.confirmed_fob,
       placed_at     = excluded.placed_at,
       placed_by     = excluded.placed_by,
@@ -1099,6 +1101,7 @@ router.post('/placements', requireAuth, requireRole('admin', 'pc'), (req, res) =
 
   stmt.upsertPlacement.run(
     placementId, b.styleId, b.tcId || null, b.coo || null,
+    b.factoryId === undefined ? null : (b.factoryId || null),
     b.confirmedFob ?? null,
     b.placedAt  || now(),
     b.placedBy  || req.user.id,
@@ -1112,6 +1115,32 @@ router.post('/placements', requireAuth, requireRole('admin', 'pc'), (req, res) =
   }
 
   res.json(placementFromRow(stmt.placementByStyle.get(b.styleId)));
+});
+
+// PATCH /api/placements/:styleId/factory
+// Admin/PC can always set. Vendor can only set on their own
+// placement and only to one of their active factories.
+router.patch('/placements/:styleId/factory', requireAuth, (req, res) => {
+  const pl = stmt.placementByStyle.get(req.params.styleId);
+  if (!pl) return res.status(404).json({ error: 'Placement not found' });
+
+  const role = req.user.role;
+  const factoryId = req.body.factoryId || null;
+
+  if (role === 'vendor') {
+    if (pl.tc_id !== req.user.tcId) return res.status(403).json({ error: 'Not your placement' });
+    if (factoryId) {
+      const f = db.prepare('SELECT id, tc_id, status FROM factories WHERE id = ?').get(factoryId);
+      if (!f || f.tc_id !== req.user.tcId || f.status !== 'active') {
+        return res.status(400).json({ error: 'factoryId must be one of your active factories' });
+      }
+    }
+  } else if (!['admin', 'pc'].includes(role)) {
+    return res.status(403).json({ error: 'Insufficient permissions' });
+  }
+
+  db.prepare('UPDATE placements SET factory_id = ? WHERE style_id = ?').run(factoryId, req.params.styleId);
+  res.json(placementFromRow(stmt.placementByStyle.get(req.params.styleId)));
 });
 
 // DELETE /api/placements/:styleId

@@ -241,6 +241,7 @@ CREATE TABLE IF NOT EXISTS placements (
   style_id       TEXT NOT NULL UNIQUE,
   tc_id          TEXT,
   coo            TEXT,
+  factory_id     TEXT,            -- FK factories.id; confirmed by vendor post-placement (admin can override)
   confirmed_fob  REAL,
   placed_at      TEXT,
   placed_by      TEXT,

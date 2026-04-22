@@ -632,6 +632,17 @@ const API = (() => {
         if (idx >= 0) { list.splice(idx, 1); return; }
       }
     },
+    // Set (or clear) the factory on an existing placement. Vendor
+    // allowed on their own placement + their active factories only;
+    // admin/PC can always set.
+    async setFactory(styleId, factoryId) {
+      const p = await PATCH(`/api/placements/${styleId}/factory`, { factoryId: factoryId || null });
+      for (const list of Object.values(cache.placements)) {
+        const idx = list.findIndex(x => x.styleId === styleId);
+        if (idx >= 0) list[idx] = p;
+      }
+      return p;
+    },
   };
 
   // ── Customer Assignments ──────────────────────────────────────
@@ -1183,6 +1194,7 @@ const API = (() => {
         Submissions.fetchByProgram(id),
         StyleLinks.fetchByProgram(id),
         RecostRequests.fetchByProgram(id),
+        Factories.fetchAll().catch(() => {}),
         preload.nav(),
       ]);
       // Post-load: cell flags, revisions, cost history (parallel)
@@ -1246,13 +1258,14 @@ const API = (() => {
     // server), styles, submissions, cell flags. One call per program but
     // fanned out in parallel.
     async vendorWorkspace() {
-      await Promise.all([Programs.all(), preload.global()]);
+      await Promise.all([Programs.all(), preload.global(), Factories.fetchAll().catch(() => {})]);
       await Promise.all(cache.programs.map(async p => {
         try {
           await Promise.all([
             Assignments.fetchByProgram(p.id),
             Styles.fetchByProgram(p.id),
             Submissions.fetchByProgram(p.id),
+            Placements.fetchByProgram(p.id).catch(() => {}),
           ]);
         } catch (_) { /* program the vendor isn't on will 403 — ignore */ }
       }));

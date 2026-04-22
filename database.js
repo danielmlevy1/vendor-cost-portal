@@ -393,6 +393,11 @@ function runMigrations() {
   // estimates once so existing rows aren't all identical.
   addColumn('coo_rates', 'sea_lead_days', 'INTEGER NOT NULL DEFAULT 30');
   seedCooLeadTimes();
+
+  // v10: factory allocation per placement. Vendor confirms which
+  // of their approved factories will actually produce each placed
+  // style; admin/PC can also set or override.
+  addColumn('placements', 'factory_id', 'TEXT');
 }
 
 // One-shot-ish per-country lead-time fill. Only overwrites rows

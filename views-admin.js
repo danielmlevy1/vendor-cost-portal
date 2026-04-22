@@ -1834,7 +1834,19 @@ const AdminViews = (() => {
       </div>
       ${targetLDP ? `<div class="card card-sm" style="text-align:center;min-width:130px"><div class="text-sm text-muted">Target LDP</div><div class="font-bold text-accent" style="font-size:1.3rem">${fmt(targetLDP)}</div></div>` : ''}
     </div>
-    ${placement ? `<div class="alert alert-success mb-3">🏆 Placed with <strong>${API.TradingCompanies.get(placement.tcId)?.code || ''} (${placement.coo})</strong> at ${fmt(placement.confirmedFob)} FOB</div>` : ''}
+    ${placement ? (() => {
+      const tcCode = API.TradingCompanies.get(placement.tcId)?.code || '';
+      const vendorFactories = (API.Factories?.byTc(placement.tcId) || []).filter(f => f.status === 'active');
+      const assignedF = placement.factoryId ? vendorFactories.find(f => f.id === placement.factoryId) : null;
+      return `<div class="alert alert-success mb-3" style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+        <div>🏆 Placed with <strong>${tcCode} (${placement.coo})</strong> at ${fmt(placement.confirmedFob)} FOB${assignedF ? ` · at <strong>${assignedF.factoryName}</strong>${assignedF.factoryCountry ? ` · ${assignedF.factoryCountry}` : ''}` : ''}</div>
+        ${vendorFactories.length ? `
+          <select class="form-select" style="max-width:260px" onchange="App.setPlacementFactory('${styleId}', this.value)" title="Assign factory">
+            <option value="">— No factory assigned —</option>
+            ${vendorFactories.map(f => `<option value="${f.id}" ${placement.factoryId === f.id ? 'selected' : ''}>🏭 ${f.factoryName}${f.factoryCountry ? ' · ' + f.factoryCountry : ''}</option>`).join('')}
+          </select>` : '<span class="text-sm text-muted">(no active factories on this TC yet)</span>'}
+      </div>`;
+    })() : ''}
     ${tcCooBlocks.length === 0
         ? `<div class="empty-state"><div class="icon">🏭</div><h3>No trading companies assigned</h3><button class="btn btn-primary mt-3" onclick="App.openAssignTCs('${style.programId}')">Assign Trading Companies</button></div>`
         : `<div class="grid-auto">${tcCooBlocks.map(b => tcBlock(b.tc, b.coo, b.sub, style, bestLDP < Infinity ? bestLDP : null, placement, targetLDP)).join('')}</div>`}

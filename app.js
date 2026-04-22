@@ -6962,6 +6962,21 @@ App._myFactoryFilterSet = function(value) {
   App.navigate('my-factories');
 };
 
+// Set (or clear) the factory on a placement. Used by both the
+// vendor's per-program factory-allocation panel and the admin's
+// style cost-comparison placement header. Server enforces role
+// rules (vendor: own placement + active factories of that TC only).
+App.setPlacementFactory = async function(styleId, factoryId) {
+  try {
+    await API.Placements.setFactory(styleId, factoryId || null);
+  } catch (err) {
+    alert('Could not save factory: ' + (err.message || 'unknown'));
+    return;
+  }
+  const st = App._getState?.();
+  App.navigate(st?.route || 'programs', st?.routeParam);
+};
+
 // Admin/PC actions
 App.approveFactory = async function(id) {
   if (!confirm('Approve this factory? It will become active immediately.')) return;
