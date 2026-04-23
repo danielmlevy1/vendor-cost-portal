@@ -122,8 +122,10 @@ const VendorViews = (() => {
     const asgn = API.Assignments.byProgram(programId).find(a => a.tcId === tcId);
     const coos = (asgn?.coos?.length ? asgn.coos : (tc?.coos || []));
 
-    // Build colspan for thead: Style# + Name + Fab + (FOB + FC + Action) per COO + Overall Status
-    const cooColCount = coos.length * 3; // FOB, FC, Action per COO
+    // Factory Cost column is irrelevant under FOB — the quoted price is the full landed cost.
+    const showFC = tc?.paymentTerms !== 'FOB';
+    // Build colspan for thead: Style# + Name + Fab + (FOB [+ FC] + Action) per COO + Overall Status
+    const cooColCount = coos.length * (showFC ? 3 : 2);
     const totalCols = 3 + cooColCount + 1;
 
     // Helper: inline editable FOB or FC cell
@@ -189,7 +191,7 @@ const VendorViews = (() => {
               const sub = styleSubs.find(sub => sub.coo === coo) || null;
               const isSkipped = sub?.status === 'skipped';
               const fobCell = cooCell(sub, 'fob', s.id, coo);
-              const fcCell  = cooCell(sub, 'factoryCost', s.id, coo);
+              const fcCell  = showFC ? cooCell(sub, 'factoryCost', s.id, coo) : '';
               const skipBtn = isSkipped
                 ? `<button class="btn btn-ghost btn-sm tc-skip-btn" title="Un-skip this COO" onclick="App.unskipVendorCoo('${s.id}','${tcId}','${coo}')">↩ Un-skip</button>`
                 : `<button class="btn btn-ghost btn-sm tc-skip-btn" title="Skip this COO" onclick="App.openSkipVendorCoo('${s.id}','${tcId}','${coo}')">⊘ Skip</button>`;
@@ -206,7 +208,7 @@ const VendorViews = (() => {
             const fFlag = API.CellFlags.get(sub.id, 'fob');
             const cFlag = API.CellFlags.get(sub.id, 'factoryCost');
             if (fFlag?.note) pills.push(`<span class="flag-note-pill flag-pill-${fFlag.color}">🚩 ${coo} FOB: ${fFlag.note}</span>`);
-            if (cFlag?.note) pills.push(`<span class="flag-note-pill flag-pill-${cFlag.color}">🚩 ${coo} Factory Cost: ${cFlag.note}</span>`);
+            if (showFC && cFlag?.note) pills.push(`<span class="flag-note-pill flag-pill-${cFlag.color}">🚩 ${coo} Factory Cost: ${cFlag.note}</span>`);
             if (sub.status === 'skipped' && sub.skipReason) pills.push(`<span class="flag-note-pill flag-pill-skip">⊘ ${coo} Skipped: ${sub.skipReason}</span>`);
           });
           if (pills.length) {
@@ -280,7 +282,7 @@ const VendorViews = (() => {
               <th rowspan="2">Status</th>
             </tr>
             <tr>
-              ${coos.map(() => `<th>FOB</th><th>Factory Cost</th><th>Action</th>`).join('')}
+              ${coos.map(() => `<th>FOB</th>${showFC ? '<th>Factory Cost</th>' : ''}<th>Action</th>`).join('')}
             </tr>
           </thead>
           <tbody>${bodyRows}</tbody>
@@ -431,15 +433,16 @@ const VendorViews = (() => {
         const fFlag = sub ? API.CellFlags.get(sub.id, 'fob') : null;
         const cFlag = sub ? API.CellFlags.get(sub.id, 'factoryCost') : null;
         const banner = (flag, label) => flag ? `<div class="flag-banner flag-banner-${flag.color}"><strong>&#128681; ${label} Flagged</strong>${flag.note ? ': ' + flag.note : ''}</div>` : '';
-        return banner(fFlag,'FOB') + banner(cFlag,'Factory Cost');
+        const showFCForm = tc?.paymentTerms !== 'FOB';
+        return banner(fFlag,'FOB') + (showFCForm ? banner(cFlag,'Factory Cost') : '');
       })()}
-      <div class="form-row form-row-2">
+      <div class="form-row ${showFCForm ? 'form-row-2' : ''}">
         <div class="form-group"><label class="form-label">FOB Cost (USD) *</label><input class="form-input" id="q-fob" type="text" inputmode="decimal" value="${v.fob ? '$' + parseFloat(v.fob).toFixed(2) : ''}" required placeholder="e.g. $5.50"
           onfocus="this.value=this.value.replace(/[^0-9.]/g,'')"
           onblur="if(this.value&&!isNaN(parseFloat(this.value)))this.value='$'+parseFloat(this.value).toFixed(2)"></div>
-        <div class="form-group"><label class="form-label">Factory Cost</label><input class="form-input" id="q-factory" type="text" inputmode="decimal" value="${v.factoryCost ? '$' + parseFloat(v.factoryCost).toFixed(2) : ''}" placeholder="e.g. $4.80"
+        ${showFCForm ? `<div class="form-group"><label class="form-label">Factory Cost</label><input class="form-input" id="q-factory" type="text" inputmode="decimal" value="${v.factoryCost ? '$' + parseFloat(v.factoryCost).toFixed(2) : ''}" placeholder="e.g. $4.80"
           onfocus="this.value=this.value.replace(/[^0-9.]/g,'')"
-          onblur="if(this.value&&!isNaN(parseFloat(this.value)))this.value='$'+parseFloat(this.value).toFixed(2)"></div>
+          onblur="if(this.value&&!isNaN(parseFloat(this.value)))this.value='$'+parseFloat(this.value).toFixed(2)"></div>` : ''}
       </div>
       <div class="form-row form-row-2">
         <div class="form-group"><label class="form-label">TC Markup %</label><input class="form-input" id="q-tcmu" type="number" step="0.01" value="${v.tcMarkup ? v.tcMarkup * 100 : ''}" placeholder="e.g. 15"></div>
