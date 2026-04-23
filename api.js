@@ -42,6 +42,11 @@ const API = (() => {
   async function req(method, path, body) {
     const opts = { method, headers: authHeaders() };
     if (body !== undefined) opts.body = JSON.stringify(body);
+    // keepalive lets the browser complete the request even if the page is
+    // refreshed or navigated away before the fetch resolves (onblur saves).
+    if (method === 'PUT' || method === 'POST' || method === 'PATCH' || method === 'DELETE') {
+      opts.keepalive = true;
+    }
     const res = await fetch(path, opts);
     // 401 = token expired / invalid — clear and force re-login
     if (res.status === 401 && _token) {
