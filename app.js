@@ -2291,12 +2291,12 @@ App = (() => {
       </div>`, 'modal-lg');
   }
 
-  function openRevisionHistory(subId, field) {
+  async function openRevisionHistory(subId, field) {
     if (!subId) return;
     const label = field === 'fob' ? 'FOB Cost' : 'Factory Cost';
     const sub = API.Submissions.get(subId);
     // Use byFieldAll — includes flag events alongside price revisions
-    const entries = API.Revisions.byFieldAll(subId, field);
+    const entries = await API.Revisions.byFieldAll(subId, field);
     const flag = API.CellFlags.get(subId, field);
 
     // Mark as reviewed: store timestamp of latest entry seen
