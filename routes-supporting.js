@@ -870,6 +870,10 @@ function dcFromRow(r) {
     styleNumber: r.style_number, description: r.description,
     field: r.field, previousValue: r.previous_value, newValue: r.new_value,
     changedBy: r.changed_by, changedByName: r.changed_by_name, changedAt: r.changed_at,
+    status: r.status || 'confirmed',
+    confirmedAt: r.confirmed_at || null,
+    confirmedBy: r.confirmed_by || null,
+    confirmedByName: r.confirmed_by_name || null,
   };
 }
 
@@ -888,17 +892,31 @@ router.post('/design-changes', requireAuth, (req, res) => {
   const b = req.body;
   if (!b.styleId) return res.status(400).json({ error: 'styleId required' });
   const id = uid();
+  const status = b.status || 'pending';
   db.prepare(`
     INSERT INTO design_changes
       (id, style_id, program_id, style_number, description, field,
-       previous_value, new_value, changed_by, changed_by_name, changed_at)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?)
+       previous_value, new_value, changed_by, changed_by_name, changed_at, status)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
   `).run(id, b.styleId, b.programId || null, b.styleNumber || null,
          b.description || null, b.field || null,
          b.previousValue ?? null, b.newValue ?? null,
          b.changedBy || null, b.changedByName || null,
-         b.changedAt || now());
+         b.changedAt || now(), status);
   res.status(201).json(dcFromRow(db.prepare('SELECT * FROM design_changes WHERE id = ?').get(id)));
+});
+
+// PATCH /api/design-changes/:id/confirm
+router.patch('/design-changes/:id/confirm', requireAuth, requireRole('admin', 'pc', 'design'), (req, res) => {
+  const user = req.user;
+  db.prepare(`
+    UPDATE design_changes
+    SET status = 'confirmed', confirmed_at = ?, confirmed_by = ?, confirmed_by_name = ?
+    WHERE id = ?
+  `).run(now(), user.id, user.name || user.email, req.params.id);
+  const row = db.prepare('SELECT * FROM design_changes WHERE id = ?').get(req.params.id);
+  if (!row) return res.status(404).json({ error: 'Not found' });
+  res.json(dcFromRow(row));
 });
 
 // =============================================================

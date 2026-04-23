@@ -751,14 +751,24 @@ const API = (() => {
   const DesignChanges = {
     all() { return Object.values(cache.designChanges).flat(); },
     byStyle(styleId) { return cache.designChanges[styleId] || []; },
+    pendingAll() { return Object.values(cache.designChanges).flat().filter(c => c.status === 'pending'); },
     async fetchByStyle(styleId) {
       cache.designChanges[styleId] = await GET(`/api/styles/${styleId}/design-changes`);
       return cache.designChanges[styleId];
     },
     async log(data) {
-      const entry = await POST('/api/design-changes', data);
+      const entry = await POST('/api/design-changes', { status: 'pending', ...data });
       if (!cache.designChanges[data.styleId]) cache.designChanges[data.styleId] = [];
       cache.designChanges[data.styleId].unshift(entry);
+      return entry;
+    },
+    async confirm(id) {
+      const entry = await PATCH(`/api/design-changes/${id}/confirm`, {});
+      // update in-place across all cached style buckets
+      for (const list of Object.values(cache.designChanges)) {
+        const idx = list.findIndex(c => c.id === id);
+        if (idx >= 0) { list[idx] = entry; break; }
+      }
       return entry;
     },
   };

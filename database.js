@@ -398,6 +398,12 @@ function runMigrations() {
   // of their approved factories will actually produce each placed
   // style; admin/PC can also set or override.
   addColumn('placements', 'factory_id', 'TEXT');
+
+  // v11: design change task tracking — pending until confirmed by design/tech team
+  addColumn('design_changes', 'status',             "TEXT NOT NULL DEFAULT 'confirmed'");
+  addColumn('design_changes', 'confirmed_at',        'TEXT');
+  addColumn('design_changes', 'confirmed_by',        'TEXT');
+  addColumn('design_changes', 'confirmed_by_name',   'TEXT');
 }
 
 // One-shot-ish per-country lead-time fill. Only overwrites rows
