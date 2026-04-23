@@ -363,6 +363,7 @@ const AdminViews = (() => {
       ${sec('⚠️ Action Items')}
       <div class="kpi-alerts">
         ${alertKpi('↩', 'Re-cost Requests — Awaiting Your Approval', recostForSales, '#f59e0b', 'recost-queue')}
+        ${alertKpi('📌', 'Design Changes — Pending Confirmation', API.DesignChanges.pendingAll().length, '#f59e0b', 'design-changes')}
         ${alertKpi('📋', 'Open Requests (not yet proposed)', openRequests.length, '#6366f1', 'sales-requests')}
         ${alertKpi('❓', 'Requests missing Qty / Price', reqMissingData.length, '#a855f7', 'sales-requests')}
         ${alertKpi('📅', 'Programs with CRD ≤ 30 days', upcomingCRDs, '#ef4444', 'programs')}
@@ -1720,9 +1721,9 @@ const AdminViews = (() => {
         rowHtml += `<td data-col="repeat" style="font-size:0.78rem;white-space:nowrap;padding:6px 10px"><div style="font-weight:600;color:var(--accent)">${last.tcCode} · ${last.coo}</div><div style="color:var(--text-secondary)">${last.season}&nbsp; FOB $${last.fob.toFixed(2)}</div></td>`;
       }
       const rowClass2 = bestLDP !== null && targetLDP ? (bestLDP <= targetLDP ? 'row-on-target' : 'row-over-target') : '';
-      // Leading empty sel-col cell so guest rows align with native
-      // rows (which start with the bulk-select checkbox column).
-      return `<tr class="style-link-guest-row ${rowClass2}" data-style-id="${s.id}" style="background:${colorAlpha}"><td class="sel-col sticky-col mat-cell-white" style="width:36px;min-width:36px"></td>${rowHtml}</tr>`;
+      // Two leading empty cells to match anchor row structure:
+      // col 1 = bulk-select (36px), col 2 = design-change badge (28px).
+      return `<tr class="style-link-guest-row ${rowClass2}" data-style-id="${s.id}" style="background:${colorAlpha}"><td class="sel-col sticky-col mat-cell-white" style="width:36px;min-width:36px"></td><td class="sticky-col mat-cell-white" style="width:28px;min-width:28px;padding:0"></td>${rowHtml}</tr>`;
     }
 
     // Build active rows — optionally grouped
@@ -2737,8 +2738,8 @@ const AdminViews = (() => {
     // status on handoffs in the current schema, so just In-Progress
     // (no program link yet) vs. Complete (linked to a program).
     const handoffBuckets = {
-      inProgress: handoffs.filter(h => !h.linkedProgramId),
-      complete:   handoffs.filter(h =>  h.linkedProgramId),
+      inProgress: handoffs.filter(h => !h.linkedProgramId && !h.submittedForCosting),
+      complete:   handoffs.filter(h =>  h.linkedProgramId || h.submittedForCosting),
       cancelled:  [],  // reserved for future cancelled flag
     };
 
@@ -2748,7 +2749,7 @@ const AdminViews = (() => {
       // Aging badge — only for handoffs not yet linked to a program
       // (linked ones are "done", aging doesn't matter).
       const ageDays = Math.floor((Date.now() - created.getTime()) / 86400000);
-      const stillOpen = !h.linkedProgramId;
+      const stillOpen = !h.linkedProgramId && !h.submittedForCosting;
       const ageColor = ageDays <= 7 ? '#22c55e' : ageDays <= 14 ? '#f59e0b' : '#ef4444';
       const ageBg    = ageDays <= 7 ? 'rgba(34,197,94,0.12)' : ageDays <= 14 ? 'rgba(245,158,11,0.12)' : 'rgba(239,68,68,0.12)';
       const ageBadge = stillOpen
@@ -2756,7 +2757,9 @@ const AdminViews = (() => {
         : '';
       const linkedBadge = h.linkedProgramId
         ? `<span class="badge badge-placed" style="cursor:pointer" onclick="App.navigate('cost-summary','${h.linkedProgramId}')">→ Program</span>`
-        : `<button class="btn btn-secondary btn-sm" onclick="App.openConvertHandoffModal('${h.id}')">Convert →</button>`;
+        : h.submittedForCosting
+          ? `<span class="badge badge-costing">⏳ Submitted to Sales</span>`
+          : `<button class="btn btn-secondary btn-sm" onclick="App.openConvertHandoffModal('${h.id}')">Convert →</button>`;
       const styleCount  = (h.stylesList||[]).length;
       const fabricCount = (h.fabricsList||[]).length;
       const stylesBadge  = styleCount
@@ -2846,6 +2849,8 @@ const AdminViews = (() => {
 
   // ── Sales Request ──────────────────────────────────────────
   function renderSalesRequests() {
+    const _srUser    = typeof App !== 'undefined' && App._getState ? App._getState()?.user || {} : {};
+    const _isPlanning = _srUser.role === 'planning';
     const requests = API.SalesRequests.all().slice().reverse();
     const allHandoffs = API.DesignHandoffs.all();
     // Handoffs not yet linked to a Sales Request — available for Sales to build from
@@ -2969,13 +2974,13 @@ const AdminViews = (() => {
           bucketSection('✅ Complete',    srBuckets.complete,   'complete',   { open: false, accent: '#6366f1' }),
           bucketSection('✕ Cancelled',    srBuckets.cancelled,  'cancelled',  { open: false, accent: '#94a3b8' }),
         ].join('')
-      : `<div class="card text-center text-muted" style="padding:40px">No sales requests yet. Build one from a Design Handoff above, or click "+ New Request" to create manually.</div>`;
+      : `<div class="card text-center text-muted" style="padding:40px">No sales requests yet. Build one from a Design Handoff above${_isPlanning ? '.' : ', or click "+ New Request" to create manually.'}</div>`;
 
     return `
     <div class="page-header">
       <div><h1 class="page-title">Sales Costing Requests</h1>
         <p class="page-subtitle">Costing requests from Planning &amp; Sales — convert to a Program when ready</p></div>
-      <button class="btn btn-primary" onclick="App.openNewSalesRequestModal()">＋ New Request</button>
+      ${_isPlanning ? '' : `<button class="btn btn-primary" onclick="App.openNewSalesRequestModal()">＋ New Request</button>`}
     </div>
     ${availablePanel}
     ${srSections}`;
@@ -3120,8 +3125,7 @@ const AdminViews = (() => {
   function renderRecostQueue() {
     const user    = typeof App !== 'undefined' && App._getState ? App._getState()?.user || {} : {};
     const role    = user.role || '';
-    const dept    = (user.department || '').toLowerCase();
-    const isSales = dept.includes('sales');
+    const isSales = role === 'planning';
     const isPC    = role === 'admin' || role === 'pc';
 
     const all = API.RecostRequests.all().slice().reverse();

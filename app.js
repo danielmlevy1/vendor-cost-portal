@@ -332,6 +332,7 @@ App = (() => {
         ${programsGroup}
         <button class="nav-item ${state.route === 'sales-request' ? 'active' : ''}" onclick="App.navigate('sales-request')"><span class="icon">📝</span> Sales Requests</button>
         <button class="nav-item ${state.route === 'design-handoff' ? 'active' : ''}" onclick="App.navigate('design-handoff')"><span class="icon">🎨</span> Design Handoffs</button>
+        ${(() => { const dc = API.DesignChanges.pendingAll().length; return `<button class="nav-item ${state.route === 'design-changes' ? 'active' : ''}" onclick="App.navigate('design-changes')"><span class="icon">📌</span> Design Changes${dc > 0 ? ` <span class="pending-badge">${dc}</span>` : ''}</button>`; })()}
         <button class="nav-item ${state.route === 'factories' ? 'active' : ''}" onclick="App.navigate('factories')"><span class="icon">🏭</span> Factories</button>
         ${(() => { const rc = API.RecostRequests.pendingSales().length; return `<button class="nav-item ${state.route === 'recost-queue' ? 'active' : ''}" onclick="App.navigate('recost-queue')"><span class="icon">↩</span> Re-cost Queue${rc > 0 ? ` <span class="pending-badge">${rc}</span>` : ''}</button>`; })()}
       ` : `
