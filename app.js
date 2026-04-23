@@ -1331,7 +1331,14 @@ App = (() => {
     if (val === null && !el.value.trim()) {
       await API.CustomerBuys.delete(programId, styleId, customerId);
     } else if (val !== null) {
-      await API.CustomerBuys.upsert({ programId, styleId, customerId, [field]: val });
+      // Merge with the cached record so saving one field never NULLs the other.
+      // (The upsert SQL overwrites both qty and sell_price unconditionally.)
+      const existing = API.CustomerBuys.get(programId, styleId, customerId);
+      await API.CustomerBuys.upsert({
+        programId, styleId, customerId,
+        qty:       field === 'qty'       ? val : (existing?.qty       ?? null),
+        sellPrice: field === 'sellPrice' ? val : (existing?.sellPrice ?? null),
+      });
     }
     // refresh totals without full re-render
     const row = el.closest('tr');
