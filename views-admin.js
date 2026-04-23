@@ -1271,6 +1271,7 @@ const AdminViews = (() => {
       <th rowspan="2" class="sel-col sticky-col mat-hdr" style="width:36px;min-width:36px">
         <input type="checkbox" id="sel-all-chk" class="sel-col-chk" title="Select all" onchange="App.selectAllStyles('${programId}',this.checked)">
       </th>
+      <th rowspan="2" class="sticky-col mat-hdr" style="width:28px;min-width:28px;padding:0;text-align:center" title="Design change history"></th>
       <th rowspan="2" data-col="styleNum" class="sticky-col mat-hdr" style="width:60px;min-width:60px">Style #</th>
       <th rowspan="2" data-col="styleName" class="mat-hdr" style="width:72px;min-width:60px">Style Name</th>
       <th rowspan="2" data-col="cat" class="mat-hdr" style="width:68px;min-width:60px">Category</th>
@@ -1441,7 +1442,15 @@ const AdminViews = (() => {
             : '—';
         }
 
+        const dcChanges = API.DesignChanges.byStyle(s.id);
+        const dcPending = dcChanges.filter(c => c.status === 'pending').length;
+        const dcTotal   = dcChanges.length;
+        const dcBadge   = dcTotal > 0
+          ? `<span class="revision-badge" style="cursor:pointer;font-size:0.68rem;white-space:nowrap" title="${dcPending > 0 ? dcPending + ' pending' : ''} ${dcTotal} change${dcTotal !== 1 ? 's' : ''}" onclick="App.openDesignChangeModal('${s.id}')">🕒 ${dcTotal}${dcPending > 0 ? `<span style='color:#f59e0b;font-weight:700'> ·${dcPending}p</span>` : ''}</span>`
+          : '';
+
         let rowHtml = `
+          <td class="sticky-col mat-cell-white" style="width:28px;min-width:28px;padding:2px 4px;text-align:center">${dcBadge}</td>
           <td data-col="styleNum" class="sticky-col mat-cell-white">${s.styleNumber}${s._linkAnchorBadge||''}</td>
           <td data-col="styleName" class="mat-cell-white mat-cell-normal">${styleNameInput}</td>
           <td data-col="cat" class="mat-cell-white mat-cell-normal">${catInput}</td>
