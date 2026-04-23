@@ -272,7 +272,7 @@ const VendorViews = (() => {
     ${flaggedSubs.length ? `<div class="alert alert-warning">🚩 ${flaggedSubs.length} cost(s) flagged for review. See the 🚩 notes below each style for details.</div>` : ''}
     <div class="card">
       <div class="table-wrap">
-        <table class="tc-style-table">
+        <table id="tc-costing-table" class="tc-style-table">
           <thead>
             <tr>
               <th rowspan="2">Style #</th>
@@ -386,7 +386,7 @@ const VendorViews = (() => {
     ${flagged.length ? `<div class="alert alert-warning">🚩 You have ${flagged.length} cost(s) flagged for review. Please revise your submissions.</div>` : ''}
     <div class="card">
       <div class="table-wrap">
-        <table class="tc-style-table">
+        <table id="tc-all-styles-table" class="tc-style-table">
           <thead><tr>
             <th>Program</th><th>Style #</th><th>Style Name</th><th>Fabrication</th>
             <th>COO</th><th>My FOB</th><th>Factory Cost</th><th>Status</th><th>Action</th>

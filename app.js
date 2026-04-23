@@ -476,6 +476,8 @@ App = (() => {
       initResizableColumns(document.getElementById('style-table'));
       initResizableColumns(document.getElementById('cost-summary-table'));
       initResizableColumns(document.getElementById('cp-table'));
+      initResizableColumns(document.getElementById('tc-costing-table'));
+      initResizableColumns(document.getElementById('tc-all-styles-table'));
       setupColumnToggles('style-table-controls', 'style-table');
       setupColumnToggles('summary-table-controls', 'cost-summary-table');
       setupColumnToggles('cp-table-controls', 'cp-table');
