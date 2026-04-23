@@ -2733,7 +2733,7 @@ App = (() => {
     openInternalProgramModal, saveInternalProgram, deleteInternalProgram,
     _ipAutoMargin, _ipAutoMarginPropose,
     openBrandTierMarginModal, saveBrandTierMargin, deleteBrandTierMargin,
-    openTCModal, saveTC, deleteTC, saveCoo, deleteCoo, openCooModal,
+    openTCModal, saveTC, deleteTC, saveCoo, deleteCoo, openCooModal, saveTCTermsInline,
     approvePendingChange, rejectPendingChange, proposeSetting,
     openStaffModal, saveStaff,
     // Formatting helpers used by inline inputs
