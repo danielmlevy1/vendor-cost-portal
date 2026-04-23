@@ -6109,7 +6109,7 @@ App.openDesignChangeModal = function(styleId) {
       </div>
     </div>` : '';
 
-  const btnLabel = isLocked ? '🔄 Submit Re-cost Request' : 'Log Change';
+  const btnLabel = isLocked ? '🔄 Submit Re-cost Request' : '📌 Log as Pending';
   const btnClass = isLocked ? 'btn btn-warning' : 'btn btn-primary';
 
   App.showModal(
@@ -6185,6 +6185,33 @@ App.saveDesignChange = async function(e, styleId, programId) {
   App.closeModal();
   const st = App._getState();
   App.navigate(st?.route, st?.routeParam);
+};
+
+// ── Design Change: confirm + tab filter ─────────────────────────
+
+App.confirmDesignChange = async function(id, styleId, fromLog) {
+  await API.DesignChanges.confirm(id);
+  if (fromLog) {
+    // Re-render the global log in-place preserving current tab
+    const mc = document.getElementById('content');
+    if (mc) mc.innerHTML = AdminViews.renderAllDesignChanges(document._dcTab || 'pending');
+  } else {
+    // Re-render per-style panel inside open modal
+    const panel = document.querySelector('.design-change-timeline')?.closest('.modal-body') ||
+                  document.querySelector('.design-change-timeline')?.parentElement;
+    if (panel && styleId) panel.outerHTML = AdminViews.designChangeHistoryPanel(styleId);
+    // Also close & reopen to refresh fully
+    const mc = document.getElementById('content');
+    if (mc && App._getState()?.route === 'design-changes') {
+      mc.innerHTML = AdminViews.renderAllDesignChanges(document._dcTab || 'pending');
+    }
+  }
+};
+
+App.renderDesignChangesTab = function(filter) {
+  document._dcTab = filter;
+  const mc = document.getElementById('content');
+  if (mc) mc.innerHTML = AdminViews.renderAllDesignChanges(filter);
 };
 
 // ── Fabric Standard Requests ─────────────────────────────────────

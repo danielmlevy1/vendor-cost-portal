@@ -3794,25 +3794,38 @@ const AdminViews = (() => {
     const changes = API.DesignChanges.byStyle(styleId);
     if (!changes.length) return `<div class="text-muted text-sm" style="padding:12px">No design changes logged for this style.</div>`;
     const fmtDate = d => new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-    return `<div class="design-change-timeline">${changes.map(c => `
-      <div class="dc-entry">
-        <div class="dc-dot"></div>
+    return `<div class="design-change-timeline">${changes.map(c => {
+      const isPending = c.status === 'pending';
+      return `
+      <div class="dc-entry${isPending ? ' dc-entry-pending' : ''}">
+        <div class="dc-dot${isPending ? ' dc-dot-pending' : ''}"></div>
         <div class="dc-body">
-          <div class="dc-desc">${c.description || '—'}</div>
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <span class="dc-desc">${c.description || '—'}</span>
+            ${isPending
+              ? `<span class="badge badge-pending" style="font-size:0.65rem">Pending</span>
+                 <button class="btn btn-secondary btn-sm" style="padding:2px 8px;font-size:0.72rem" onclick="App.confirmDesignChange('${c.id}','${styleId}')">✓ Confirm</button>`
+              : `<span class="badge badge-placed" style="font-size:0.65rem">Confirmed</span>`}
+          </div>
           ${c.field ? `<div class="dc-field text-sm text-muted">${c.field}${c.previousValue ? ': <span style="text-decoration:line-through;color:#ef4444">' + c.previousValue + '</span>' : ''} ${c.newValue ? '→ <strong>' + c.newValue + '</strong>' : ''}</div>` : ''}
-          <div class="dc-meta text-sm text-muted">${fmtDate(c.changedAt)} · ${c.changedByName || c.changedBy || '—'}</div>
+          <div class="dc-meta text-sm text-muted">${fmtDate(c.changedAt)} · ${c.changedByName || c.changedBy || '—'}${!isPending && c.confirmedByName ? ` · ✓ ${c.confirmedByName}` : ''}</div>
         </div>
-      </div>`).join('')}
+      </div>`;
+    }).join('')}
     </div>`;
   }
 
-  function renderAllDesignChanges() {
-    const changes = API.DesignChanges.all().slice().reverse();
+  function renderAllDesignChanges(filter) {
+    const all = API.DesignChanges.all().slice().reverse();
+    const pendingCount = all.filter(c => c.status === 'pending').length;
+    const activeFilter = filter || (pendingCount > 0 ? 'pending' : 'all');
+    const changes = activeFilter === 'pending' ? all.filter(c => c.status === 'pending') : all;
     const fmtDate = d => new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
     const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
     const rows = changes.length ? changes.map(c => {
       const style = API.Styles.get(c.styleId);
       const prog  = style ? API.Programs.get(style.programId) : null;
+      const isPending = c.status === 'pending';
       return `<tr
         data-flt-style="${esc(c.styleNumber || c.styleId || '')}"
         data-flt-program="${esc(prog?.name || '')}"
@@ -3826,12 +3839,27 @@ const AdminViews = (() => {
         <td class="text-sm">${c.previousValue ? `<span style="color:#ef4444">${c.previousValue}</span>` : '—'}</td>
         <td class="text-sm">${c.newValue ? `<strong>${c.newValue}</strong>` : '—'}</td>
         <td class="text-sm text-muted">${c.changedByName || c.changedBy || '—'}</td>
+        <td>${isPending
+          ? `<span class="badge badge-pending">Pending</span>`
+          : `<span class="badge badge-placed">Confirmed</span>`}
+        </td>
+        <td>${isPending
+          ? `<button class="btn btn-secondary btn-sm" onclick="App.confirmDesignChange('${c.id}','${c.styleId}',true)">✓ Confirm</button>`
+          : `<span class="text-muted text-sm">${c.confirmedByName || '—'}</span>`}
+        </td>
       </tr>`;
-    }).join('') : `<tr><td colspan="8" class="text-center text-muted" style="padding:40px">No design changes logged yet.</td></tr>`;
+    }).join('') : `<tr><td colspan="10" class="text-center text-muted" style="padding:40px">${activeFilter === 'pending' ? 'No pending design changes.' : 'No design changes logged yet.'}</td></tr>`;
+
+    const tabBtn = (val, label, count) => {
+      const active = activeFilter === val;
+      return `<button class="btn btn-sm ${active ? 'btn-primary' : 'btn-secondary'}" onclick="App.renderDesignChangesTab('${val}')" style="min-width:90px">${label}${count > 0 ? ` <span style="background:${active?'rgba(255,255,255,0.25)':'var(--accent)'};color:${active?'#fff':'#fff'};border-radius:10px;padding:1px 7px;font-size:0.72rem;margin-left:4px">${count}</span>` : ''}</button>`;
+    };
+
     return `
     <div class="page-header">
       <div><h1 class="page-title">Design Change Log</h1>
         <p class="page-subtitle">All logged design changes across programs, newest first</p></div>
+      <div style="display:flex;gap:6px">${tabBtn('pending','Pending',pendingCount)}${tabBtn('all','All',all.length)}</div>
     </div>
     <div class="card" style="padding:0"><div class="table-wrap"><table id="design-changes-tbl" data-column-filter>
       <thead><tr>
@@ -3841,6 +3869,7 @@ const AdminViews = (() => {
         <th data-filter-col="field">Field</th>
         <th>Description</th><th>Previous</th><th>New Value</th>
         <th data-filter-col="by">Logged By</th>
+        <th>Status</th><th>Action</th>
       </tr></thead>
       <tbody>${rows}</tbody>
     </table></div></div>`;

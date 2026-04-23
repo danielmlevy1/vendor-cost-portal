@@ -3539,3 +3539,21 @@ th[data-filter-col] { position: relative; }
 .col-flt-list label:hover { background: var(--bg-elevated); }
 .col-flt-list input[type="checkbox"] { margin: 0; }
 .col-flt-footer { display: flex; justify-content: flex-end; gap: 6px; margin-top: 8px; padding-top: 6px; border-top: 1px solid var(--border); }
+
+/* ── Design Change Timeline ──────────────────────────────────── */
+.design-change-timeline { display: flex; flex-direction: column; gap: 0; }
+.dc-entry {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 10px 0; border-bottom: 1px solid var(--border);
+}
+.dc-entry:last-child { border-bottom: none; }
+.dc-entry-pending { background: rgba(245,158,11,0.04); border-radius: 6px; padding: 10px 8px; margin: 0 -8px; }
+.dc-dot {
+  flex-shrink: 0; width: 10px; height: 10px; border-radius: 50%;
+  background: var(--text-tertiary); margin-top: 5px;
+}
+.dc-dot-pending { background: #f59e0b; box-shadow: 0 0 0 3px rgba(245,158,11,0.2); }
+.dc-body { flex: 1; min-width: 0; }
+.dc-desc { font-size: 0.875rem; font-weight: 600; color: var(--text-primary); }
+.dc-field { margin-top: 2px; }
+.dc-meta { margin-top: 4px; font-size: 0.75rem; }
