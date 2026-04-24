@@ -935,6 +935,13 @@ const API = (() => {
       if (idx >= 0) cache.designHandoffs[idx] = h;
       return h;
     },
+    async releaseBatch(id, styleIds, batchLabel) {
+      const h = await POST(`/api/design-handoffs/${id}/release-batch`, { styleIds, batchLabel });
+      cache.handoffMap[id] = h;
+      const idx = cache.designHandoffs.findIndex(x => x.id === id);
+      if (idx >= 0) cache.designHandoffs[idx] = h; else cache.designHandoffs.push(h);
+      return h;
+    },
     async delete(id) {
       await DEL(`/api/design-handoffs/${id}`);
       cache.designHandoffs = cache.designHandoffs.filter(h => h.id !== id);
@@ -1406,7 +1413,7 @@ const API = (() => {
     // server), styles, submissions, cell flags. One call per program but
     // fanned out in parallel.
     async vendorWorkspace() {
-      await Promise.all([Programs.all(), preload.global(), Factories.fetchAll().catch(() => {})]);
+      await Promise.all([Programs.all(), preload.global(), Factories.fetchAll().catch(() => {}), DesignHandoffs.fetchAll().catch(() => {})]);
       await Promise.all(cache.programs.map(async p => {
         try {
           await Promise.all([

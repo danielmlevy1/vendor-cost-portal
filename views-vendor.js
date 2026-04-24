@@ -156,6 +156,20 @@ const VendorViews = (() => {
     }
 
 
+    // Unreleased batch styles from the linked handoff — visible to this TC but non-actionable
+    const linkedHandoff = API.DesignHandoffs.all().find(h => h.linkedProgramId === programId);
+    const unreleasedByFab = {};
+    if (linkedHandoff && (linkedHandoff.assignedTCIds || []).includes(tcId)) {
+      const releasedIds = new Set((linkedHandoff.batchReleases || []).flatMap(b => b.styleIds || []));
+      (linkedHandoff.stylesList || []).forEach(s => {
+        if (!releasedIds.has(s.id)) {
+          const fab = (s.fabrication || s.fabric || 'Other').trim();
+          if (!unreleasedByFab[fab]) unreleasedByFab[fab] = [];
+          unreleasedByFab[fab].push(s);
+        }
+      });
+    }
+
     // Group styles by fabrication
     const fabGroups = {};
     styles.forEach(s => {
@@ -163,9 +177,11 @@ const VendorViews = (() => {
       if (!fabGroups[fab]) fabGroups[fab] = [];
       fabGroups[fab].push(s);
     });
+    // Ensure fabric groups that only have unreleased styles also appear
+    Object.keys(unreleasedByFab).forEach(fab => { if (!fabGroups[fab]) fabGroups[fab] = []; });
 
     let bodyRows = '';
-    if (styles.length === 0) {
+    if (styles.length === 0 && Object.keys(unreleasedByFab).length === 0) {
       bodyRows = `<tr><td colspan="${totalCols}" class="text-center text-muted" style="padding:40px">No styles in this program yet.</td></tr>`;
     } else {
       Object.entries(fabGroups).forEach(([fab, fabStyles]) => {
@@ -214,6 +230,18 @@ const VendorViews = (() => {
           if (pills.length) {
             bodyRows += `<tr class="flag-note-row"><td colspan="${totalCols}"><div class="flag-notes-inline">${pills.join('')}</div></td></tr>`;
           }
+        });
+
+        // Unreleased batch styles for this fabric group — greyed out, non-actionable
+        (unreleasedByFab[fab] || []).forEach(s => {
+          const batchLabel = s.batchLabel || 'Batch 1';
+          bodyRows += `<tr style="opacity:0.45;pointer-events:none">
+            <td class="primary font-bold" style="white-space:nowrap">${s.styleNumber || '—'}</td>
+            <td style="min-width:120px">${s.styleName || '—'}</td>
+            <td class="text-sm text-muted">${(s.fabrication || s.fabric || '').substring(0,25)}</td>
+            ${coos.map(() => `<td class="text-muted" style="text-align:center;padding:4px 6px" colspan="${showFC ? 3 : 2}">—</td>`).join('')}
+            <td><span class="tag" style="font-size:0.68rem;background:rgba(148,163,184,0.15);color:#94a3b8">⏳ ${batchLabel}</span></td>
+          </tr>`;
         });
       });
     }
@@ -336,6 +364,16 @@ const VendorViews = (() => {
       </td>`;
     }
 
+    // Unreleased batch styles across all assigned handoffs — shown as a separate read-only panel
+    const pendingBatchStyles = [];
+    API.DesignHandoffs.all().forEach(h => {
+      if (!(h.assignedTCIds || []).includes(tcId)) return;
+      const releasedIds = new Set((h.batchReleases || []).flatMap(b => b.styleIds || []));
+      (h.stylesList || []).forEach(s => {
+        if (!releasedIds.has(s.id)) pendingBatchStyles.push({ s, h });
+      });
+    });
+
     // Flatten styles × their program's COOs into rows; skip any style
     // whose program has zero COOs assigned for this vendor.
     const rowCount = styles.reduce((n, s) => n + coosFor(s.programId).length, 0);
@@ -384,6 +422,23 @@ const VendorViews = (() => {
       </div>
     </div>
     ${flagged.length ? `<div class="alert alert-warning">🚩 You have ${flagged.length} cost(s) flagged for review. Please revise your submissions.</div>` : ''}
+    ${pendingBatchStyles.length ? `
+    <div class="card mb-4" style="border-left:3px solid #94a3b8;opacity:0.75">
+      <div class="font-bold text-sm text-muted mb-2">⏳ Pending Batches — Styles not yet released (${pendingBatchStyles.length})</div>
+      <div class="text-sm text-muted mb-3">These styles are in your assigned handoffs but haven't been released by Design yet. They'll appear in the quote table once released.</div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Handoff</th><th>Style #</th><th>Style Name</th><th>Fabrication</th><th>Batch</th></tr></thead>
+        <tbody>
+          ${pendingBatchStyles.map(({ s, h }) => `<tr style="opacity:0.6">
+            <td class="text-sm text-muted">${[h.season,h.year,h.brand].filter(Boolean).join(' ')}</td>
+            <td class="primary font-bold">${s.styleNumber || '—'}</td>
+            <td>${s.styleName || '—'}</td>
+            <td class="text-sm text-muted">${(s.fabrication || s.fabric || '—').substring(0,30)}</td>
+            <td><span class="tag" style="font-size:0.68rem;background:rgba(148,163,184,0.15);color:#94a3b8">${s.batchLabel || 'Batch 1'}</span></td>
+          </tr>`).join('')}
+        </tbody>
+      </table></div>
+    </div>` : ''}
     <div class="card">
       <div class="table-wrap">
         <table id="tc-all-styles-table" class="tc-style-table">

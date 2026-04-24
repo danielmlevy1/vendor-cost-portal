@@ -572,9 +572,27 @@ router.get('/vendor/available-fabrics', requireAuth, (req, res) => {
 // =============================================================
 
 function handoffFromRow(r) {
+  // Lazily stamp each style with a stable id and default batchLabel so
+  // batchReleases.styleIds[] can reference them precisely.  If any styles
+  // were missing ids we persist the updated list immediately (one write per
+  // GET at most, then it's a no-op forever).
+  let stylesList = JSON.parse(r.styles_list || '[]');
+  let needsWrite = false;
+  stylesList = stylesList.map(s => {
+    if (!s.id || !s.batchLabel) {
+      needsWrite = true;
+      return { id: s.id || uid(), batchLabel: s.batchLabel || 'Batch 1', ...s };
+    }
+    return s;
+  });
+  if (needsWrite) {
+    db.prepare('UPDATE design_handoffs SET styles_list = ? WHERE id = ?')
+      .run(JSON.stringify(stylesList), r.id);
+  }
+
   return {
     id: r.id, season: r.season, year: r.year, brand: r.brand, tier: r.tier, gender: r.gender,
-    stylesList:           JSON.parse(r.styles_list   || '[]'),
+    stylesList,
     fabricsList:          JSON.parse(r.fabrics_list  || '[]'),
     trimsList:            JSON.parse(r.trims_list    || '[]'),
     stylesUploaded:       !!r.styles_uploaded,
@@ -593,6 +611,7 @@ function handoffFromRow(r) {
     submitted:            !!r.submitted,
     submittedAt:          r.submitted_at,
     submittedForCosting:  !!r.submitted_for_costing,
+    batchReleases:        JSON.parse(r.batch_releases || '[]'),
     createdAt:            r.created_at,
   };
 }
@@ -661,7 +680,7 @@ router.patch('/design-handoffs/:id', requireAuth, requireRole('admin', 'pc', 'de
   const b = req.body;
 
   // JSON array fields handled separately
-  const jsonFields = { stylesList: 'styles_list', fabricsList: 'fabrics_list', trimsList: 'trims_list', assignedTCIds: 'assigned_tc_ids' };
+  const jsonFields = { stylesList: 'styles_list', fabricsList: 'fabrics_list', trimsList: 'trims_list', assignedTCIds: 'assigned_tc_ids', batchReleases: 'batch_releases' };
   for (const [camel, col] of Object.entries(jsonFields)) {
     if (b[camel] !== undefined) {
       db.prepare(`UPDATE design_handoffs SET ${col} = ? WHERE id = ?`).run(json(b[camel]), req.params.id);
@@ -681,6 +700,117 @@ router.patch('/design-handoffs/:id', requireAuth, requireRole('admin', 'pc', 'de
 router.delete('/design-handoffs/:id', requireAuth, requireRole('admin', 'pc'), (req, res) => {
   db.prepare('DELETE FROM design_handoffs WHERE id = ?').run(req.params.id);
   res.json({ ok: true });
+});
+
+// POST /api/design-handoffs/:id/release-batch
+// Body: { styleIds: string[], batchLabel: string }
+//
+// Releases the selected styles from the handoff to the linked program,
+// creating the program first if none exists.  Also creates a batch-review
+// Sales Request so Sales can confirm quantities for the new styles.
+router.post('/design-handoffs/:id/release-batch', requireAuth, requireRole('admin', 'pc', 'design'), (req, res) => {
+  const row = db.prepare('SELECT * FROM design_handoffs WHERE id = ?').get(req.params.id);
+  if (!row) return res.status(404).json({ error: 'Handoff not found' });
+
+  const { styleIds, batchLabel } = req.body;
+  if (!Array.isArray(styleIds) || !styleIds.length)
+    return res.status(400).json({ error: 'styleIds must be a non-empty array' });
+  if (!batchLabel || !batchLabel.toString().trim())
+    return res.status(400).json({ error: 'batchLabel is required' });
+
+  const label = batchLabel.toString().trim();
+  const stylesList   = JSON.parse(row.styles_list   || '[]');
+  const batchReleases = JSON.parse(row.batch_releases || '[]');
+
+  // Guard: batch label must not already be released
+  if (batchReleases.find(b => b.batchLabel === label))
+    return res.status(400).json({ error: `Batch "${label}" has already been released` });
+
+  // Resolve the requested style objects
+  const styleMap = {};
+  for (const s of stylesList) styleMap[s.id] = s;
+  const toRelease = styleIds.map(sid => styleMap[sid]).filter(Boolean);
+  if (toRelease.length !== styleIds.length)
+    return res.status(400).json({ error: 'One or more styleIds not found in this handoff' });
+
+  db.transaction(() => {
+    // 1. Create the program if not yet linked
+    let progId = row.linked_program_id;
+    if (!progId) {
+      progId = uid();
+      db.prepare(`
+        INSERT INTO programs (id, name, brand, retailer, gender, season, year, status, market, version, created_at)
+        VALUES (?,?,?,?,?,?,?,?,?,1,?)
+      `).run(
+        progId,
+        [row.season, row.year, row.brand].filter(Boolean).join(' '),
+        row.brand   || null,
+        row.tier    || null,
+        row.gender  || null,
+        row.season  || null,
+        row.year    || null,
+        'Costing',
+        'USA',
+        now()
+      );
+      db.prepare('UPDATE design_handoffs SET linked_program_id = ? WHERE id = ?').run(progId, row.id);
+    }
+
+    // 2. Insert style rows into the program
+    const insertStyle = db.prepare(`
+      INSERT INTO styles
+        (id, program_id, style_number, style_name, fabrication,
+         status, proj_qty, released_batch, source_handoff_id, created_at)
+      VALUES (?,?,?,?,?,'open',0,?,?,?)
+    `);
+    for (const s of toRelease) {
+      insertStyle.run(
+        uid(), progId,
+        s.styleNumber || null,
+        s.styleName   || null,
+        s.fabrication || s.fabric || null,
+        label,
+        row.id,
+        now()
+      );
+    }
+
+    // 3. Append to batch_releases on the handoff
+    batchReleases.push({ batchLabel: label, releasedAt: now(), styleIds });
+    db.prepare('UPDATE design_handoffs SET batch_releases = ? WHERE id = ?')
+      .run(JSON.stringify(batchReleases), row.id);
+
+    // 4. Create a batch-review Sales Request so Sales can confirm quantities
+    const srId = uid();
+    const srStyles = toRelease.map(s => ({
+      styleNumber:  s.styleNumber  || '',
+      styleName:    s.styleName    || '',
+      fabrication:  s.fabrication  || s.fabric || '',
+      projQty:      0,
+      projSell:     0,
+      batchLabel:   label,
+    }));
+    db.prepare(`
+      INSERT INTO sales_requests
+        (id, status, season, year, brand, gender, retailer,
+         styles, cancelled_styles, source_handoff_id, linked_program_id, created_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+    `).run(
+      srId, 'batch-review',
+      row.season  || null,
+      row.year    || null,
+      row.brand   || null,
+      row.gender  || null,
+      row.tier    || null,
+      JSON.stringify(srStyles),
+      '[]',
+      row.id,
+      progId,
+      now()
+    );
+  })();
+
+  res.json(handoffFromRow(db.prepare('SELECT * FROM design_handoffs WHERE id = ?').get(req.params.id)));
 });
 
 function _upsertFabricLibrary(fabricsList, handoffId) {

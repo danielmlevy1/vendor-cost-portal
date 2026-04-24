@@ -88,6 +88,8 @@ function styleFromRow(r) {
     techDesignNotes:   r.tech_design_notes,
     internalProgramId: r.internal_program_id,
     recostRequestId:   r.recost_request_id,
+    releasedBatch:     r.released_batch    || null,
+    sourceHandoffId:   r.source_handoff_id || null,
     createdAt:         r.created_at,
   };
 }

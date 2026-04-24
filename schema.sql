@@ -145,6 +145,9 @@ CREATE TABLE IF NOT EXISTS styles (
   recost_request_id  TEXT,
   -- Design / tech notes
   tech_design_notes  TEXT,
+  -- Batch release tracking
+  released_batch     TEXT,   -- label from the handoff batch that added this style, e.g. "Batch 1"
+  source_handoff_id  TEXT,   -- design_handoffs.id — for TC grey-out and progress counters
   created_at         TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
 
@@ -344,6 +347,7 @@ CREATE TABLE IF NOT EXISTS design_handoffs (
   submitted               INTEGER NOT NULL DEFAULT 0,
   submitted_at            TEXT,
   submitted_for_costing   INTEGER NOT NULL DEFAULT 0,
+  batch_releases          TEXT NOT NULL DEFAULT '[]',  -- JSON: [{ batchLabel, releasedAt, styleIds[] }]
   created_at              TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
 

@@ -404,6 +404,14 @@ function runMigrations() {
   addColumn('design_changes', 'confirmed_at',        'TEXT');
   addColumn('design_changes', 'confirmed_by',        'TEXT');
   addColumn('design_changes', 'confirmed_by_name',   'TEXT');
+
+  // v12: batch releases on design handoffs
+  // batch_releases: JSON array of { batchLabel, releasedAt, styleIds[] }
+  addColumn('design_handoffs', 'batch_releases', "TEXT NOT NULL DEFAULT '[]'");
+  // styles that were added to a program via a batch release carry their
+  // batch label and the originating handoff id for TC grey-out and progress tracking
+  addColumn('styles', 'released_batch',    'TEXT');
+  addColumn('styles', 'source_handoff_id', 'TEXT');
 }
 
 // One-shot-ish per-country lead-time fill. Only overwrites rows

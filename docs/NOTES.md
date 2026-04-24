@@ -112,6 +112,7 @@ See [.env.example](../.env.example) for a copy-paste template.
 | `AZURE_AUTHORITY`      | `https://login.microsoftonline.com/organizations`      | Multi-tenant work/school accounts        |
 | `OAUTH_REDIRECT_URI`   | _(empty)_                                              | Must match Entra app registration        |
 | `SMTP_HOST`            | `smtp.gmail.com`                                       |                                          |
+
 | `SMTP_PORT`            | `587`                                                  |                                          |
 | `SMTP_USER`            | _(empty)_                                              | Required for digest email                |
 | `SMTP_PASS`            | _(empty)_                                              | Required for digest email                |
@@ -138,3 +139,4 @@ Local dev: leave the Azure env vars empty. Everything behaves
 exactly as before — password login only, no MS button on the screen.
 
 > See [Notes-original.md](Notes-original.md) for the legacy root `Notes.md` file.
+

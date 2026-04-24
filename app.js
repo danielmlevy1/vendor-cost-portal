@@ -69,7 +69,7 @@ App = (() => {
         await API.preload.programs();
       else if (route === 'staff' || route === 'departments')
         await API.preload.staff();
-      else if (route === 'design-handoff')
+      else if (route === 'design-handoff' || route === 'handoff-detail')
         await API.preload.designHandoff();
       else if (route === 'sales-request')
         await API.preload.salesRequest();
@@ -394,6 +394,7 @@ App = (() => {
       else if (route === 'performance')   mc.innerHTML = AdminViews.renderPerformance(routeParam);
       // Pre-costing workflow routes
       else if (route === 'design-handoff')       mc.innerHTML = AdminViews.renderDesignHandoff();
+      else if (route === 'handoff-detail')       mc.innerHTML = AdminViews.renderHandoffDetail(routeParam);
       else if (route === 'sales-request' || route === 'sales-requests') mc.innerHTML = AdminViews.renderSalesRequests();
       else if (route === 'build-from-handoff')   { mc.innerHTML = AdminViews.renderBuildFromHandoff(routeParam); App._initBuildFromHandoffKbd(); }
       else if (route === 'design-changes')       mc.innerHTML = AdminViews.renderAllDesignChanges();
@@ -414,6 +415,7 @@ App = (() => {
     } else if (isDesign) {
       if (route === 'dashboard')           mc.innerHTML = AdminViews.renderDashboard(user.role, user);
       else if (route === 'design-handoff') mc.innerHTML = AdminViews.renderDesignHandoff();
+      else if (route === 'handoff-detail') mc.innerHTML = AdminViews.renderHandoffDetail(routeParam);
       else if (route === 'design-changes') mc.innerHTML = AdminViews.renderAllDesignChanges();
       else if (route === 'recost-queue')   mc.innerHTML = AdminViews.renderRecostQueue();
       else if (route === 'factories')      mc.innerHTML = AdminViews.renderFactories(user.role);
@@ -430,6 +432,7 @@ App = (() => {
       else if (route === 'design-costing')     mc.innerHTML = AdminViews.renderDesignCostingView(routeParam, user.role);
       else if (route === 'buy-summary')        mc.innerHTML = AdminViews.renderBuySummary(routeParam, user.role);
       else if (route === 'design-handoff')     mc.innerHTML = AdminViews.renderDesignHandoff();
+      else if (route === 'handoff-detail')     mc.innerHTML = AdminViews.renderHandoffDetail(routeParam);
       else if (route === 'sales-request' || route === 'sales-requests') mc.innerHTML = AdminViews.renderSalesRequests();
       else if (route === 'build-from-handoff') { mc.innerHTML = AdminViews.renderBuildFromHandoff(routeParam); App._initBuildFromHandoffKbd(); }
       else if (route === 'design-changes')     mc.innerHTML = AdminViews.renderAllDesignChanges();
@@ -437,10 +440,14 @@ App = (() => {
       else if (route === 'factories')           mc.innerHTML = AdminViews.renderFactories(user.role);
       else if (route === 'delivery-plan')       mc.innerHTML = AdminViews.renderDeliveryPlan(routeParam, user.role, user);
       else if (route === 'capacity-plan')       mc.innerHTML = AdminViews.renderCapacityPlan(routeParam, user.role, user);
+      else if (route === 'cost-summary')        mc.innerHTML = AdminViews.renderCostSummary(routeParam);
+      else if (route === 'styles')              mc.innerHTML = AdminViews.renderStyleManager(routeParam);
+      else if (route === '' || route === 'vendor-home' || route === 'my-styles') mc.innerHTML = AdminViews.renderPrograms(routeParam);
       else mc.innerHTML = AdminViews.renderDashboard(user.role, user);
     } else if (isTechDesign) {
       if (route === 'dashboard')           mc.innerHTML = AdminViews.renderDashboard(user.role, user);
       else if (route === 'design-handoff') mc.innerHTML = AdminViews.renderDesignHandoff();
+      else if (route === 'handoff-detail') mc.innerHTML = AdminViews.renderHandoffDetail(routeParam);
       else if (route === 'design-changes') mc.innerHTML = AdminViews.renderAllDesignChanges();
       else if (route === 'programs')       mc.innerHTML = AdminViews.renderPrograms(routeParam);
       else if (route === 'design-costing') mc.innerHTML = AdminViews.renderDesignCostingView(routeParam, user.role);
@@ -4900,6 +4907,11 @@ App.saveEditHandoff = async function(e, handoffId) {
 };
 
 App.openHandoffDetail = function(handoffId) {
+  App.navigate('handoff-detail', handoffId);
+};
+
+// kept for any code still calling the old modal path — redirects to page
+App._openHandoffDetailModal = function(handoffId) {
   const h = API.DesignHandoffs.get(handoffId);
   if (!h) return;
   const fmtDate = iso => iso ? new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : null;
@@ -4996,6 +5008,89 @@ App.saveConvertHandoff = function(e, handoffId) {
 
 App.deleteHandoff = async function(id) {
   if (confirm('Delete this design handoff?')) { await API.DesignHandoffs.delete(id); App.navigate('design-handoff'); }
+};
+
+// ─ Batch Release ─────────────────────────────────────────────────
+
+App.releaseBatch = async function(handoffId) {
+  const batchLabel = (document.getElementById('hd-batch-label')?.value || '').trim();
+  if (!batchLabel) { alert('Enter a batch label.'); return; }
+
+  const h = API.DesignHandoffs.get(handoffId);
+  if (!h) return;
+
+  const releasedSet = new Set((h.batchReleases || []).flatMap(b => b.styleIds || []));
+  // Use live DOM values so unsaved-but-typed labels are honoured
+  const liveLabels = {};
+  document.querySelectorAll('.hd-label-input').forEach(inp => {
+    liveLabels[inp.dataset.styleId] = (inp.value || '').trim();
+  });
+  const toRelease = (h.stylesList || []).filter(s => {
+    if (releasedSet.has(s.id)) return false;
+    const live = liveLabels[s.id];
+    return (live !== undefined ? live : (s.batchLabel || 'Batch 1')) === batchLabel;
+  }).map(s => s.id);
+
+  if (!toRelease.length) {
+    alert(`No unreleased styles are labeled "${batchLabel}". Assign that label to styles in the Batch Label column first.`);
+    return;
+  }
+
+  const btn = document.getElementById('hd-release-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Releasing…'; }
+
+  try {
+    await API.DesignHandoffs.releaseBatch(handoffId, toRelease, batchLabel);
+    const mc = document.getElementById('content');
+    if (mc) mc.innerHTML = AdminViews.renderHandoffDetail(handoffId);
+  } catch (err) {
+    alert('Release failed: ' + (err.message || err));
+    if (btn) { btn.disabled = false; App._hdUpdateReleaseCount(handoffId); }
+  }
+};
+
+// Save a single style's batchLabel back to the handoff's stylesList
+App._hdSaveBatchLabel = async function(handoffId, styleId, newLabel) {
+  const h = API.DesignHandoffs.get(handoffId);
+  if (!h) return;
+  const updated = (h.stylesList || []).map(s =>
+    s.id === styleId ? Object.assign({}, s, { batchLabel: newLabel || 'Batch 1' }) : s
+  );
+  await API.DesignHandoffs.update(handoffId, { stylesList: updated }).catch(err => {
+    console.warn('[hdSaveBatchLabel] save failed:', err.message);
+  });
+  App._hdUpdateReleaseCount(handoffId);
+};
+
+// Update the release button text + count based on toolbar label
+App._hdUpdateReleaseCount = function(handoffId) {
+  const label = (document.getElementById('hd-batch-label')?.value || '').trim();
+  const btn     = document.getElementById('hd-release-btn');
+  const counter = document.getElementById('hd-selected-count');
+  if (!label || !handoffId) {
+    if (btn) { btn.disabled = true; btn.textContent = 'Release Batch'; }
+    if (counter) counter.textContent = '';
+    return;
+  }
+  const h = API.DesignHandoffs.get(handoffId);
+  if (!h) return;
+  const releasedSet = new Set((h.batchReleases || []).flatMap(b => b.styleIds || []));
+  // Count styles whose current in-DOM label input matches OR whose cached batchLabel matches
+  // (covers the case where the user edited a label and hasn't blurred yet)
+  const liveLabels = {};
+  document.querySelectorAll('.hd-label-input').forEach(inp => {
+    liveLabels[inp.dataset.styleId] = (inp.value || '').trim();
+  });
+  const count = (h.stylesList || []).filter(s => {
+    if (releasedSet.has(s.id)) return false;
+    const live = liveLabels[s.id];
+    return (live !== undefined ? live : (s.batchLabel || 'Batch 1')) === label;
+  }).length;
+  if (btn) {
+    btn.disabled = count === 0;
+    btn.textContent = count > 0 ? `Release "${label}" (${count} style${count !== 1 ? 's' : ''})` : 'Release Batch';
+  }
+  if (counter) counter.textContent = count > 0 ? `${count} style${count !== 1 ? 's' : ''} will be released` : 'No styles with this label';
 };
 
 // ─ Sales Requests ────────────────────────────────────────────────

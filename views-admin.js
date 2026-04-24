@@ -2737,10 +2737,19 @@ const AdminViews = (() => {
     // Split handoffs into workflow buckets. No explicit "cancelled"
     // status on handoffs in the current schema, so just In-Progress
     // (no program link yet) vs. Complete (linked to a program).
+    // Helper: how many of a handoff's styles have been released across all batches
+    const releasedStyleIds = h => new Set((h.batchReleases || []).flatMap(b => b.styleIds || []));
+    const allStylesReleased = h => {
+      const total = (h.stylesList || []).length;
+      if (!total) return false;
+      return releasedStyleIds(h).size >= total;
+    };
     const handoffBuckets = {
-      inProgress: handoffs.filter(h => !h.linkedProgramId && !h.submittedForCosting),
-      complete:   handoffs.filter(h =>  h.linkedProgramId || h.submittedForCosting),
-      cancelled:  [],  // reserved for future cancelled flag
+      inProgress: handoffs.filter(h => !h.linkedProgramId && !h.submittedForCosting && !(h.batchReleases || []).length),
+      batching:   handoffs.filter(h => (h.batchReleases || []).length > 0 && !allStylesReleased(h)),
+      released:   handoffs.filter(h => allStylesReleased(h) && !h.submittedForCosting),
+      complete:   handoffs.filter(h => h.submittedForCosting || (h.linkedProgramId && allStylesReleased(h))),
+      cancelled:  [],
     };
 
     const buildRow = h => {
@@ -2749,7 +2758,10 @@ const AdminViews = (() => {
       // Aging badge — only for handoffs not yet linked to a program
       // (linked ones are "done", aging doesn't matter).
       const ageDays = Math.floor((Date.now() - created.getTime()) / 86400000);
-      const stillOpen = !h.linkedProgramId && !h.submittedForCosting;
+      const hasBatches  = (h.batchReleases || []).length > 0;
+      const totalStyles = (h.stylesList || []).length;
+      const releasedCount = releasedStyleIds(h).size;
+      const stillOpen = !h.linkedProgramId && !h.submittedForCosting && !hasBatches;
       const ageColor = ageDays <= 7 ? '#22c55e' : ageDays <= 14 ? '#f59e0b' : '#ef4444';
       const ageBg    = ageDays <= 7 ? 'rgba(34,197,94,0.12)' : ageDays <= 14 ? 'rgba(245,158,11,0.12)' : 'rgba(239,68,68,0.12)';
       const ageBadge = stillOpen
@@ -2759,11 +2771,16 @@ const AdminViews = (() => {
         ? `<span class="badge badge-placed" style="cursor:pointer" onclick="App.navigate('cost-summary','${h.linkedProgramId}')">→ Program</span>`
         : h.submittedForCosting
           ? `<span class="badge badge-costing">⏳ Submitted to Sales</span>`
-          : `<button class="btn btn-secondary btn-sm" onclick="App.openConvertHandoffModal('${h.id}')">Convert →</button>`;
+          : hasBatches
+            ? `<span class="badge badge-costing" style="cursor:pointer" onclick="App.navigate('handoff-detail','${h.id}')" title="${releasedCount}/${totalStyles} styles released">↗ ${releasedCount}/${totalStyles} released</span>`
+            : `<button class="btn btn-secondary btn-sm" onclick="App.openConvertHandoffModal('${h.id}')">Convert →</button>`;
       const styleCount  = (h.stylesList||[]).length;
       const fabricCount = (h.fabricsList||[]).length;
+      const batchPill   = hasBatches
+        ? `<span class="tag" style="font-size:0.68rem;background:rgba(99,102,241,0.12);color:#6366f1;font-weight:600;margin-left:4px">${releasedCount}/${styleCount} released</span>`
+        : '';
       const stylesBadge  = styleCount
-        ? `<span class="status-dot dot-green"></span><span class="tag">${styleCount} styles</span>`
+        ? `<span class="status-dot dot-green"></span><span class="tag">${styleCount} styles</span>${batchPill}`
         : `<span class="status-dot dot-amber"></span><span class="tag tag-warn">No styles</span>`;
       const fabricsBadge = h.fabricsUploaded
         ? `<span class="status-dot dot-green"></span><span class="tag">${fabricCount} fabrics</span>`
@@ -2827,9 +2844,11 @@ const AdminViews = (() => {
 
     const handoffSections = handoffs.length
       ? [
-          bucketSection('🟢 In Progress', handoffBuckets.inProgress, 'inProgress', { open: true,  accent: '#22c55e' }),
-          bucketSection('✅ Complete',    handoffBuckets.complete,   'complete',   { open: false, accent: '#6366f1' }),
-          bucketSection('✕ Cancelled',    handoffBuckets.cancelled,  'cancelled',  { open: false, accent: '#94a3b8' }),
+          bucketSection('🟢 In Progress',      handoffBuckets.inProgress, 'inProgress', { open: true,  accent: '#22c55e' }),
+          bucketSection('📦 Batching',          handoffBuckets.batching,   'batching',   { open: true,  accent: '#6366f1' }),
+          bucketSection('✅ All Styles Released', handoffBuckets.released,  'released',   { open: true,  accent: '#f59e0b' }),
+          bucketSection('🏁 Complete',          handoffBuckets.complete,   'complete',   { open: false, accent: '#94a3b8' }),
+          bucketSection('✕ Cancelled',          handoffBuckets.cancelled,  'cancelled',  { open: false, accent: '#94a3b8' }),
         ].join('')
       : `<div class="card text-center text-muted" style="padding:40px">No design handoffs yet. Click "+ New Handoff" to upload a style list from Design.</div>`;
 
@@ -2887,16 +2906,19 @@ const AdminViews = (() => {
         </div>
       </div>` : '';
 
+    // Batch-review SRs get their own prominent panel
+    const batchReviewRequests = requests.filter(r => r.status === 'batch-review');
+
     // Bucket the requests for grouped display. Complete = linked to a
     // program OR status='converted'. Cancelled = explicit status flag.
-    // Everything else (submitted / draft, no program yet) is In Progress.
+    // batch-review handled separately above.
     const srBuckets = {
-      inProgress: requests.filter(r => r.status !== 'cancelled' && !r.linkedProgramId && r.status !== 'converted'),
-      complete:   requests.filter(r =>  r.linkedProgramId || r.status === 'converted'),
+      inProgress: requests.filter(r => r.status !== 'cancelled' && r.status !== 'converted' && r.status !== 'batch-review' && !r.linkedProgramId),
+      complete:   requests.filter(r => (r.linkedProgramId || r.status === 'converted') && r.status !== 'batch-review'),
       cancelled:  requests.filter(r => r.status === 'cancelled'),
     };
 
-    const statusMap = { submitted: 'badge-costing', converted: 'badge-placed', draft: 'badge-pending' };
+    const statusMap = { submitted: 'badge-costing', converted: 'badge-placed', draft: 'badge-pending', 'batch-review': 'badge-amber' };
     const buildRow = r => {
       const d = new Date(r.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
       const hasQtyPrice = (r.styles||[]).some(s => (s.projQty > 0) && (s.projSell > 0));
@@ -2968,13 +2990,44 @@ const AdminViews = (() => {
         </details>`;
     };
 
-    const srSections = requests.length
+    const batchReviewPanel = batchReviewRequests.length ? `
+      <div class="card mb-4" style="border-color:#f59e0b;border-left:3px solid #f59e0b">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+          <div>
+            <div class="font-bold" style="color:#f59e0b">📦 New Batch Releases — Confirm Quantities</div>
+            <div class="text-sm text-muted mt-1">Design released new styles in batches. Review each batch and add Proj Qty &amp; Sell Price, then convert to add them to the program.</div>
+          </div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          ${batchReviewRequests.map(r => {
+            const d = new Date(r.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+            const batchStyles = (r.styles || []);
+            const batchLabel  = batchStyles[0]?.batchLabel || 'Batch';
+            return `<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:var(--bg-elevated);border-radius:var(--radius-sm);border:1px solid var(--border)">
+              <div style="display:flex;gap:16px;align-items:center">
+                <div>
+                  <div class="font-bold">${r.season||'—'} ${r.year||''}${r.brand ? ' · '+r.brand : ''}${r.retailer ? ' · '+r.retailer : ''}</div>
+                  <div class="text-sm text-muted">${batchLabel} · ${batchStyles.length} new styles · Released ${d}</div>
+                </div>
+                <span class="tag" style="background:rgba(245,158,11,0.12);color:#f59e0b">📦 ${batchLabel}</span>
+              </div>
+              <div style="display:flex;gap:8px">
+                <button class="btn btn-secondary btn-sm" onclick="App.openSalesRequestDetail('${r.id}')">Review Quantities</button>
+                ${r.linkedProgramId ? `<span class="badge badge-placed" style="cursor:pointer" onclick="App.navigate('cost-summary','${r.linkedProgramId}')">→ Program</span>` : ''}
+              </div>
+            </div>`;
+          }).join('')}
+        </div>
+      </div>` : '';
+
+    const nonBatchRequests = requests.filter(r => r.status !== 'batch-review');
+    const srSections = nonBatchRequests.length
       ? [
           bucketSection('🟢 In Progress', srBuckets.inProgress, 'inProgress', { open: true,  accent: '#22c55e' }),
           bucketSection('✅ Complete',    srBuckets.complete,   'complete',   { open: false, accent: '#6366f1' }),
           bucketSection('✕ Cancelled',    srBuckets.cancelled,  'cancelled',  { open: false, accent: '#94a3b8' }),
         ].join('')
-      : `<div class="card text-center text-muted" style="padding:40px">No sales requests yet. Build one from a Design Handoff above${_isPlanning ? '.' : ', or click "+ New Request" to create manually.'}</div>`;
+      : (!batchReviewRequests.length ? `<div class="card text-center text-muted" style="padding:40px">No sales requests yet. Build one from a Design Handoff above${_isPlanning ? '.' : ', or click "+ New Request" to create manually.'}</div>` : '');
 
     return `
     <div class="page-header">
@@ -2982,8 +3035,170 @@ const AdminViews = (() => {
         <p class="page-subtitle">Costing requests from Planning &amp; Sales — convert to a Program when ready</p></div>
       ${_isPlanning ? '' : `<button class="btn btn-primary" onclick="App.openNewSalesRequestModal()">＋ New Request</button>`}
     </div>
+    ${batchReviewPanel}
     ${availablePanel}
     ${srSections}`;
+  }
+
+  // ── Handoff Detail — full-page batch release view ────────────────────────────
+  function renderHandoffDetail(handoffId) {
+    const h = API.DesignHandoffs.get(handoffId);
+    if (!h) return `<div class="empty-state"><div class="icon">❌</div><h3>Handoff not found</h3><p><button class="btn btn-secondary" onclick="App.navigate('design-handoff')">← Back</button></p></div>`;
+
+    const styles       = h.stylesList || [];
+    const releases     = h.batchReleases || [];
+    const releasedSet  = new Set(releases.flatMap(b => b.styleIds || []));
+    const releasedCount = releasedSet.size;
+    const totalCount   = styles.length;
+
+    // Next logical batch label
+    const existingLabels = releases.map(b => b.batchLabel);
+    const nextBatchNum   = existingLabels.length + 1;
+    const suggestedLabel = `Batch ${nextBatchNum}`;
+
+    const fmtDate = iso => iso ? new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
+
+    // Progress bar
+    const pct = totalCount ? Math.round((releasedCount / totalCount) * 100) : 0;
+    const progressBar = `
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:4px">
+        <div style="flex:1;background:var(--border);border-radius:99px;height:8px;overflow:hidden">
+          <div style="width:${pct}%;background:#6366f1;height:100%;border-radius:99px;transition:width 0.3s"></div>
+        </div>
+        <span class="text-sm font-bold" style="color:#6366f1;white-space:nowrap">${releasedCount} / ${totalCount} styles released</span>
+      </div>`;
+
+    // Batch release history chips
+    const historyChips = releases.length ? `
+      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px">
+        ${releases.map((b, i) => {
+          const colors = ['#6366f1','#22c55e','#f59e0b','#ef4444','#0ea5e9','#a855f7'];
+          const c = colors[i % colors.length];
+          return `<span class="tag" style="background:${c}20;color:${c};font-weight:600;border:1px solid ${c}40">
+            ${b.batchLabel} <span class="text-muted" style="font-weight:400">· ${(b.styleIds||[]).length} styles · ${fmtDate(b.releasedAt)}</span>
+          </span>`;
+        }).join('')}
+      </div>` : '';
+
+    // Color palette indexed by batch label
+    const batchColors = ['#6366f1','#22c55e','#f59e0b','#ef4444','#0ea5e9','#a855f7'];
+    const batchColorMap = {};
+    releases.forEach((b, i) => { batchColorMap[b.batchLabel] = batchColors[i % batchColors.length]; });
+
+    // Style rows — unreleased rows have an editable per-style batchLabel input
+    const styleRows = styles.map((s) => {
+      const isReleased   = releasedSet.has(s.id);
+      const releasedBatch = isReleased ? releases.find(b => (b.styleIds||[]).includes(s.id)) : null;
+      const batchColor    = releasedBatch ? (batchColorMap[releasedBatch.batchLabel] || '#6366f1') : null;
+      const batchCell     = releasedBatch
+        ? `<span class="tag" style="background:${batchColor}20;color:${batchColor};font-weight:700;font-size:0.7rem">${releasedBatch.batchLabel}</span>`
+        : `<input class="form-input hd-label-input" type="text"
+             data-style-id="${s.id}"
+             value="${(s.batchLabel || suggestedLabel).replace(/"/g,'&quot;')}"
+             placeholder="${suggestedLabel}"
+             style="width:110px;padding:4px 8px;font-size:0.82rem"
+             oninput="App._hdUpdateReleaseCount('${h.id}')"
+             onblur="App._hdSaveBatchLabel('${h.id}',this.dataset.styleId,this.value.trim()||'${suggestedLabel}')"
+             onkeydown="if(event.key==='Enter')this.blur()">`;
+      return `<tr class="${isReleased ? 'hd-row-released' : 'hd-row-unreleased'}" data-style-id="${s.id}" style="${isReleased ? 'opacity:0.55' : ''}">
+        <td style="width:32px;text-align:center;padding:8px">
+          ${isReleased ? `<span style="color:#6366f1;font-size:1.1rem">✓</span>` : `<span style="color:#94a3b8;font-size:1rem">○</span>`}
+        </td>
+        <td class="primary font-bold" style="padding:8px 12px">${s.styleNumber || '—'}</td>
+        <td style="padding:8px 12px">${s.styleName || '—'}</td>
+        <td class="text-sm text-muted" style="padding:8px 12px">${s.fabrication || s.fabric || '—'}</td>
+        <td style="padding:8px 12px">${batchCell}</td>
+        <td class="text-sm text-muted" style="padding:8px 12px">
+          ${isReleased ? `<span class="tag" style="color:#22c55e">Released</span>` : `<span class="tag" style="color:#f59e0b">Pending</span>`}
+        </td>
+      </tr>`;
+    }).join('');
+
+    // Fabrics collapsible
+    const fabricRows = (h.fabricsList || []).map(f =>
+      `<tr><td class="font-bold" style="padding:8px 12px">${f.fabricCode||'—'}</td><td style="padding:8px 12px">${f.fabricName||'—'}</td><td class="text-sm" style="padding:8px 12px">${f.content||'—'}</td><td class="text-sm text-muted" style="padding:8px 12px">${f.supplier||'—'}</td></tr>`
+    ).join('');
+
+    return `
+    <div id="hd-page">
+      <!-- PAGE HEADER -->
+      <div class="page-header">
+        <div style="display:flex;align-items:center;gap:14px">
+          <button class="btn btn-ghost btn-sm" onclick="App.navigate('design-handoff')">← Back</button>
+          <div>
+            <h1 class="page-title" style="margin:0">🎨 ${[h.season,h.year,h.brand,h.tier,h.gender].filter(Boolean).join(' · ')}</h1>
+            <p class="page-subtitle" style="margin:4px 0 0">Design Handoff${h.supplierRequestNumber ? ` · SR# ${h.supplierRequestNumber}` : ''}</p>
+          </div>
+        </div>
+        ${h.linkedProgramId
+          ? `<button class="btn btn-secondary btn-sm" onclick="App.navigate('cost-summary','${h.linkedProgramId}')">→ View Program</button>`
+          : ''}
+      </div>
+
+      <!-- PROGRESS -->
+      <div class="card mb-4">
+        ${progressBar}
+        ${historyChips}
+      </div>
+
+      <!-- TOOLBAR -->
+      <div style="margin-bottom:12px">
+        <p class="text-sm text-muted" style="margin:0 0 8px">
+          ① Assign batch labels to styles in the table below &nbsp;·&nbsp;
+          ② Enter that label here to release matching styles
+        </p>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <label class="text-sm font-bold" for="hd-batch-label" style="white-space:nowrap">Release batch:</label>
+          <input id="hd-batch-label" class="form-input" type="text" value="${suggestedLabel}"
+            placeholder="e.g. Batch 2" style="width:140px;padding:6px 10px"
+            oninput="App._hdUpdateReleaseCount('${h.id}')">
+          <button class="btn btn-primary" id="hd-release-btn" onclick="App.releaseBatch('${h.id}')" disabled>
+            Release Batch
+          </button>
+          <span id="hd-selected-count" class="text-sm text-muted"></span>
+        </div>
+      </div>
+
+      <!-- STYLES TABLE -->
+      <div class="card" style="padding:0;margin-bottom:16px">
+        <div class="table-wrap">
+          <table>
+            <thead><tr>
+              <th style="width:32px"></th>
+              <th>Style #</th>
+              <th>Style Name</th>
+              <th>Fabrication</th>
+              <th>Batch <span class="text-muted" style="font-weight:400;font-size:0.75rem">(assign label per style)</span></th>
+              <th>Status</th>
+            </tr></thead>
+            <tbody id="hd-style-tbody">${styleRows}</tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- FABRICS (collapsible) -->
+      ${(h.fabricsList||[]).length ? `
+      <details style="margin-top:8px">
+        <summary style="cursor:pointer;padding:8px 0;font-weight:700;font-size:0.9rem;list-style:none;display:flex;align-items:center;gap:8px">
+          <span style="color:var(--accent)">▸</span> Fabrics (${(h.fabricsList||[]).length})
+        </summary>
+        <div class="card" style="padding:0;margin-top:8px">
+          <div class="table-wrap"><table>
+            <thead><tr><th>Code</th><th>Name</th><th>Content</th><th>Supplier</th></tr></thead>
+            <tbody>${fabricRows}</tbody>
+          </table></div>
+        </div>
+      </details>` : ''}
+    </div>
+
+    <script>
+    (function(){
+      // Prime the release button count on initial render
+      if (typeof App !== 'undefined' && App._hdUpdateReleaseCount) {
+        App._hdUpdateReleaseCount('${h.id}');
+      }
+    })();
+    </script>`;
   }
 
   // ── Build Request from Handoff — FULL PAGE SPREADSHEET ─────────────────────
@@ -5250,8 +5465,8 @@ const AdminViews = (() => {
     renderPendingChanges, renderStaff, renderDepartments,
     renderTradingCompaniesPC, renderInternalProgramsPC, renderCOOPC,
     crossProgramTable, statusBadge, toggleTCCols, expandAllTCs, collapseAllTCs,
-    // Pre-costing workflow (v11)
-    renderDesignHandoff, renderSalesRequests, renderBuildFromHandoff, renderFabricStandards, renderRecostQueue,
+    // Pre-costing workflow (v11 + v12 batch release)
+    renderDesignHandoff, renderHandoffDetail, renderSalesRequests, renderBuildFromHandoff, renderFabricStandards, renderRecostQueue,
     renderBottleneckTracker, designChangeHistoryPanel, renderAllDesignChanges,
     // Design/Sales costing view (v13)
     renderDesignCostingView, renderCostHistoryTimeline,
