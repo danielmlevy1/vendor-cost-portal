@@ -254,6 +254,7 @@ App = (() => {
     const navEl      = document.getElementById('sidebar-nav');
     const userEl     = document.getElementById('sidebar-user');
     const isPlanning = state.user.role === 'planning';
+    const isSales    = state.user.role === 'sales';
     const pendingCount = isAdmin ? API.PendingChanges.pending().length : 0;
     const badgeHtml  = pendingCount > 0 ? `<span class="pending-badge">${pendingCount}</span>` : '';
 
@@ -327,7 +328,7 @@ App = (() => {
         <button class="nav-item ${state.route === 'dashboard' ? 'active' : ''}" onclick="App.navigate('dashboard')"><span class="icon">🏡</span> Dashboard</button>
         <button class="nav-item ${state.route === 'fabric-standards' ? 'active' : ''}" onclick="App.navigate('fabric-standards')"><span class="icon">🧵</span> Standards Requests</button>
         <button class="nav-item ${state.route === 'factories' ? 'active' : ''}" onclick="App.navigate('factories')"><span class="icon">🏭</span> Factories</button>
-      \` : isPlanning ? \`
+      \` : (isPlanning || isSales) ? \`
         <button class="nav-item ${state.route === 'dashboard' ? 'active' : ''}" onclick="App.navigate('dashboard')"><span class="icon">🏡</span> Dashboard</button>
         ${programsGroup}
         <button class="nav-item ${state.route === 'sales-request' ? 'active' : ''}" onclick="App.navigate('sales-request')"><span class="icon">📝</span> Sales Requests</button>
@@ -356,7 +357,7 @@ App = (() => {
     if (userEl) userEl.innerHTML = `
       <div class="user-info" onclick="App.logout()" title="Sign out">
         <div class="user-avatar">${state.user.name.charAt(0).toUpperCase()}</div>
-        <div><div class="user-name">${state.user.name}</div><div class="user-role">${isAdmin ? 'Admin' : isPC ? 'Production Coordinator' : isPlanning ? 'Planning & Sales' : isDesign ? 'Design' : isTechDesign ? 'Tech Design' : isProdDev ? 'Product Development' : 'Trading Co.'}</div></div>
+        <div><div class="user-name">${state.user.name}</div><div class="user-role">${isAdmin ? 'Admin' : isPC ? 'Production Coordinator' : isPlanning ? 'Planning & Sales' : isSales ? 'Sales' : isDesign ? 'Design' : isTechDesign ? 'Tech Design' : isProdDev ? 'Product Development' : 'Trading Co.'}</div></div>
       </div>`;
 
     renderRoute();
@@ -372,11 +373,12 @@ App = (() => {
     const isDesign     = user.role === 'design';
     const isTechDesign = user.role === 'tech_design';
     const isProdDev    = user.role === 'prod_dev';
+    const isSales      = user.role === 'sales';
 
     // ── Pre-costing shared routes (async) ──
     if (route === 'fabric-standards') {
       mc.innerHTML = '<div class="empty-state"><div class="icon">🧵</div><h3>Loading…</h3></div>';
-      const isVendor = !isAdmin && !isPC && !isPlanning && !isDesign;
+      const isVendor = !isAdmin && !isPC && !isPlanning && !isSales && !isDesign;
       AdminViews.renderFabricStandards(user.role, user.tcId).then(html => { mc.innerHTML = html; });
       return;
     }
@@ -424,7 +426,7 @@ App = (() => {
       else if (route === 'buy-summary')    mc.innerHTML = AdminViews.renderBuySummary(routeParam, user.role);
       else if (route === 'cost-summary')   mc.innerHTML = AdminViews.renderDesignCostingView(routeParam, user.role); // redirect to role view
       else mc.innerHTML = AdminViews.renderDashboard(user.role, user);
-    } else if (isPlanning) {
+    } else if (isPlanning || isSales) {
       // Planning/Sales — programs, buy summaries, pre-costing
       if (route === 'dashboard')               mc.innerHTML = AdminViews.renderDashboard(user.role, user);
       else if (route === 'programs')           mc.innerHTML = AdminViews.renderPrograms(routeParam);

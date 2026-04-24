@@ -2869,7 +2869,7 @@ const AdminViews = (() => {
   // ── Sales Request ──────────────────────────────────────────
   function renderSalesRequests() {
     const _srUser    = typeof App !== 'undefined' && App._getState ? App._getState()?.user || {} : {};
-    const _isPlanning = _srUser.role === 'planning';
+    const _isPlanning = _srUser.role === 'planning' || _srUser.role === 'sales';
     const requests = API.SalesRequests.all().slice().reverse();
     const allHandoffs = API.DesignHandoffs.all();
     // Handoffs not yet linked to a Sales Request — available for Sales to build from
@@ -3340,7 +3340,7 @@ const AdminViews = (() => {
   function renderRecostQueue() {
     const user    = typeof App !== 'undefined' && App._getState ? App._getState()?.user || {} : {};
     const role    = user.role || '';
-    const isSales = role === 'planning';
+    const isSales = role === 'planning' || role === 'sales';
     const isPC    = role === 'admin' || role === 'pc';
 
     const all = API.RecostRequests.all().slice().reverse();
@@ -4411,9 +4411,9 @@ const AdminViews = (() => {
       return d.toISOString().slice(0, 10);
     };
 
-    const roleLabel = r => ({ admin:'Production', pc:'Production', planning:'Sales', vendor:'TC', design:'Design', tech_design:'Tech Design', prod_dev:'PD' }[r] || r);
+    const roleLabel = r => ({ admin:'Production', pc:'Production', planning:'Sales', sales:'Sales', vendor:'TC', design:'Design', tech_design:'Tech Design', prod_dev:'PD' }[r] || r);
     const isProd   = role === 'admin' || role === 'pc';
-    const isSales  = role === 'planning';
+    const isSales  = role === 'planning' || role === 'sales';
     const isVendor = role === 'vendor';
 
     const payload = API.DeliveryPlans.get(programId);
