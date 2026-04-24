@@ -1,5 +1,22 @@
 # Vendor Cost Portal — SQLite Migration Progress
 
+## Where We Left Off
+*(Updated 2026-04-24)*
+
+- **Backend + frontend SQLite migration:** complete
+- **Browser testing phase:** in progress
+- **Batch release feature for design handoffs:** complete — includes TC grey-out when already released, duplicate label validation, and live label editing UX
+- **Environment:** moved from local VS Code to GitHub Codespaces; server runs on port 3002
+- **Sales routing bug:** My Programs and All Styles both land on the dashboard instead of their correct views — not yet fixed
+- **Next up:**
+  1. Fix Sales routing bug
+  2. Consolidate Design Change Log + Recost Queue into a unified view
+  3. Fix missing history ticker on style rows
+  4. Extend FOB history ticker to log all style updates (not just FOB changes)
+
+---
+
+
 ## Overview
 Migration of the Vendor Cost Portal from a fully client-side, `localStorage`-backed
 data layer (`db.js` / `DB.*` namespace) to a server-backed REST architecture
