@@ -15,7 +15,7 @@ const apiSupportingRouter  = require('./routes-supporting');
 const db                   = require('./database');
 
 const app  = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3002;
 
 // ── Env config ─────────────────────────────────────────────────
 const SMTP_HOST     = process.env.SMTP_HOST     || 'smtp.gmail.com';

@@ -21,7 +21,7 @@ Target deployment: **Azure App Service** (Linux, Node 20, SQLite on persistent v
 
 ```sh
 PORT=3002 node server.js          # dev convention (avoid conflict with other local apps)
-node server.js                    # defaults to port 3000
+node server.js                    # defaults to port 3002
 ```
 
 Default seed credentials (all in `database.js`):

@@ -4,7 +4,7 @@
 ```sh
 node server.js
 ```
-- Listens on `PORT` (default `3000`) → http://localhost:3000
+- Listens on `PORT` (default `3002`) → http://localhost:3002
 - Serves static frontend files from the project root and mounts the REST API
   under `/api`.
 - Auto-creates [data/portal.db](../data/) on first run, applies
@@ -102,7 +102,7 @@ See [.env.example](../.env.example) for a copy-paste template.
 
 | Var                    | Default                                                | Notes                                    |
 | ---------------------- | ------------------------------------------------------ | ---------------------------------------- |
-| `PORT`                 | `3000`                                                 | HTTP port (Azure App Service = `8080`)   |
+| `PORT`                 | `3002`                                                 | HTTP port (Azure App Service = `8080`)   |
 | `DB_PATH`              | `data/portal.db`                                       | SQLite file path                         |
 | `JWT_SECRET`           | `dev-secret-change-in-prod`                            | **Set in prod**                          |
 | `JWT_EXPIRY`           | `8h`                                                   | jsonwebtoken format                      |

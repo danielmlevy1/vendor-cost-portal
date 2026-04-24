@@ -32,7 +32,7 @@ After creation:
 4. **Authentication → Implicit grant and hybrid flows**: leave *unchecked*
    (we use authorization-code flow, not implicit).
 5. Add a **second Redirect URI** for local dev:
-   `http://localhost:3000/api/auth/microsoft/callback`.
+   `http://localhost:3002/api/auth/microsoft/callback`.
 
 ---
 
