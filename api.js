@@ -748,16 +748,41 @@ const API = (() => {
 
   // ── Design Changes ────────────────────────────────────────────
 
+  function _dcCacheInsert(entries) {
+    for (const e of entries) {
+      if (!cache.designChanges[e.styleId]) cache.designChanges[e.styleId] = [];
+      if (!cache.designChanges[e.styleId].some(x => x.id === e.id))
+        cache.designChanges[e.styleId].push(e);
+    }
+  }
+
   const DesignChanges = {
     all() { return Object.values(cache.designChanges).flat(); },
     byStyle(styleId) { return cache.designChanges[styleId] || []; },
     pendingAll() { return Object.values(cache.designChanges).flat().filter(c => c.status === 'pending'); },
+    async fetchAll() {
+      const rows = await GET('/api/design-changes');
+      cache.designChanges = {};
+      _dcCacheInsert(rows);
+      return rows;
+    },
+    async fetchByProgram(programId) {
+      const rows = await GET(`/api/programs/${programId}/design-changes`);
+      _dcCacheInsert(rows);
+      return rows;
+    },
     async fetchByStyle(styleId) {
       cache.designChanges[styleId] = await GET(`/api/styles/${styleId}/design-changes`);
       return cache.designChanges[styleId];
     },
     async log(data) {
       const entry = await POST('/api/design-changes', { status: 'pending', ...data });
+      if (!cache.designChanges[data.styleId]) cache.designChanges[data.styleId] = [];
+      cache.designChanges[data.styleId].unshift(entry);
+      return entry;
+    },
+    async logConfirmed(data) {
+      const entry = await POST('/api/design-changes', { status: 'confirmed', ...data });
       if (!cache.designChanges[data.styleId]) cache.designChanges[data.styleId] = [];
       cache.designChanges[data.styleId].unshift(entry);
       return entry;
@@ -1325,6 +1350,7 @@ const API = (() => {
         preload.global(),
         RecostRequests.fetchQueues().catch(() => {}),
         PendingChanges.fetch().catch(() => {}),
+        DesignChanges.fetchAll().catch(() => {}),
       ]);
     },
     async programs() {
@@ -1352,6 +1378,7 @@ const API = (() => {
           Revisions.fetchBySubmission(s.id).catch(() => {}),
         ])),
         CostHistory.fetchByProgram(id).catch(() => {}),
+        DesignChanges.fetchByProgram(id).catch(() => {}),
       ]);
     },
     async staff() {

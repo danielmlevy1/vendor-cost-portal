@@ -1007,6 +1007,15 @@ function dcFromRow(r) {
   };
 }
 
+// GET /api/design-changes  — all, optionally filtered by ?status=pending|confirmed
+router.get('/design-changes', requireAuth, (req, res) => {
+  const { status } = req.query;
+  const rows = status
+    ? db.prepare('SELECT * FROM design_changes WHERE status = ? ORDER BY changed_at DESC').all(status)
+    : db.prepare('SELECT * FROM design_changes ORDER BY changed_at DESC').all();
+  res.json(rows.map(dcFromRow));
+});
+
 // GET /api/styles/:id/design-changes
 router.get('/styles/:id/design-changes', requireAuth, (req, res) => {
   res.json(db.prepare('SELECT * FROM design_changes WHERE style_id = ? ORDER BY changed_at DESC').all(req.params.id).map(dcFromRow));

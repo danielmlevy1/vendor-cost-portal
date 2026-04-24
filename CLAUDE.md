@@ -74,7 +74,7 @@ else if (route === 'design-handoff' || route === 'handoff-detail')
 
 ### Cache-Busting
 
-All four script/CSS tags in `index.html` share a single version string (`?v=125` currently). **Bump this number whenever any JS or CSS file changes** to avoid stale-browser-cache bugs.
+All four script/CSS tags in `index.html` share a single version string (`?v=126` currently). **Bump this number whenever any JS or CSS file changes** to avoid stale-browser-cache bugs.
 
 ### IIFE Modules
 
@@ -174,7 +174,7 @@ The batch release feature + several QA fixes are built but **not yet committed**
 - **Batch Release:** Design handoffs now have per-style `batchLabel` fields; `POST /api/design-handoffs/:id/release-batch` creates styles in the linked program and a `batch-review` Sales Request; `renderHandoffDetail` shows per-style label inputs + toolbar filter; TC views show unreleased styles greyed out
 - **Sales nav fix:** `isPlanning` route handler now handles `''`, `'vendor-home'`, `'my-styles'` (maps to `renderPrograms`) instead of falling through to dashboard
 - **Batch release UX:** Toolbar renamed "Release batch:"; 2-step instruction added; per-style label inputs now fire `_hdUpdateReleaseCount` live on `oninput`
-- **Cache-buster at v=125**
+- **Cache-buster at v=126**
 
 ### Known Open Items / Deferred
 1. **Consolidate Design Changes + Recost Queue** into one page (was interrupted)

@@ -80,7 +80,7 @@ App = (() => {
       else if (route === 'pending-changes')
         await API.preload.pendingChanges();
       else if (route === 'design-changes')
-        await API.preload.programs();
+        await Promise.all([API.preload.programs(), API.DesignChanges.fetchAll().catch(() => {})]);
       else if (route === 'factories' || route === 'my-factories')
         await API.preload.factories();
       else if (route === '' || route === 'vendor-home' || route === 'vendor-program' || route === 'my-styles') {
@@ -1642,12 +1642,23 @@ App = (() => {
   }
 
   // ── Inline Style Field Save (non-formula cells) ────────────
+  const _STYLE_HISTORY_FIELDS = {
+    styleName: 'Style Name', fabrication: 'Fabrication',
+    projQty: 'Proj Qty', projSellPrice: 'Proj Sell',
+    dutyRate: 'Duty Rate', estFreight: 'Est Freight',
+  };
+
   async function saveStyleInline(styleId, inputEl) {
     const field = inputEl.dataset.field;
     const raw = inputEl.value.trim();
     const numericFields = ['projQty', 'projSellPrice', 'dutyRate', 'estFreight', 'specialPackaging'];
     let value = numericFields.includes(field) ? (raw === '' ? null : parseFloat(raw)) : raw;
     if (numericFields.includes(field) && isNaN(value)) value = null;
+
+    // Capture old value for history logging before the cache is updated
+    const styleBefore = API.Styles.get(styleId);
+    const oldRaw = styleBefore ? styleBefore[field] : undefined;
+
     await API.Styles.update(styleId, { [field]: value });
     // Update the Target LDP cell in this row — find it by data-col
     const row = inputEl.closest('tr');
@@ -1688,6 +1699,44 @@ App = (() => {
         if (freightCell) freightCell.textContent = r.freight != null ? fmt(r.freight) : 'N/A';
         if (ldpCell) ldpCell.innerHTML = `<span>${fmt(r.ldp)}</span>`;
       });
+    }
+
+    // Log field change as a confirmed design change for tracked fields
+    if (_STYLE_HISTORY_FIELDS[field] && styleBefore) {
+      const fmtVal = (f, v) => {
+        if (v == null || v === '') return null;
+        if (f === 'projSellPrice' || f === 'estFreight') return '$' + parseFloat(v).toFixed(2);
+        if (f === 'dutyRate') return (parseFloat(v) * 100).toFixed(1) + '%';
+        if (f === 'projQty') return Number(v).toLocaleString();
+        return String(v);
+      };
+      const oldDisplay = fmtVal(field, oldRaw);
+      const newDisplay = fmtVal(field, value);
+      if (oldDisplay !== newDisplay) {
+        const styleAfter = API.Styles.get(styleId);
+        const prog = API.Programs.get(state.routeParam);
+        API.DesignChanges.logConfirmed({
+          styleId,
+          programId: styleAfter?.programId || state.routeParam || null,
+          styleNumber: styleAfter?.styleNumber || null,
+          field: _STYLE_HISTORY_FIELDS[field],
+          description: `${_STYLE_HISTORY_FIELDS[field]} updated`,
+          previousValue: oldDisplay,
+          newValue: newDisplay,
+          changedBy: state.user?.id || null,
+          changedByName: state.user?.name || state.user?.email || null,
+        }).then(() => {
+          // Refresh the dcBadge cell in this row (sibling before styleNum td)
+          const dcCell = row?.querySelector('td[data-col="styleNum"]')?.previousElementSibling;
+          if (!dcCell) return;
+          const dcChanges = API.DesignChanges.byStyle(styleId);
+          const dcPending = dcChanges.filter(c => c.status === 'pending').length;
+          const dcTotal   = dcChanges.length;
+          dcCell.innerHTML = dcTotal > 0
+            ? `<span class="revision-badge" style="cursor:pointer;font-size:0.68rem;white-space:nowrap" title="${dcPending > 0 ? dcPending + ' pending' : ''} ${dcTotal} change${dcTotal !== 1 ? 's' : ''}" onclick="App.openDesignChangeModal('${styleId}')">🕒 ${dcTotal}${dcPending > 0 ? `<span style='color:#f59e0b;font-weight:700'> ·${dcPending}p</span>` : ''}</span>`
+            : '';
+        }).catch(() => {});
+      }
     }
   }
 
