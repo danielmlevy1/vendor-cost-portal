@@ -914,10 +914,8 @@ router.get('/programs/:id/assignments', requireAuth, (req, res) => {
   if (req.user.role === 'vendor') {
     rows = rows.filter(r => r.tc_id === req.user.tcId);
     if (!rows.length) return res.status(403).json({ error: 'Not assigned to this program' });
-  } else if (!['admin', 'pc'].includes(req.user.role)) {
-    // Design/planning can read, but no other roles. Keep it simple for now.
-    return res.status(403).json({ error: 'Insufficient permissions' });
   }
+  // All authenticated internal users (admin, pc, planning, design, tech_design, prod_dev) can read.
   res.json(rows.map(assignmentToDto));
 });
 

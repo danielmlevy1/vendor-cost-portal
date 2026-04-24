@@ -3156,7 +3156,15 @@ const AdminViews = (() => {
             Release Batch
           </button>
           <span id="hd-selected-count" class="text-sm text-muted"></span>
+          <div style="flex:1"></div>
+          <button class="btn btn-secondary btn-sm" onclick="App.downloadHandoffStylesSheet('${h.id}')" title="Download style list with current batch labels">⬇ Style List</button>
+          <label class="btn btn-secondary btn-sm" style="cursor:pointer;margin:0" title="Re-upload to update batch labels">
+            ⬆ Update Labels
+            <input type="file" accept=".xlsx,.xls,.csv" style="display:none"
+              onchange="App.importHandoffStyles('${h.id}', event)">
+          </label>
         </div>
+        <div id="hd-import-preview" style="margin-top:10px"></div>
       </div>
 
       <!-- STYLES TABLE -->

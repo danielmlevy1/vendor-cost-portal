@@ -3916,6 +3916,7 @@ App._parseHandoffCSV = function(text) {
     styleName:   rawHeaders.findIndex(h => /style.?name/.test(h)),
     fabric:      rawHeaders.findIndex(h => /fabric|fabrication/.test(h)),
     notes:       rawHeaders.findIndex(h => /note|comment|remark/.test(h)),
+    batchLabel:  rawHeaders.findIndex(h => /^batch/.test(h)),
   };
   // Fallback to positional (col 0,1,2,3) if headers aren't recognized
   const pick = (row, key, pos) => {
@@ -3937,6 +3938,7 @@ App._parseHandoffCSV = function(text) {
       styleName:   pick(cols, 'styleName',   1),
       fabric:      pick(cols, 'fabric',       2),
       notes:       pick(cols, 'notes',        3),
+      batchLabel:  colIdx.batchLabel >= 0 ? (pick(cols, 'batchLabel', -1) || 'Batch 1') : 'Batch 1',
     };
   }).filter(r => r.styleNumber);
 };
@@ -3980,13 +3982,14 @@ App._processHandoffFile = function(file) {
     if (btn) btn.disabled = false;
     preview.innerHTML =
       '<div class="alert alert-info" style="margin-bottom:12px">✓ ' + rows.length + ' styles loaded from <strong>' + file.name + '</strong></div>' +
-      '<div class="table-wrap"><table><thead><tr><th>Style Number</th><th>Style Name</th><th>Fabric</th><th>Notes</th></tr></thead><tbody>' +
+      '<div class="table-wrap"><table><thead><tr><th>Style Number</th><th>Style Name</th><th>Fabric</th><th>Notes</th><th>Batch</th></tr></thead><tbody>' +
       rows.slice(0, 10).map(r =>
         '<tr>' +
         '<td class="primary font-bold">' + (r.styleNumber||'—') + '</td>' +
         '<td>' + (r.styleName||'—') + '</td>' +
         '<td class="text-sm">' + (r.fabric||'—') + '</td>' +
         '<td class="text-sm text-muted">' + (r.notes||'—') + '</td>' +
+        '<td class="text-sm">' + (r.batchLabel||'Batch 1') + '</td>' +
         '</tr>'
       ).join('') +
       '</tbody></table></div>' +
@@ -4022,6 +4025,7 @@ App._processHandoffFile = function(file) {
           styleName:   rawHdrs.findIndex(h => /style.?name/.test(h)),
           fabric:      rawHdrs.findIndex(h => /fabric|fabrication/.test(h)),
           notes:       rawHdrs.findIndex(h => /note|comment|remark/.test(h)),
+          batchLabel:  rawHdrs.findIndex(h => /^batch/.test(h)),
         };
         const pick = (row, key, pos) => { const i = colIdx[key] >= 0 ? colIdx[key] : pos; return String(row[i] || '').trim(); };
         const styleRows = stylesAoa.slice(1).map(row => ({
@@ -4029,6 +4033,7 @@ App._processHandoffFile = function(file) {
           styleName:   pick(row, 'styleName',   1),
           fabric:      pick(row, 'fabric',       2),
           notes:       pick(row, 'notes',        3),
+          batchLabel:  colIdx.batchLabel >= 0 ? (pick(row, 'batchLabel', -1) || 'Batch 1') : 'Batch 1',
         })).filter(r => r.styleNumber);
 
         // ── Tab 2: Fabrics (optional) ─────────────────────────────
@@ -4795,10 +4800,10 @@ App.downloadHandoffTemplate = function() {
 
   // Tab 1 — Styles
   const wsStyles = styledSheet([
-    ['Style Number', 'Style Name', 'Category', 'Fabrication / Fabric', 'Notes'],
-    ['HEW243', 'Running Short', 'Bottoms', '88% Poly 12% Spandex', ''],
-    ['HEW244', 'Track Pant',   'Bottoms', '100% Polyester',        'Revised hem length'],
-  ], [{ wch: 16 }, { wch: 24 }, { wch: 18 }, { wch: 30 }, { wch: 32 }]);
+    ['Style Number', 'Style Name', 'Category', 'Fabrication / Fabric', 'Notes', 'Batch'],
+    ['HEW243', 'Running Short', 'Bottoms', '88% Poly 12% Spandex', '',                  'Batch 1'],
+    ['HEW244', 'Track Pant',   'Bottoms', '100% Polyester',        'Revised hem length','Batch 1'],
+  ], [{ wch: 16 }, { wch: 24 }, { wch: 18 }, { wch: 30 }, { wch: 32 }, { wch: 12 }]);
 
   // Tab 2 — Fabrics
   const wsFabrics = styledSheet([
@@ -4822,7 +4827,162 @@ App.downloadHandoffTemplate = function() {
   XLSX.writeFile(wb, 'design_handoff_template.xlsx');
 };
 
+// ── Download existing handoff's style list pre-populated for re-upload ─────────
+App.downloadHandoffStylesSheet = function(handoffId) {
+  if (typeof XLSX === 'undefined') { alert('SheetJS not loaded — please reload.'); return; }
+  const h = API.DesignHandoffs.get(handoffId);
+  if (!h) return;
+  const releasedSet = new Set((h.batchReleases || []).flatMap(b => b.styleIds || []));
 
+  const headerStyle = {
+    font:      { bold: true, color: { rgb: '1E293B' } },
+    fill:      { fgColor: { rgb: 'C7D8F0' }, patternType: 'solid' },
+    alignment: { horizontal: 'center' },
+    border:    { bottom: { style: 'thin', color: { rgb: '94A3B8' } } },
+  };
+  const releasedFill = { font: { color: { rgb: '94A3B8' } }, fill: { fgColor: { rgb: 'F8FAFC' }, patternType: 'solid' } };
+
+  const header = ['Style ID', 'Style Number', 'Style Name', 'Fabrication / Fabric', 'Notes', 'Batch', 'Released'];
+  const dataRows = (h.stylesList || []).map(s => [
+    s.id || '',
+    s.styleNumber || '',
+    s.styleName || '',
+    s.fabric || s.fabrication || '',
+    s.notes || '',
+    s.batchLabel || 'Batch 1',
+    releasedSet.has(s.id) ? 'YES' : '',
+  ]);
+
+  const ws = XLSX.utils.aoa_to_sheet([header, ...dataRows]);
+  ws['!cols'] = [{ wch: 18 }, { wch: 14 }, { wch: 24 }, { wch: 28 }, { wch: 28 }, { wch: 12 }, { wch: 10 }];
+  header.forEach((_, c) => { const ref = XLSX.utils.encode_cell({ r: 0, c }); if (ws[ref]) ws[ref].s = headerStyle; });
+  dataRows.forEach((row, r) => {
+    if (row[6] === 'YES') {
+      row.forEach((_, c) => { const ref = XLSX.utils.encode_cell({ r: r + 1, c }); if (ws[ref]) ws[ref].s = releasedFill; });
+    }
+  });
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Styles');
+  const fname = ['handoff', h.season, h.year, h.brand].filter(Boolean).join('-') + '-styles.xlsx';
+  App._xlsxDownload(wb, fname);
+};
+
+// ── Re-upload: update batch labels on an existing handoff ──────────────────────
+App.importHandoffStyles = async function(handoffId, event) {
+  const file = event?.target?.files?.[0];
+  if (!file) return;
+  event.target.value = '';
+
+  const h = API.DesignHandoffs.get(handoffId);
+  if (!h) return;
+  if (typeof XLSX === 'undefined') { alert('SheetJS not loaded — please reload.'); return; }
+
+  const reader = new FileReader();
+  reader.onload = async ev => {
+    try {
+      const wb  = XLSX.read(ev.target.result, { type: 'array' });
+      const ws  = wb.Sheets[wb.SheetNames[0]];
+      const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+      if (aoa.length < 2) { alert('No data rows found.'); return; }
+
+      const norm = h => String(h || '').trim().toLowerCase().replace(/[\s#*_]+/g, '');
+      const hdrs = aoa[0].map(norm);
+      const ci = {
+        styleId:    hdrs.findIndex(h => h === 'styleid'),
+        styleNum:   hdrs.findIndex(h => /stylenum|style#|stylenumber/.test(h)),
+        styleName:  hdrs.findIndex(h => h === 'stylename'),
+        fabric:     hdrs.findIndex(h => /fabric|fabrication/.test(h)),
+        notes:      hdrs.findIndex(h => /note|comment/.test(h)),
+        batchLabel: hdrs.findIndex(h => /^batch/.test(h)),
+      };
+      const get = (row, key) => ci[key] >= 0 ? String(row[ci[key]] || '').trim() : '';
+
+      // Build lookup by Style ID (primary) and Style Number (fallback)
+      const byId = {}, byNum = {};
+      aoa.slice(1).forEach(row => {
+        const id  = get(row, 'styleId');
+        const num = get(row, 'styleNum').toUpperCase();
+        if (id)  byId[id]  = row;
+        if (num) byNum[num] = row;
+      });
+
+      const releasedSet = new Set((h.batchReleases || []).flatMap(b => b.styleIds || []));
+
+      // Safety check: any uploaded row that maps to an already-released styleId blocks the whole upload
+      const blockedBatches = {};
+      (h.stylesList || []).forEach(s => {
+        if (!releasedSet.has(s.id)) return;
+        const match = byId[s.id] || byNum[(s.styleNumber || '').toUpperCase()];
+        if (!match) return;
+        const batch = (h.batchReleases || []).find(b => (b.styleIds || []).includes(s.id));
+        const label = batch?.batchLabel || 'Released';
+        blockedBatches[label] = (blockedBatches[label] || 0) + 1;
+      });
+
+      const preview = document.getElementById('hd-import-preview');
+
+      if (Object.keys(blockedBatches).length > 0) {
+        const detail = Object.entries(blockedBatches).map(([l, n]) => `${l} (${n} style${n !== 1 ? 's' : ''})`).join(', ');
+        const errMsg = `Cannot modify styles that have already been released. Released styles: ${detail}.`;
+
+        const stylesList = h.stylesList || [];
+        const previewRows = aoa.slice(1).map(row => {
+          const id  = get(row, 'styleId');
+          const num = get(row, 'styleNum');
+          const matchedStyle = stylesList.find(s =>
+            (id && s.id === id) || (num && (s.styleNumber || '').toUpperCase() === num.toUpperCase()));
+          const isBlocked = matchedStyle && releasedSet.has(matchedStyle.id);
+          const batch = get(row, 'batchLabel') || 'Batch 1';
+          return `<tr style="${isBlocked ? 'background:#fef2f2' : ''}">
+            <td class="primary font-bold">${num || id || '—'}</td>
+            <td class="text-sm">${get(row, 'styleName') || '—'}</td>
+            <td class="text-sm">${batch}</td>
+            <td>${isBlocked
+              ? '<span class="badge" style="background:#fee2e2;color:#b91c1c;font-size:0.7rem">🔒 Released — blocked</span>'
+              : '<span class="badge badge-placed" style="font-size:0.7rem">✓ OK</span>'}</td>
+          </tr>`;
+        }).join('');
+
+        if (preview) {
+          preview.innerHTML = `
+            <div class="alert alert-danger" style="margin-bottom:8px">${errMsg}</div>
+            <div class="table-wrap"><table>
+              <thead><tr><th>Style #</th><th>Style Name</th><th>Batch</th><th>Status</th></tr></thead>
+              <tbody>${previewRows}</tbody>
+            </table></div>`;
+        } else {
+          alert(errMsg);
+        }
+        return;
+      }
+
+      // All clear — apply updates to unreleased styles only
+      const hasBatchCol = ci.batchLabel >= 0;
+      const updated = (h.stylesList || []).map(s => {
+        if (releasedSet.has(s.id)) return s;
+        const match = byId[s.id] || byNum[(s.styleNumber || '').toUpperCase()];
+        if (!match) return s;
+        return Object.assign({}, s, {
+          batchLabel:  hasBatchCol ? (get(match, 'batchLabel') || 'Batch 1') : (s.batchLabel || 'Batch 1'),
+          styleName:   ci.styleName >= 0 && get(match, 'styleName')  ? get(match, 'styleName')  : s.styleName,
+          fabrication: ci.fabric    >= 0 && get(match, 'fabric')     ? get(match, 'fabric')     : s.fabrication,
+          fabric:      ci.fabric    >= 0 && get(match, 'fabric')     ? get(match, 'fabric')     : s.fabric,
+          notes:       ci.notes     >= 0                              ? get(match, 'notes')      : s.notes,
+        });
+      });
+
+      await API.DesignHandoffs.update(handoffId, { stylesList: updated });
+      if (preview) preview.innerHTML = '';
+      const mc = document.getElementById('content');
+      if (mc) mc.innerHTML = AdminViews.renderHandoffDetail(handoffId);
+      App._hdUpdateReleaseCount(handoffId);
+    } catch (err) {
+      alert('❌ Could not read file: ' + err.message);
+    }
+  };
+  reader.readAsArrayBuffer(file);
+};
 
 App.saveNewHandoff = async function(e) {
   e.preventDefault();
@@ -4847,6 +5007,7 @@ App.saveNewHandoff = async function(e) {
     fabric:      r.fabric,
     notes:       r.notes,
     fabrication: r.fabric, // alias so Sales Request seeding still works
+    batchLabel:  r.batchLabel || 'Batch 1',
   }));
 
   // Include fabric list if it was uploaded in the same session
@@ -5094,6 +5255,7 @@ App.releaseBatch = async function(handoffId) {
     await API.DesignHandoffs.releaseBatch(handoffId, toRelease, batchLabel);
     const mc = document.getElementById('content');
     if (mc) mc.innerHTML = AdminViews.renderHandoffDetail(handoffId);
+    App._hdUpdateReleaseCount(handoffId);
   } catch (err) {
     alert('Release failed: ' + (err.message || err));
     if (btn) { btn.disabled = false; App._hdUpdateReleaseCount(handoffId); }
