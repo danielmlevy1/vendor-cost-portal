@@ -69,8 +69,13 @@ App = (() => {
         await API.preload.programs();
       else if (route === 'staff' || route === 'departments')
         await API.preload.staff();
-      else if (route === 'design-handoff' || route === 'handoff-detail')
+      else if (route === 'design-handoff' || route === 'handoff-detail') {
         await API.preload.designHandoff();
+        if (route === 'handoff-detail' && param) {
+          const _hd = API.DesignHandoffs.get(param);
+          if (_hd?.linkedProgramId) await API.Styles.fetchByProgram(_hd.linkedProgramId).catch(() => {});
+        }
+      }
       else if (route === 'sales-request')
         await API.preload.salesRequest();
       else if (route === 'fabric-standards')
@@ -80,7 +85,7 @@ App = (() => {
       else if (route === 'pending-changes')
         await API.preload.pendingChanges();
       else if (route === 'design-changes')
-        await Promise.all([API.preload.programs(), API.DesignChanges.fetchAll().catch(() => {})]);
+        await Promise.all([API.preload.programs(), API.DesignChanges.fetchAll().catch(() => {}), API.RecostRequests.fetchAll().catch(() => {})]);
       else if (route === 'factories' || route === 'my-factories')
         await API.preload.factories();
       else if (route === '' || route === 'vendor-home' || route === 'vendor-program' || route === 'my-styles') {
@@ -284,6 +289,47 @@ App = (() => {
         </div>
       </details>`;
 
+    // Design Changes expandable group — mirrors Programs sub-bucket pattern.
+    // Counts use all DCs; filter by cancelled programs is deferred (styles not
+    // always loaded in sidebar context). Pending badge is role-scoped.
+    const allDCnav = API.DesignChanges?.all?.() || [];
+    const dcNavClassify = c => {
+      const rcr = API.RecostRequests?.getByDesignChange?.(c.id);
+      if (!rcr) return 'log-only';
+      if (rcr.status === 'released' || rcr.status === 'rejected') return 'recost-released';
+      return 'recost-pending';
+    };
+    const dcNavCounts = {
+      all:               allDCnav.length,
+      'recost-pending':  allDCnav.filter(c => dcNavClassify(c) === 'recost-pending').length,
+      'recost-released': allDCnav.filter(c => dcNavClassify(c) === 'recost-released').length,
+      'log-only':        allDCnav.filter(c => dcNavClassify(c) === 'log-only').length,
+    };
+    const dcRouteActive  = state.route === 'design-changes';
+    const dcActiveBucket = dcRouteActive ? (document._dcTab || 'all') : null;
+    const dcOpenAttr     = (dcRouteActive || localStorage.getItem('vcp_nav_dc_open') === '1') ? 'open' : '';
+    const dcLeaf = (bucket, icon, label, count) => `
+      <button class="nav-item nav-subitem ${dcActiveBucket === bucket ? 'active' : ''}"
+        data-dc-bucket="${bucket}" onclick="App.renderDesignChangesTab('${bucket}')">
+        <span class="icon">${icon}</span> ${label}${count > 0 ? ` <span class="tag" style="margin-left:auto;font-size:0.7rem">${count}</span>` : ''}
+      </button>`;
+    const buildDcGroup = badgeTot => `
+      <details class="nav-group" ${dcOpenAttr}
+        ontoggle="localStorage.setItem('vcp_nav_dc_open', this.open ? '1' : '')">
+        <summary class="nav-item ${dcRouteActive ? 'active' : ''}"><span class="icon">📌</span> Design Changes${badgeTot > 0 ? ` <span class="pending-badge">${badgeTot}</span>` : ''}</summary>
+        <div style="padding-left:14px;display:flex;flex-direction:column;gap:2px;margin-top:2px">
+          ${dcLeaf('all',             '📋', 'All',             dcNavCounts.all)}
+          ${dcLeaf('recost-pending',  '🔄', 'Recost Pending',  dcNavCounts['recost-pending'])}
+          ${dcLeaf('recost-released', '✅', 'Recost Released', dcNavCounts['recost-released'])}
+          ${dcLeaf('log-only',        '📝', 'Log Only',        dcNavCounts['log-only'])}
+        </div>
+      </details>`;
+    const dcAdminBadge   = (() => { const dc = API.DesignChanges.pendingAll().length; const rc = API.RecostRequests.pendingProduction().length; return dc + rc; })();
+    const dcSalesBadge   = (() => { const dc = API.DesignChanges.pendingAll().length; const rc = API.RecostRequests.pendingSales().length; return dc + rc; })();
+    const dcGroupAdmin   = buildDcGroup(dcAdminBadge);
+    const dcGroupSales   = buildDcGroup(dcSalesBadge);
+    const dcGroupNoBadge = buildDcGroup(0);
+
     if (navEl) navEl.innerHTML = `
       <div class="sidebar-section"><div class="sidebar-section-label">Navigation</div></div>
       <div style="padding:0 8px">
@@ -296,8 +342,7 @@ App = (() => {
         <button class="nav-item ${state.route === 'design-handoff' ? 'active' : ''}" onclick="App.navigate('design-handoff')"><span class="icon">🎨</span> Design Handoffs</button>
         <button class="nav-item ${state.route === 'sales-request' ? 'active' : ''}" onclick="App.navigate('sales-request')"><span class="icon">📝</span> Sales Requests</button>
         <button class="nav-item ${state.route === 'fabric-standards' ? 'active' : ''}" onclick="App.navigate('fabric-standards')"><span class="icon">🧵</span> Fabric Standards</button>
-        <button class="nav-item ${state.route === 'design-changes' ? 'active' : ''}" onclick="App.navigate('design-changes')"><span class="icon">📌</span> Design Changes</button>
-        ${(() => { const rc = API.RecostRequests.pendingProduction().length; return `<button class="nav-item ${state.route === 'recost-queue' ? 'active' : ''}" onclick="App.navigate('recost-queue')"><span class="icon">↩</span> Re-cost Queue${rc > 0 ? ` <span class="pending-badge">${rc}</span>` : ''}</button>`; })()}
+        ${dcGroupAdmin}
         <div class="sidebar-section"><div class="sidebar-section-label">Settings</div></div>
         <button class="nav-item ${state.route === 'trading-companies' ? 'active' : ''}" onclick="App.navigate('trading-companies')"><span class="icon">🏣</span> Trading Companies</button>
         ${(() => { const pf = (API.Factories?.byStatus('pending') || []).length; return `<button class="nav-item ${state.route === 'factories' ? 'active' : ''}" onclick="App.navigate('factories')"><span class="icon">🏭</span> Factories${pf > 0 ? ` <span class="pending-badge">${pf}</span>` : ''}</button>`; })()}
@@ -314,16 +359,14 @@ App = (() => {
         <button class="nav-item ${state.route === 'dashboard' ? 'active' : ''}" onclick="App.navigate('dashboard')"><span class="icon">🏡</span> Dashboard</button>
         ${programsGroup}
         <button class="nav-item ${state.route === 'design-handoff' ? 'active' : ''}" onclick="App.navigate('design-handoff')"><span class="icon">🎨</span> Design Handoffs</button>
-        <button class="nav-item ${state.route === 'design-changes' ? 'active' : ''}" onclick="App.navigate('design-changes')"><span class="icon">📌</span> Design Changes</button>
+        ${dcGroupNoBadge}
         <button class="nav-item ${state.route === 'factories' ? 'active' : ''}" onclick="App.navigate('factories')"><span class="icon">🏭</span> Factories</button>
-        <button class="nav-item ${state.route === 'recost-queue' ? 'active' : ''}" onclick="App.navigate('recost-queue')"><span class="icon">↩</span> Re-cost Queue</button>
       ` : isTechDesign ? `
         <button class="nav-item ${state.route === 'dashboard' ? 'active' : ''}" onclick="App.navigate('dashboard')"><span class="icon">🏡</span> Dashboard</button>
         ${programsGroup}
         <button class="nav-item ${state.route === 'design-handoff' ? 'active' : ''}" onclick="App.navigate('design-handoff')"><span class="icon">🎨</span> Design Handoffs</button>
-        <button class="nav-item ${state.route === 'design-changes' ? 'active' : ''}" onclick="App.navigate('design-changes')"><span class="icon">📌</span> Design Changes</button>
+        ${dcGroupNoBadge}
         <button class="nav-item ${state.route === 'factories' ? 'active' : ''}" onclick="App.navigate('factories')"><span class="icon">🏭</span> Factories</button>
-        <button class="nav-item ${state.route === 'recost-queue' ? 'active' : ''}" onclick="App.navigate('recost-queue')"><span class="icon">↩</span> Re-cost Queue</button>
       ` : isProdDev ? `
         <button class="nav-item ${state.route === 'dashboard' ? 'active' : ''}" onclick="App.navigate('dashboard')"><span class="icon">🏡</span> Dashboard</button>
         <button class="nav-item ${state.route === 'fabric-standards' ? 'active' : ''}" onclick="App.navigate('fabric-standards')"><span class="icon">🧵</span> Standards Requests</button>
@@ -333,9 +376,8 @@ App = (() => {
         ${programsGroup}
         <button class="nav-item ${state.route === 'sales-request' ? 'active' : ''}" onclick="App.navigate('sales-request')"><span class="icon">📝</span> Sales Requests</button>
         <button class="nav-item ${state.route === 'design-handoff' ? 'active' : ''}" onclick="App.navigate('design-handoff')"><span class="icon">🎨</span> Design Handoffs</button>
-        ${(() => { const dc = API.DesignChanges.pendingAll().length; return `<button class="nav-item ${state.route === 'design-changes' ? 'active' : ''}" onclick="App.navigate('design-changes')"><span class="icon">📌</span> Design Changes${dc > 0 ? ` <span class="pending-badge">${dc}</span>` : ''}</button>`; })()}
+        ${dcGroupSales}
         <button class="nav-item ${state.route === 'factories' ? 'active' : ''}" onclick="App.navigate('factories')"><span class="icon">🏭</span> Factories</button>
-        ${(() => { const rc = API.RecostRequests.pendingSales().length; return `<button class="nav-item ${state.route === 'recost-queue' ? 'active' : ''}" onclick="App.navigate('recost-queue')"><span class="icon">↩</span> Re-cost Queue${rc > 0 ? ` <span class="pending-badge">${rc}</span>` : ''}</button>`; })()}
       ` : `
         <button class="nav-item ${
           state.route === '' || state.route === 'vendor-home' || state.route === 'vendor-program' ? 'active' : ''
@@ -396,10 +438,10 @@ App = (() => {
       else if (route === 'performance')   mc.innerHTML = AdminViews.renderPerformance(routeParam);
       // Pre-costing workflow routes
       else if (route === 'design-handoff')       mc.innerHTML = AdminViews.renderDesignHandoff();
-      else if (route === 'handoff-detail')       mc.innerHTML = AdminViews.renderHandoffDetail(routeParam);
+      else if (route === 'handoff-detail')       { mc.innerHTML = AdminViews.renderHandoffDetail(routeParam); App._hdUpdateReleaseCount(routeParam); }
       else if (route === 'sales-request' || route === 'sales-requests') mc.innerHTML = AdminViews.renderSalesRequests();
       else if (route === 'build-from-handoff')   { mc.innerHTML = AdminViews.renderBuildFromHandoff(routeParam); App._initBuildFromHandoffKbd(); }
-      else if (route === 'design-changes')       mc.innerHTML = AdminViews.renderAllDesignChanges();
+      else if (route === 'design-changes')       mc.innerHTML = AdminViews.renderAllDesignChanges(document._dcTab || 'all');
       else if (route === 'recost-queue')          mc.innerHTML = AdminViews.renderRecostQueue();
       else if (route === 'factories')             mc.innerHTML = AdminViews.renderFactories(user.role);
       else if (route === 'delivery-plan')         mc.innerHTML = AdminViews.renderDeliveryPlan(routeParam, user.role, user);
@@ -417,8 +459,8 @@ App = (() => {
     } else if (isDesign) {
       if (route === 'dashboard')           mc.innerHTML = AdminViews.renderDashboard(user.role, user);
       else if (route === 'design-handoff') mc.innerHTML = AdminViews.renderDesignHandoff();
-      else if (route === 'handoff-detail') mc.innerHTML = AdminViews.renderHandoffDetail(routeParam);
-      else if (route === 'design-changes') mc.innerHTML = AdminViews.renderAllDesignChanges();
+      else if (route === 'handoff-detail') { mc.innerHTML = AdminViews.renderHandoffDetail(routeParam); App._hdUpdateReleaseCount(routeParam); }
+      else if (route === 'design-changes') mc.innerHTML = AdminViews.renderAllDesignChanges(document._dcTab || 'all');
       else if (route === 'recost-queue')   mc.innerHTML = AdminViews.renderRecostQueue();
       else if (route === 'factories')      mc.innerHTML = AdminViews.renderFactories(user.role);
       else if (route === 'programs')       mc.innerHTML = AdminViews.renderPrograms(routeParam);
@@ -434,10 +476,10 @@ App = (() => {
       else if (route === 'design-costing')     mc.innerHTML = AdminViews.renderDesignCostingView(routeParam, user.role);
       else if (route === 'buy-summary')        mc.innerHTML = AdminViews.renderBuySummary(routeParam, user.role);
       else if (route === 'design-handoff')     mc.innerHTML = AdminViews.renderDesignHandoff();
-      else if (route === 'handoff-detail')     mc.innerHTML = AdminViews.renderHandoffDetail(routeParam);
+      else if (route === 'handoff-detail')     { mc.innerHTML = AdminViews.renderHandoffDetail(routeParam); App._hdUpdateReleaseCount(routeParam); }
       else if (route === 'sales-request' || route === 'sales-requests') mc.innerHTML = AdminViews.renderSalesRequests();
       else if (route === 'build-from-handoff') { mc.innerHTML = AdminViews.renderBuildFromHandoff(routeParam); App._initBuildFromHandoffKbd(); }
-      else if (route === 'design-changes')     mc.innerHTML = AdminViews.renderAllDesignChanges();
+      else if (route === 'design-changes')     mc.innerHTML = AdminViews.renderAllDesignChanges(document._dcTab || 'all');
       else if (route === 'recost-queue')        mc.innerHTML = AdminViews.renderRecostQueue();
       else if (route === 'factories')           mc.innerHTML = AdminViews.renderFactories(user.role);
       else if (route === 'delivery-plan')       mc.innerHTML = AdminViews.renderDeliveryPlan(routeParam, user.role, user);
@@ -449,8 +491,8 @@ App = (() => {
     } else if (isTechDesign) {
       if (route === 'dashboard')           mc.innerHTML = AdminViews.renderDashboard(user.role, user);
       else if (route === 'design-handoff') mc.innerHTML = AdminViews.renderDesignHandoff();
-      else if (route === 'handoff-detail') mc.innerHTML = AdminViews.renderHandoffDetail(routeParam);
-      else if (route === 'design-changes') mc.innerHTML = AdminViews.renderAllDesignChanges();
+      else if (route === 'handoff-detail') { mc.innerHTML = AdminViews.renderHandoffDetail(routeParam); App._hdUpdateReleaseCount(routeParam); }
+      else if (route === 'design-changes') mc.innerHTML = AdminViews.renderAllDesignChanges(document._dcTab || 'all');
       else if (route === 'programs')       mc.innerHTML = AdminViews.renderPrograms(routeParam);
       else if (route === 'design-costing') mc.innerHTML = AdminViews.renderDesignCostingView(routeParam, user.role);
       else if (route === 'cost-summary')   mc.innerHTML = AdminViews.renderDesignCostingView(routeParam, user.role);
@@ -809,7 +851,7 @@ App = (() => {
             return `<label class="coo-chip" style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border:1px solid var(--border);border-radius:14px;font-size:0.75rem;cursor:pointer;background:${checked ? 'rgba(99,102,241,0.12)' : 'transparent'}">
               <input type="checkbox" class="assign-coo-chk" data-tcid="${tc.id}" value="${coo}" ${checked ? 'checked' : ''}
                      onclick="event.stopPropagation()"
-                     onchange="this.parentElement.style.background=this.checked?'rgba(99,102,241,0.12)':'transparent'">
+                     onchange="this.parentElement.style.background=this.checked?'rgba(99,102,241,0.12)':'transparent';App._syncParentFromCoos(this.dataset.tcid)">
               ${coo}
             </label>`;
           }).join(' ')
@@ -852,6 +894,8 @@ App = (() => {
       <button class="btn btn-secondary" onclick="App.closeModal()">Cancel</button>
       <button class="btn btn-primary" onclick="App.saveAssignments('${programId}')">Save</button>
     </div>`);
+    // Sync parent TC checkboxes to reflect the initial COO selection state
+    document.querySelectorAll('.assign-tc-chk').forEach(chk => App._syncParentFromCoos(chk.dataset.tcid));
   }
 
   async function saveAssignments(programId) {
@@ -1646,6 +1690,7 @@ App = (() => {
     styleName: 'Style Name', fabrication: 'Fabrication',
     projQty: 'Proj Qty', projSellPrice: 'Proj Sell',
     dutyRate: 'Duty Rate', estFreight: 'Est Freight',
+    notes: 'Notes',
   };
 
   async function saveStyleInline(styleId, inputEl) {
@@ -1708,7 +1753,7 @@ App = (() => {
         if (f === 'projSellPrice' || f === 'estFreight') return '$' + parseFloat(v).toFixed(2);
         if (f === 'dutyRate') return (parseFloat(v) * 100).toFixed(1) + '%';
         if (f === 'projQty') return Number(v).toLocaleString();
-        return String(v);
+        const s = String(v); return s.length > 80 ? s.slice(0, 80) + '…' : s;
       };
       const oldDisplay = fmtVal(field, oldRaw);
       const newDisplay = fmtVal(field, value);
@@ -1733,7 +1778,7 @@ App = (() => {
           const dcPending = dcChanges.filter(c => c.status === 'pending').length;
           const dcTotal   = dcChanges.length;
           dcCell.innerHTML = dcTotal > 0
-            ? `<span class="revision-badge" style="cursor:pointer;font-size:0.68rem;white-space:nowrap" title="${dcPending > 0 ? dcPending + ' pending' : ''} ${dcTotal} change${dcTotal !== 1 ? 's' : ''}" onclick="App.openDesignChangeModal('${styleId}')">🕒 ${dcTotal}${dcPending > 0 ? `<span style='color:#f59e0b;font-weight:700'> ·${dcPending}p</span>` : ''}</span>`
+            ? `<span class="revision-badge" style="cursor:pointer;font-size:0.68rem;white-space:nowrap" title="${dcPending > 0 ? dcPending + ' pending' : ''} ${dcTotal} change${dcTotal !== 1 ? 's' : ''}" onclick="App.openStyleTimeline('${styleId}')">🕒 ${dcTotal}${dcPending > 0 ? `<span style='color:#f59e0b;font-weight:700'> ·${dcPending}p</span>` : ''}</span>`
             : '';
         }).catch(() => {});
       }
@@ -3005,9 +3050,20 @@ App.saveRecostRequest = async function(styleId, programId) {
   const note     = (document.getElementById('rcr-note')?.value || '').trim();
   const category = document.getElementById('rcr-cat')?.value || 'Other';
   const user     = App._stateRef?.user || {};
+  const style    = API.Styles.get(styleId);
+  // DC is the canonical record; create it first, then link the recost as child
+  const dc = await API.DesignChanges.log({
+    styleId, programId,
+    styleNumber:   style?.styleNumber || styleId,
+    field:         category,
+    description:   note || `Re-cost request: ${category}`,
+    changedBy:     user.id,
+    changedByName: user.name || user.email,
+  });
   await API.RecostRequests.create({
     programId, styleId, note, category,
     requestedBy: user.id, requestedByName: user.name || user.email,
+    designChangeId: dc?.id || null,
   });
   App.closeModal();
   App.navigate('design-costing', programId);
@@ -3020,17 +3076,19 @@ App.salesApproveRecost = async function(reqId, programId) {
   const req = API.RecostRequests.get(reqId);
   if (!req) return;
   if (!confirm('Approve this re-cost request? It will be forwarded to Production for release to TCs.')) return;
+  App.closeModal();
   const user = App._stateRef?.user || App._getState()?.user || {};
   await API.RecostRequests.salesApprove(reqId, user.id, user.name || user.email);
-  App.navigate(App._stateRef?.route || 'cost-summary', programId || req.programId);
+  App.navigate(App._stateRef?.route || 'design-changes', programId || req.programId);
 };
 
 // Sales: reject re-cost request — returns to Design
 App.salesRejectRecost = async function(reqId, programId) {
   const note = prompt('Reason for rejecting (returned to Design):') || '';
   if (note === null) return; // user cancelled prompt
+  App.closeModal();
   await API.RecostRequests.reject(reqId, note, 'sales');
-  App.navigate(App._stateRef?.route || 'cost-summary', programId);
+  App.navigate(App._stateRef?.route || 'design-changes', programId);
 };
 
 App.releaseRecosting = async function(reqId, programId) {
@@ -3040,19 +3098,20 @@ App.releaseRecosting = async function(reqId, programId) {
     alert('This request must be approved by Sales before Production can release it.'); return;
   }
   if (!confirm('Release this re-cost request to Trading Companies? Existing quotes will be marked outdated.')) return;
+  App.closeModal();
   const user = App._stateRef?.user || {};
   await API.RecostRequests.release(reqId, user.id, user.name || user.email);
   // Server bumps program version automatically during release
-
-  App.navigate(App._stateRef?.route || 'cost-summary', programId || req.programId);
+  App.navigate(App._stateRef?.route || 'design-changes', programId || req.programId);
 };
 
 // Production/Sales: reject a re-cost request
 App.rejectRecostRequest = async function(reqId, programId, stage) {
   const note = prompt('Reason for rejecting (optional):') || '';
   if (note === null) return; // cancelled
+  App.closeModal();
   await API.RecostRequests.reject(reqId, note, stage || 'production');
-  App.navigate(App._stateRef?.route || 'cost-summary', programId);
+  App.navigate(App._stateRef?.route || 'design-changes', programId);
 };
 
 // Inline dept status save — no full re-render needed
@@ -3189,9 +3248,19 @@ App._saveBulkRecost = async function(programId) {
   const category = document.getElementById('rcr-cat')?.value || 'Other';
   const user     = App._stateRef?.user || {};
   for (const styleId of App._sel) {
+    const style = API.Styles.get(styleId);
+    const dc = await API.DesignChanges.log({
+      styleId, programId,
+      styleNumber:   style?.styleNumber || styleId,
+      field:         category,
+      description:   note || `Re-cost request: ${category}`,
+      changedBy:     user.id,
+      changedByName: user.name || user.email,
+    });
     await API.RecostRequests.create({
       programId, styleId, note, category,
       requestedBy: user.id, requestedByName: user.name || user.email,
+      designChangeId: dc?.id || null,
     });
   }
   App.closeModal();
@@ -3378,7 +3447,7 @@ App._renderRecostBanner = function(programId) {
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
       <span style="font-weight:700;font-size:0.9rem">↩ Re-cost Requests</span>
       <span class="tag" style="background:rgba(245,158,11,0.18);color:#f59e0b">${total}</span>
-      <a href="#" style="font-size:0.78rem;color:var(--accent);margin-left:auto" onclick="event.preventDefault();App.navigate('recost-queue')">View All →</a>
+      <a href="#" style="font-size:0.78rem;color:var(--accent);margin-left:auto" onclick="event.preventDefault();App.navigate('design-changes')">View All →</a>
     </div>
     <div style="display:flex;flex-direction:column;gap:8px">${cards}</div>
   </div>`;
@@ -3783,33 +3852,16 @@ App._dashFilterClear = function() {
 
 
 // ─ Design Handoffs ──────────────────────────────────────────────
-App.openNewHandoffModal = function(preSrId) {
+App.openNewHandoffModal = function() {
   const seasons = ['N/A','Q1','Q2','Q3','Q4'];
   const years   = ['2026','2027','2028','2029','2030'];
   const genders = ['Mens','Ladies','Boys','Girls','Infant/Toddler'];
   const tiers   = ['Mass','Mid Tier','Off Price','Clubs','Specialty'];
   const brands  = (() => { const b = [...new Set(API.cache.brandTierMargins.map(m => m.brand).filter(Boolean))].sort(); return b.length ? b : ['Reebok','Champion','And1','Gaiam','Head']; })();
-  // Open costing requests that don't yet have a design handoff linked to them
-  const allHandoffs = API.DesignHandoffs.all();
-  const openSRs = API.SalesRequests.all().filter(r =>
-    !r.linkedProgramId &&
-    !allHandoffs.find(h => h.sourceSalesRequestId === r.id)
-  );
   App.showModal(`
   <div class="modal-header"><h2>🎨 New Design Handoff</h2><button class="btn btn-ghost btn-icon" onclick="App.closeModal()">✕</button></div>
   <p class="text-muted mb-3">Upload the Style List and Fabric List from Design. Both are needed for a complete handoff, but you can add the Fabric List later.</p>
   <form onsubmit="App.saveNewHandoff(event)">
-    ${openSRs.length ? `
-    <div class="form-group" style="margin-bottom:14px;padding:12px 14px;background:rgba(245,158,11,0.07);border-radius:var(--radius-sm);border:1px solid rgba(245,158,11,0.25)">
-      <label class="form-label" style="color:#f59e0b">📝 Seed from Costing Request <span class="text-muted" style="font-weight:400">(optional — pre-fills details below)</span></label>
-      <select class="form-select" id="dh-sr-seed" onchange="App.seedHandoffFromSR()">
-        <option value="">— Start fresh —</option>
-        ${openSRs.map(r => {
-          const label = [r.season, r.year, r.brand, r.retailer, r.gender].filter(Boolean).join(' · ');
-          return `<option value="${r.id}" ${preSrId === r.id ? 'selected' : ''}>${label} — ${(r.styles||[]).length} styles</option>`;
-        }).join('')}
-      </select>
-    </div>` : ''}
     <div class="form-row form-row-2">
       <div class="form-group"><label class="form-label">Season</label>
         <select class="form-select" id="dh-season">${seasons.map(s => '<option>' + s + '</option>').join('')}</select>
@@ -3887,20 +3939,6 @@ App.openNewHandoffModal = function(preSrId) {
       <button type="submit" class="btn btn-primary" id="dh-submit-btn" disabled>Save Handoff</button>
     </div>
   </form>`, 'modal-lg');
-  if (preSrId) setTimeout(() => App.seedHandoffFromSR(), 80);
-};
-
-App.seedHandoffFromSR = function() {
-  const srId = document.getElementById('dh-sr-seed')?.value;
-  if (!srId) return;
-  const r = API.SalesRequests.get(srId);
-  if (!r) return;
-  const setVal = (id, val) => { const el = document.getElementById(id); if (el && val) el.value = val; };
-  setVal('dh-season', r.season);
-  setVal('dh-year',   r.year);
-  setVal('dh-brand',  r.brand);
-  setVal('dh-tier',   r.retailer); // retailer on SalesRequest = tier of distribution
-  setVal('dh-gender', r.gender);
 };
 
 // Shared CSV parser for handoff uploads
@@ -4989,7 +5027,6 @@ App.saveNewHandoff = async function(e) {
   const user   = App._getState()?.user || {};
   const season = document.getElementById('dh-season')?.value || '';
   const year   = document.getElementById('dh-year')?.value   || '';
-  const sourceSalesRequestId = document.getElementById('dh-sr-seed')?.value || null;
   const brand  = document.getElementById('dh-brand')?.value || '';
   const gender = document.getElementById('dh-gender')?.value || '';
   const tier   = document.getElementById('dh-tier')?.value   || '';
@@ -5024,7 +5061,6 @@ App.saveNewHandoff = async function(e) {
   await API.DesignHandoffs.create({ season, year, brand, gender, tier, supplierRequestNumber, stylesList, fabricsList, trimsList, trimsUploaded: trimsList.length > 0,
     submittedByName: user?.name || user?.email || '',
     submittedById:   user?.id  || '',
-    sourceSalesRequestId: sourceSalesRequestId || undefined,
   });
   App._handoffParsedRows    = null;
   App._handoffParsedFabrics = null;
@@ -5482,39 +5518,42 @@ App.openSalesRequestDetail = function(requestId) {
     </div>` : ''}
   </div>`;
 
+  // Batch-review SRs are already linked to a program but still need qty/sell edits
+  const isBatchReview = r.status === 'batch-review';
+  const canEdit = !r.linkedProgramId || isBatchReview;
+
   const allStyles = [...(r.styles||[]), ...(r.cancelledStyles||[])];
   const rows = allStyles.map(s => {
     const isCancelled = s.cancelled || (r.cancelledStyles||[]).some(cs => cs.styleNumber === s.styleNumber);
     return `<tr style="${isCancelled ? 'opacity:0.45;background:rgba(239,68,68,0.05)' : ''}">
-      <td class="primary font-bold">${s.styleNumber||'—'}</td>
+      <td class="primary font-bold">${s.styleNumber||'—'}${s.batchLabel ? `<span class="tag" style="font-size:0.6rem;margin-left:4px;background:rgba(99,102,241,0.12);color:#6366f1;vertical-align:middle">${s.batchLabel}</span>` : ''}</td>
       <td>${s.styleName||'—'}</td>
       <td class="text-sm text-muted">${s.fabrication||s.fabric||'—'}</td>
       <td style="padding:4px 6px">
         <input class="form-input sr-qty-input" data-sn="${s.styleNumber}" type="number" min="0"
           value="${s.projQty||''}" placeholder="Qty" style="width:90px;padding:4px 6px"
-          ${r.linkedProgramId ? 'disabled' : ''}>
+          ${canEdit ? '' : 'disabled'}>
       </td>
       <td style="padding:4px 6px">
         <input class="form-input sr-sell-input" data-sn="${s.styleNumber}" type="number" min="0" step="0.01"
           value="${s.projSell||s.projSellPrice||''}" placeholder="$0.00" style="width:100px;padding:4px 6px"
-          ${r.linkedProgramId ? 'disabled' : ''}>
+          ${canEdit ? '' : 'disabled'}>
       </td>
       <td style="padding:4px 6px">
         <input class="form-input sr-note-input" data-sn="${s.styleNumber}" type="text"
           value="${(s.notes||'').replace(/"/g,'&quot;')}" placeholder="Notes…" style="width:140px;padding:4px 6px"
-          ${r.linkedProgramId ? 'disabled' : ''}>
+          ${canEdit ? '' : 'disabled'}>
       </td>
       <td><span class="badge ${isCancelled ? 'badge-cancelled' : 'badge-costing'}">${isCancelled ? 'Cancelled' : 'Active'}</span></td>
     </tr>`;
   }).join('');
 
-  const canEdit = !r.linkedProgramId;
-
   App.showModal(
 
-    `<div class="modal-header"><h2>📝 Sales Request — ${r.season||''} ${r.year||''}</h2><button class="btn btn-ghost btn-icon" onclick="App.closeModal()">✕</button></div>` +
+    `<div class="modal-header"><h2>${isBatchReview ? '📦' : '📝'} Sales Request — ${r.season||''} ${r.year||''}</h2><button class="btn btn-ghost btn-icon" onclick="App.closeModal()">✕</button></div>` +
     `<div class="text-sm text-muted mb-3">Retailer: <strong>${r.retailer||'—'}</strong>` +
-    (r.linkedProgramId ? ' · <span class="badge badge-placed">→ Linked to Program</span>' : '') + `</div>` +
+    (r.linkedProgramId && !isBatchReview ? ' · <span class="badge badge-placed">→ Linked to Program</span>' : '') +
+    (isBatchReview ? ' · <span class="badge badge-amber">📦 Batch Review — add Proj Qty &amp; Sell Price</span>' : '') + `</div>` +
     srTimelineHtml +
     `<div class="table-wrap" style="max-height:360px;overflow-y:auto"><table>
       <thead><tr>
@@ -5533,8 +5572,9 @@ App.openSalesRequestDetail = function(requestId) {
       </div>
       <div style="display:flex;gap:8px">
         <button class="btn btn-secondary" onclick="App.closeModal()">Close</button>
-        ${canEdit ? `<button class="btn btn-primary" onclick="App.saveSalesRequestEdits('${r.id}')">💾 Save Changes</button>` : ''}
-        ${canEdit ? `<button class="btn btn-primary ml-2" onclick="App.closeModal();App.proposeProgramFromRequest('${r.id}')">✅ Create Program</button>` : ''}
+        ${canEdit && isBatchReview ? `<button class="btn btn-primary" onclick="App.saveSalesRequestEdits('${r.id}')">💾 Save &amp; Confirm Batch</button>` : ''}
+        ${canEdit && !isBatchReview ? `<button class="btn btn-primary" onclick="App.saveSalesRequestEdits('${r.id}')">💾 Save Changes</button>` : ''}
+        ${canEdit && !isBatchReview ? `<button class="btn btn-primary ml-2" onclick="App.closeModal();App.proposeProgramFromRequest('${r.id}')">✅ Create Program</button>` : ''}
       </div>
     </div>`, 'modal-xl');
 };
@@ -5773,7 +5813,9 @@ App.importSalesRequestXlsx = async function(event, requestId) {
         allStyles.some(s => (s.styleNumber||'').toUpperCase() === sn)
       ).length;
 
-      await API.SalesRequests.update(requestId, { styles: newActive, cancelledStyles: newCancelled });
+      const importPatch = { styles: newActive, cancelledStyles: newCancelled };
+      if (r.status === 'batch-review') importPatch.status = 'submitted';
+      await API.SalesRequests.update(requestId, importPatch);
       event.target.value = '';
       App.closeModal();
       App.navigate('sales-requests');
@@ -5933,13 +5975,255 @@ App.saveSalesRequestEdits = async function(requestId) {
     else newActive.push(updated);
   });
 
-  await API.SalesRequests.update(requestId, { styles: newActive, cancelledStyles: newCancelled });
+  const patch = { styles: newActive, cancelledStyles: newCancelled };
+  // Transition batch-review → submitted once Sales has entered quantities
+  if (r.status === 'batch-review') patch.status = 'submitted';
+
+  await API.SalesRequests.update(requestId, patch);
   App.closeModal();
   App.navigate('sales-requests');
 };
 
 App.deleteSalesRequest = async function(id) {
   if (confirm('Delete this sales request?')) { await API.SalesRequests.delete(id); App.navigate('sales-request'); }
+};
+
+// ── Consolidated Batch-Review Modal ──────────────────────────────────────────
+// Multiple batch-review SRs for the same program are reviewed together in one
+// modal rather than opening separate SR detail modals. Each SR gets its own
+// colour-coded section; all inputs carry data-sr-id for disambiguation.
+
+App.openConsolidatedBatchReview = function(programId) {
+  const allSRs = (API.cache.salesRequests || [])
+    .filter(r => r.linkedProgramId === programId && r.status === 'batch-review');
+  if (!allSRs.length) { alert('No pending batch reviews found for this program.'); return; }
+
+  const prog = API.Programs.get(programId);
+  const progTitle = [prog?.season, prog?.year, prog?.name].filter(Boolean).join(' · ');
+
+  const batchColors = [
+    'rgba(99,102,241,0.10)', 'rgba(16,185,129,0.08)', 'rgba(245,158,11,0.09)',
+    'rgba(239,68,68,0.08)',  'rgba(139,92,246,0.08)'
+  ];
+  const batchBorders = [
+    'rgba(99,102,241,0.30)', 'rgba(16,185,129,0.25)', 'rgba(245,158,11,0.30)',
+    'rgba(239,68,68,0.25)',  'rgba(139,92,246,0.25)'
+  ];
+
+  const totalStyles = allSRs.reduce((n, r) => n + (r.styles||[]).length + (r.cancelledStyles||[]).length, 0);
+
+  const sectionsHtml = allSRs.map((r, idx) => {
+    const color  = batchColors[idx  % batchColors.length];
+    const border = batchBorders[idx % batchBorders.length];
+    const batchLabel = (r.styles||[])[0]?.batchLabel || (r.cancelledStyles||[])[0]?.batchLabel || `Batch ${idx + 1}`;
+    const allStyles  = [...(r.styles||[]), ...(r.cancelledStyles||[])];
+    const dateStr    = r.createdAt ? new Date(r.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
+
+    const rows = allStyles.map(s => {
+      const isCancelled = s.cancelled || (r.cancelledStyles||[]).some(cs => cs.styleNumber === s.styleNumber);
+      const sn = (s.styleNumber||'').replace(/"/g, '&quot;');
+      return `<tr style="${isCancelled ? 'opacity:0.45;background:rgba(239,68,68,0.05)' : ''}">
+        <td class="primary font-bold">${s.styleNumber||'—'}</td>
+        <td>${s.styleName||'—'}</td>
+        <td class="text-sm text-muted">${s.fabrication||s.fabric||'—'}</td>
+        <td style="padding:4px 6px">
+          <input class="form-input sr-qty-input" data-sr-id="${r.id}" data-sn="${sn}" type="number" min="0"
+            value="${s.projQty||''}" placeholder="Qty" style="width:90px;padding:4px 6px"
+            ${isCancelled ? 'disabled' : ''}>
+        </td>
+        <td style="padding:4px 6px">
+          <input class="form-input sr-sell-input" data-sr-id="${r.id}" data-sn="${sn}" type="number" min="0" step="0.01"
+            value="${s.projSell||s.projSellPrice||''}" placeholder="$0.00" style="width:100px;padding:4px 6px"
+            ${isCancelled ? 'disabled' : ''}>
+        </td>
+        <td style="padding:4px 6px">
+          <input class="form-input sr-note-input" data-sr-id="${r.id}" data-sn="${sn}" type="text"
+            value="${(s.notes||'').replace(/"/g,'&quot;')}" placeholder="Notes…" style="width:140px;padding:4px 6px"
+            ${isCancelled ? 'disabled' : ''}>
+        </td>
+        <td><span class="badge ${isCancelled ? 'badge-cancelled' : 'badge-costing'}">${isCancelled ? 'Cancelled' : 'Active'}</span></td>
+      </tr>`;
+    }).join('');
+
+    return `<div style="margin-bottom:16px;border:1px solid ${border};border-radius:var(--radius-md);overflow:hidden">
+      <div style="background:${color};padding:10px 14px;display:flex;align-items:center;gap:10px;border-bottom:1px solid ${border}">
+        <span style="font-size:0.88rem;font-weight:700">📦 ${batchLabel}</span>
+        <span class="text-muted text-sm">${allStyles.length} style${allStyles.length !== 1 ? 's' : ''} · ${dateStr}</span>
+      </div>
+      <div class="table-wrap" style="max-height:260px;overflow-y:auto"><table>
+        <thead><tr>
+          <th>Style #</th><th>Style Name</th><th>Fabric</th>
+          <th>Proj Qty</th><th>Proj Sell</th><th>Notes</th><th>Status</th>
+        </tr></thead>
+        <tbody>${rows || '<tr><td colspan="7" class="text-muted text-center">No styles</td></tr>'}</tbody>
+      </table></div>
+    </div>`;
+  }).join('');
+
+  App.showModal(
+    `<div class="modal-header">
+      <h2>📦 Batch Review — ${progTitle}</h2>
+      <button class="btn btn-ghost btn-icon" onclick="App.closeModal()">✕</button>
+    </div>
+    <p class="text-muted mb-3">${allSRs.length} batch${allSRs.length !== 1 ? 'es' : ''} · ${totalStyles} styles total — enter Proj Qty &amp; Sell Price for each style.</p>
+    <div style="max-height:520px;overflow-y:auto;padding-right:4px">${sectionsHtml}</div>
+    <div class="modal-footer" style="display:flex;gap:8px;flex-wrap:wrap;justify-content:space-between;align-items:center">
+      <div style="display:flex;gap:8px;align-items:center">
+        <button class="btn btn-ghost btn-sm" onclick="App.downloadConsolidatedBatchExcel('${programId}')">⬇ Download Excel</button>
+        <label class="btn btn-ghost btn-sm" style="cursor:pointer;margin:0">
+          ⬆ Import Excel
+          <input type="file" accept=".xlsx,.xls,.csv" style="display:none" onchange="App.importConsolidatedBatchExcel(event,'${programId}')">
+        </label>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-secondary" onclick="App.closeModal()">Close</button>
+        <button class="btn btn-primary" onclick="App.saveConsolidatedBatchReview('${programId}')">💾 Save &amp; Confirm All Batches</button>
+      </div>
+    </div>`,
+    'modal-xl');
+};
+
+App.saveConsolidatedBatchReview = async function(programId) {
+  const activeSRs = (API.cache.salesRequests || [])
+    .filter(r => r.linkedProgramId === programId && r.status === 'batch-review');
+  if (!activeSRs.length) { App.closeModal(); return; }
+
+  for (const r of activeSRs) {
+    const allStyles = [...(r.styles||[]), ...(r.cancelledStyles||[])];
+    const newActive = [], newCancelled = [];
+
+    allStyles.forEach(s => {
+      const sn     = (s.styleNumber||'').replace(/"/g, '');
+      const qtyEl  = document.querySelector(`.sr-qty-input[data-sr-id="${r.id}"][data-sn="${sn}"]`);
+      const sellEl = document.querySelector(`.sr-sell-input[data-sr-id="${r.id}"][data-sn="${sn}"]`);
+      const noteEl = document.querySelector(`.sr-note-input[data-sr-id="${r.id}"][data-sn="${sn}"]`);
+      const qty    = qtyEl  ? (parseFloat(qtyEl.value)  || s.projQty  || 0) : (s.projQty  || 0);
+      const sell   = sellEl ? (parseFloat(sellEl.value) || s.projSell || 0) : (s.projSell || 0);
+      const note   = noteEl ? (noteEl.value ?? s.notes ?? '') : (s.notes ?? '');
+      const isCancelled = s.cancelled || (r.cancelledStyles||[]).some(cs => cs.styleNumber === s.styleNumber);
+      const updated = { ...s, projQty: qty, projSell: sell, notes: note };
+      if (isCancelled) newCancelled.push(updated); else newActive.push(updated);
+    });
+
+    await API.SalesRequests.update(r.id, { styles: newActive, cancelledStyles: newCancelled, status: 'submitted' });
+  }
+
+  App.closeModal();
+  App.navigate('sales-requests');
+};
+
+App.downloadConsolidatedBatchExcel = function(programId) {
+  const allSRs = (API.cache.salesRequests || [])
+    .filter(r => r.linkedProgramId === programId && r.status === 'batch-review');
+  if (!allSRs.length) { alert('No pending batch reviews found.'); return; }
+
+  const prog = API.Programs.get(programId);
+  const header = [['Batch', 'Style Number', 'Style Name', 'Fabric', 'Proj Qty', 'Proj Sell', 'Notes', 'Status']];
+  const dataRows = [];
+
+  allSRs.forEach((r, idx) => {
+    const batchLabel = (r.styles||[])[0]?.batchLabel || (r.cancelledStyles||[])[0]?.batchLabel || `Batch ${idx + 1}`;
+    const allStyles  = [...(r.styles||[]), ...(r.cancelledStyles||[])];
+    allStyles.forEach(s => {
+      const isCancelled = s.cancelled || (r.cancelledStyles||[]).some(cs => cs.styleNumber === s.styleNumber);
+      dataRows.push([
+        batchLabel,
+        s.styleNumber||'',
+        s.styleName||'',
+        s.fabrication||s.fabric||'',
+        s.projQty != null ? s.projQty : '',
+        s.projSell||s.projSellPrice||'',
+        s.notes||'',
+        isCancelled ? 'Cancelled' : 'Active',
+      ]);
+    });
+  });
+
+  const ws  = XLSX.utils.aoa_to_sheet([...header, ...dataRows]);
+  ws['!cols'] = [{wch:14},{wch:14},{wch:24},{wch:22},{wch:10},{wch:10},{wch:30},{wch:10}];
+  const wb  = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Batch Review');
+  const fname = ['BatchReview', prog?.season, prog?.year, prog?.name].filter(Boolean).join('-') + '.xlsx';
+  App._xlsxDownload(wb, fname);
+};
+
+App.importConsolidatedBatchExcel = async function(event, programId) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = async (e) => {
+    try {
+      const data = new Uint8Array(e.target.result);
+      const wb   = XLSX.read(data, { type: 'array' });
+      const ws   = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+      if (rows.length < 2) { alert('No data rows found in file.'); return; }
+
+      const norm    = h => (h||'').toString().toLowerCase().replace(/[\s#_]/g, '');
+      const cols    = rows[0].map(norm);
+      const batchCol = cols.findIndex(h => h.includes('batch'));
+      const snCol    = cols.findIndex(h => h.includes('style') && (h.includes('num') || h.includes('#') || h === 'stylenumber'));
+      const qtyCol   = cols.findIndex(h => h.includes('qty')  || h.includes('quantity'));
+      const sellCol  = cols.findIndex(h => h.includes('sell') || h.includes('price'));
+      const noteCol  = cols.findIndex(h => h.includes('note'));
+      const stCol    = cols.findIndex(h => h.includes('status'));
+
+      if (snCol < 0) { alert('Could not find "Style Number" column.'); return; }
+
+      const activeSRs = (API.cache.salesRequests || [])
+        .filter(r => r.linkedProgramId === programId && r.status === 'batch-review');
+      if (!activeSRs.length) { alert('No pending batch reviews found.'); return; }
+
+      // Map normalised batch label → SR
+      const srByBatch = {};
+      activeSRs.forEach((r, idx) => {
+        const label = ((r.styles||[])[0]?.batchLabel || (r.cancelledStyles||[])[0]?.batchLabel || `Batch ${idx + 1}`)
+          .toLowerCase().trim();
+        srByBatch[label] = r;
+      });
+
+      // Build per-SR row lookup from the Excel file
+      const srLookups = {};
+      rows.slice(1).forEach(row => {
+        const batchKey = batchCol >= 0 ? (row[batchCol]||'').toString().toLowerCase().trim() : null;
+        const sn = (row[snCol]||'').toString().toUpperCase().trim();
+        if (!sn) return;
+        const sr = (batchKey && srByBatch[batchKey]) ? srByBatch[batchKey] : activeSRs[0];
+        if (!srLookups[sr.id]) srLookups[sr.id] = {};
+        srLookups[sr.id][sn] = row;
+      });
+
+      let totalUpdated = 0;
+      for (const r of activeSRs) {
+        const lookup = srLookups[r.id] || {};
+        const applyMatch = (s) => {
+          const key   = (s.styleNumber||'').toUpperCase().trim();
+          const match = lookup[key];
+          if (!match) return s;
+          totalUpdated++;
+          return {
+            ...s,
+            projQty:   qtyCol  >= 0 && match[qtyCol]  !== '' ? parseFloat(match[qtyCol])  || 0 : s.projQty,
+            projSell:  sellCol >= 0 && match[sellCol] !== '' ? parseFloat(match[sellCol]) || 0 : s.projSell,
+            notes:     noteCol >= 0 && match[noteCol] !== '' ? match[noteCol] : s.notes,
+            cancelled: stCol   >= 0 ? (match[stCol]||'').toString().toLowerCase() === 'cancelled' : s.cancelled,
+          };
+        };
+        const allStyles    = [...(r.styles||[]), ...(r.cancelledStyles||[])].map(applyMatch);
+        const newActive    = allStyles.filter(s => !s.cancelled);
+        const newCancelled = allStyles.filter(s =>  s.cancelled);
+        await API.SalesRequests.update(r.id, { styles: newActive, cancelledStyles: newCancelled, status: 'submitted' });
+      }
+
+      event.target.value = '';
+      App.closeModal();
+      App.navigate('sales-requests');
+      setTimeout(() => alert(`✅ Imported successfully — ${totalUpdated} styles updated from ${file.name}.`), 150);
+    } catch (err) {
+      alert('❌ Could not read file: ' + err.message);
+    }
+  };
+  reader.readAsArrayBuffer(file);
 };
 
 // ── Propose a Draft Program from a Sales Request ──────────────────────────────
@@ -6411,15 +6695,10 @@ App.openDesignChangeModal = function(styleId) {
                 border-radius:var(--radius-sm);margin-bottom:16px">
       <span style="font-size:1.3rem">🔒</span>
       <div>
-        <div style="font-weight:700;color:#f59e0b;font-size:0.9rem">Style Locked — Re-cost Required</div>
-        <div class="text-sm text-muted">This program is in <strong>Costing</strong> status.
-          Submitting this change will automatically create a Re-cost Request
-          that must be approved by Sales, then released by Production before vendors are notified.</div>
+        <div style="font-weight:700;color:#f59e0b;font-size:0.9rem">Style Locked — Program in Costing</div>
+        <div class="text-sm text-muted">Check <strong>Request re-cost</strong> below if this change requires vendors to requote. The request must be approved by Sales, then released by Production before vendors are notified.</div>
       </div>
     </div>` : '';
-
-  const btnLabel = isLocked ? '🔄 Submit Re-cost Request' : '📌 Log as Pending';
-  const btnClass = isLocked ? 'btn btn-warning' : 'btn btn-primary';
 
   App.showModal(
     `<div class="modal-header" style="display:block;margin-bottom:20px">` +
@@ -6430,7 +6709,6 @@ App.openDesignChangeModal = function(styleId) {
     lockBanner +
     `<div class="font-bold mb-3" style="color:var(--accent)">Log New Change</div>` +
     `<form onsubmit="App.saveDesignChange(event,'${styleId}','${style.programId||''}')">` +
-    `<input type="hidden" id="dc-locked" value="${isLocked ? '1' : '0'}">` +
     `<div class="form-group"><label class="form-label">Description *</label>` +
     `<input class="form-input" id="dc-desc" placeholder="e.g. Changed hem length, updated collar, color change…" required></div>` +
     `<div class="form-row form-row-3">` +
@@ -6441,8 +6719,11 @@ App.openDesignChangeModal = function(styleId) {
     `<option>Sizing</option><option>Label / Branding</option><option>Other</option></select></div>` +
     `<div class="form-group"><label class="form-label">Previous Value</label><input class="form-input" id="dc-prev"></div>` +
     `<div class="form-group"><label class="form-label">New Value</label><input class="form-input" id="dc-new"></div></div>` +
+    `<div class="form-group" style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:rgba(240,82,46,0.06);border:1px solid rgba(240,82,46,0.2);border-radius:var(--radius-sm)">` +
+    `<input type="checkbox" id="dc-request-recost" style="width:16px;height:16px;cursor:pointer"${isLocked ? ' checked' : ''}>` +
+    `<label for="dc-request-recost" style="cursor:pointer;font-weight:600;font-size:0.875rem">Request re-cost — requires Sales approval then Production release</label></div>` +
     `<div class="modal-footer"><button type="button" class="btn btn-secondary" onclick="App.closeModal()">Cancel</button>` +
-    `<button type="submit" class="${btnClass}">${btnLabel}</button></div></form>` +
+    `<button type="submit" class="btn btn-primary">📌 Log Change</button></div></form>` +
     (existing.length ? `<div class="font-bold mt-4 mb-2" style="color:var(--text-secondary)">History (${existing.length})</div>${AdminViews.designChangeHistoryPanel(styleId)}` : ''),
     'modal-xl');
 };
@@ -6452,7 +6733,7 @@ App.saveDesignChange = async function(e, styleId, programId) {
   const user     = App._getState()?.user || {};
   const style    = API.Styles.get(styleId);
   const pid      = programId || style?.programId;
-  const isLocked = document.getElementById('dc-locked')?.value === '1';
+  const requestRecost = document.getElementById('dc-request-recost')?.checked || false;
   const desc     = document.getElementById('dc-desc')?.value  || '';
   const field    = document.getElementById('dc-field')?.value || '';
   const prev     = document.getElementById('dc-prev')?.value  || '';
@@ -6470,7 +6751,7 @@ App.saveDesignChange = async function(e, styleId, programId) {
     changedByName: user?.name || user?.email || '',
   });
 
-  if (isLocked) {
+  if (requestRecost) {
     // Create a re-cost request requiring Sales → Production approval chain
     const rcr = await API.RecostRequests.create({
       programId:   pid,
@@ -6503,24 +6784,53 @@ App.confirmDesignChange = async function(id, styleId, fromLog) {
   if (fromLog) {
     // Re-render the global log in-place preserving current tab
     const mc = document.getElementById('content');
-    if (mc) mc.innerHTML = AdminViews.renderAllDesignChanges(document._dcTab || 'pending');
+    if (mc) mc.innerHTML = AdminViews.renderAllDesignChanges(document._dcTab || 'all');
   } else {
-    // Re-render per-style panel inside open modal
-    const panel = document.querySelector('.design-change-timeline')?.closest('.modal-body') ||
-                  document.querySelector('.design-change-timeline')?.parentElement;
-    if (panel && styleId) panel.outerHTML = AdminViews.designChangeHistoryPanel(styleId);
-    // Also close & reopen to refresh fully
+    // Re-render design-change timeline inside open modal
+    const timeline = document.querySelector('.design-change-timeline');
+    if (timeline && styleId) {
+      const isStyleTimeline = !!document.querySelector('.design-change-timeline')?.closest('#modal-box');
+      timeline.outerHTML = isStyleTimeline
+        ? AdminViews.renderStyleTimeline(styleId)
+        : AdminViews.designChangeHistoryPanel(styleId);
+    }
     const mc = document.getElementById('content');
     if (mc && App._getState()?.route === 'design-changes') {
-      mc.innerHTML = AdminViews.renderAllDesignChanges(document._dcTab || 'pending');
+      mc.innerHTML = AdminViews.renderAllDesignChanges(document._dcTab || 'all');
     }
   }
 };
 
 App.renderDesignChangesTab = function(filter) {
   document._dcTab = filter;
+  // If called from a sidebar sub-bucket while on a different page, navigate first
+  if (App._getState?.()?.route !== 'design-changes') {
+    App.navigate('design-changes');
+    return;
+  }
   const mc = document.getElementById('content');
   if (mc) mc.innerHTML = AdminViews.renderAllDesignChanges(filter);
+  // Update sidebar sub-bucket active state without a full re-render
+  document.querySelectorAll('[data-dc-bucket]').forEach(btn => {
+    btn.classList.toggle('active', btn.getAttribute('data-dc-bucket') === filter);
+  });
+};
+
+App.openStyleTimeline = function(styleId) {
+  const style = API.Styles.get(styleId);
+  if (!style) return;
+  const prog = API.Programs.get(style.programId);
+  App.showModal(
+    `<div class="modal-header" style="display:block;margin-bottom:20px">` +
+    `<div style="display:flex;justify-content:space-between;align-items:center">` +
+    `<h2>📋 Change History — ${style.styleNumber}</h2>` +
+    `<button class="btn btn-ghost btn-icon" onclick="App.closeModal()">✕</button></div>` +
+    `<div style="display:flex;align-items:center;gap:12px;margin-top:4px">` +
+    `<span class="text-sm text-muted">${style.styleName || ''}</span>` +
+    (prog ? `<span class="text-sm text-muted">· ${prog.name}</span>` : '') +
+    `<button class="btn btn-primary btn-sm" style="margin-left:auto" onclick="App.closeModal();App.openDesignChangeModal('${styleId}')">+ Log Change</button></div></div>` +
+    AdminViews.renderStyleTimeline(styleId),
+    'modal-xl');
 };
 
 // ── Fabric Standard Requests ─────────────────────────────────────
@@ -6916,6 +7226,7 @@ App._toggleTcRow = function(tr) {
 };
 
 App._syncTcRowCoos = function(tcChk) {
+  tcChk.indeterminate = false;
   const tcId = tcChk.dataset.tcid;
   const cooChks = document.querySelectorAll(`.assign-coo-chk[data-tcid="${tcId}"]`);
   cooChks.forEach(c => {
@@ -6923,6 +7234,27 @@ App._syncTcRowCoos = function(tcChk) {
     const label = c.parentElement;
     if (label) label.style.background = tcChk.checked ? 'rgba(99,102,241,0.12)' : 'transparent';
   });
+};
+
+App._syncParentFromCoos = function(tcId) {
+  const cooChks = [...document.querySelectorAll(`.assign-coo-chk[data-tcid="${tcId}"]`)];
+  const tcChk = document.querySelector(`.assign-tc-chk[data-tcid="${tcId}"]`);
+  if (!tcChk) return;
+  if (!cooChks.length) {
+    // No COOs — TC checkbox state is authoritative; don't touch it
+    return;
+  }
+  const checkedCount = cooChks.filter(c => c.checked).length;
+  if (checkedCount === 0) {
+    tcChk.checked = false;
+    tcChk.indeterminate = false;
+  } else if (checkedCount === cooChks.length) {
+    tcChk.checked = true;
+    tcChk.indeterminate = false;
+  } else {
+    tcChk.checked = false;
+    tcChk.indeterminate = true;
+  }
 };
 
 App._toggleAllTcRows = function(checked) {

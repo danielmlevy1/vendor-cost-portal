@@ -200,7 +200,7 @@ const VendorViews = (() => {
             return sub?.isOutdated;
           });
           bodyRows += `<tr class="${hasRevised ? 'flagged-row' : allSkipped ? 'tc-skipped-row' : isOutdatedQuote ? 'outdated-quote-row' : ''}">
-            <td class="primary font-bold" style="white-space:nowrap">${s.styleNumber}${isOutdatedQuote ? ' <span class="tag" style="background:rgba(245,158,11,0.15);color:#f59e0b;font-size:0.65rem;vertical-align:middle">⚠ Re-cost</span>' : ''}</td>
+            <td class="primary font-bold" style="white-space:nowrap">${s.styleNumber}${isOutdatedQuote ? ' <span class="tag" style="background:rgba(245,158,11,0.15);color:#f59e0b;font-size:0.65rem;vertical-align:middle">⚠ Re-cost</span>' : ''}${s.releasedBatch ? `<span class="tag" style="font-size:0.6rem;margin-left:4px;background:rgba(99,102,241,0.12);color:#6366f1;vertical-align:middle">${s.releasedBatch}</span>` : ''}</td>
             <td style="min-width:120px">${s.styleName}</td>
             <td class="text-sm text-muted" style="max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${(s.fabrication||'').replace(/"/g,'&quot;')}">${(s.fabrication||'').substring(0,25)}${(s.fabrication||'').length>25?'…':''}</td>
             ${coos.map(coo => {
@@ -390,7 +390,7 @@ const VendorViews = (() => {
           : `<button class="btn btn-ghost btn-sm tc-skip-btn" title="Skip this COO" onclick="App.openSkipVendorCoo('${s.id}','${tcId}','${coo}')">⊘ Skip</button>`;
         return `<tr class="${sub?.status === 'flagged' ? 'flagged-row' : isSkipped ? 'tc-skipped-row' : ''}">
           <td class="text-sm">${prog?.name || '—'}</td>
-          <td class="primary font-bold">${s.styleNumber}</td>
+          <td class="primary font-bold">${s.styleNumber}${s.releasedBatch ? `<span class="tag" style="font-size:0.6rem;margin-left:4px;background:rgba(99,102,241,0.12);color:#6366f1;vertical-align:middle">${s.releasedBatch}</span>` : ''}</td>
           <td>${s.styleName}</td>
           <td class="text-sm">${(s.fabrication || '').substring(0, 30)}${(s.fabrication || '').length > 30 ? '…' : ''}</td>
           <td><span class="badge badge-pending">${coo}</span></td>

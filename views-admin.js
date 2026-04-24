@@ -702,7 +702,6 @@ const AdminViews = (() => {
       </div>
       <div style="display:flex;flex-direction:column;gap:8px">
         ${draftPrograms.map(p => {
-          const styles = API.Styles.byProgram(p.id);
           const hasHandoff = !!p.sourceHandoffId;
           return `<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:var(--bg-elevated);border-radius:var(--radius-sm);border:1px solid var(--border)">
             <div style="display:flex;gap:16px;align-items:center">
@@ -710,7 +709,7 @@ const AdminViews = (() => {
                 <div class="font-bold">${p.name}</div>
                 <div class="text-sm text-muted">${p.season||'—'} ${p.year||''} · ${p.gender ? p.gender + ' · ' : ''}${p.retailer||'No retailer'}</div>
               </div>
-              <span class="tag">${styles.length} styles</span>
+              <span class="tag">${p.styleCount || 0} styles</span>
               ${!hasHandoff ? '<span class="badge badge-pending" title="Sales proposed before Design uploaded handoff">⚠ Pending Design Handoff</span>' : ''}
             </div>
             <div style="display:flex;gap:6px">
@@ -755,7 +754,6 @@ const AdminViews = (() => {
   function programsTable(openHandoffs, openRequests, allPrograms) {
     const fmtDate = d => d ? new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' }) : '—';
     const dash = `<span class="text-muted">—</span>`;
-    const allSubs = API.Submissions.all();
     // Role check — used to show/hide admin buttons in program rows
     const _role = (typeof App !== 'undefined' && App._getState && App._getState()?.user?.role) || null;
     const isAdminOrPC = _role === 'admin' || _role === 'pc';
@@ -885,13 +883,12 @@ const AdminViews = (() => {
 
     // ── Program rows (all statuses) ───────────────────────────
     const programRows = allPrograms.map(p => {
-      const styles       = API.Styles.byProgram(p.id);
-      const styleCount   = styles.length;
-      const tcCount      = p.tcCount || 0;
-      const placedCount  = styles.filter(s => API.Placements.get(s.id) != null).length;
-      const costedCount  = styles.filter(s => allSubs.some(sub => sub.styleId === s.id && sub.fob != null)).length;
-      const projQtyTotal = styles.reduce((sum, s) => sum + (parseFloat(s.projQty)   || 0), 0);
-      const actlQtyTotal = styles.reduce((sum, s) => sum + (parseFloat(s.actualQty) || 0), 0);
+      const styleCount   = p.styleCount   || 0;
+      const tcCount      = p.tcCount      || 0;
+      const placedCount  = p.placedCount  || 0;
+      const costedCount  = p.costedCount  || 0;
+      const projQtyTotal = p.projQtyTotal || 0;
+      const actlQtyTotal = p.actlQtyTotal || 0;
       const isDraft  = p.status === 'Draft';
       const handoff  = API.DesignHandoffs.all().find(h => h.linkedProgramId === p.id);
       const srNum    = handoff?.supplierRequestNumber || '';
@@ -1022,7 +1019,7 @@ const AdminViews = (() => {
           <span class="text-muted">/</span>
           <span class="text-secondary text-sm">Styles</span>
         </div>
-        <h1 class="page-title">Styles</h1>
+        <h1 class="page-title">${[prog.season, prog.year, prog.name].filter(Boolean).join(' · ')} — Styles</h1>
         <p class="page-subtitle">${statusBadge(prog.status)} ${styles.length} styles · ${tcs.length} trading companies</p>
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
@@ -1092,7 +1089,7 @@ const AdminViews = (() => {
           ${linkedIds.has(s.id) ? 'disabled title="Already in a group"' : ''}
           onchange="App.onStyleLinkCheck('${s.programId}')">
       </td>
-      <td data-col="styleNum" class="primary">${s.styleNumber}${linkBadge}${prog && ['Costing','Placed'].includes(prog.status) ? ' <span title=\'Style Locked — re-cost required for changes\' style=\'font-size:0.75rem;opacity:0.6\'>🔒</span>' : ''}</td>
+      <td data-col="styleNum" class="primary">${s.styleNumber}${linkBadge}${prog && ['Costing','Placed'].includes(prog.status) ? ' <span title=\'Style Locked — re-cost required for changes\' style=\'font-size:0.75rem;opacity:0.6\'>🔒</span>' : ''}${s.releasedBatch ? `<span class="tag" style="font-size:0.6rem;margin-left:4px;background:rgba(99,102,241,0.12);color:#6366f1;vertical-align:middle">${s.releasedBatch}</span>` : ''}</td>
       <td data-col="styleName">${s.styleName}</td>
       <td data-col="cat">${s.category || '—'}</td>
       <td data-col="fab" class="text-sm">${(s.fabrication || '').substring(0, 35)}${(s.fabrication || '').length > 35 ? '…' : ''}</td>
@@ -1208,7 +1205,7 @@ const AdminViews = (() => {
           <span class="text-muted">/</span>
           <span class="text-secondary text-sm">${prog.name}</span>
         </div>
-        <h1 class="page-title">${prog.name} — Cost Summary</h1>
+        <h1 class="page-title">${[prog.season, prog.year, prog.name].filter(Boolean).join(' · ')} — Cost Summary</h1>
         <p class="page-subtitle">${statusBadge(prog.status)} ${styles.length} styles · ${tcs.length} trading companies</p>
         ${renderProgHeaderStrip(prog)}
       </div>
@@ -1447,12 +1444,12 @@ const AdminViews = (() => {
         const dcPending = dcChanges.filter(c => c.status === 'pending').length;
         const dcTotal   = dcChanges.length;
         const dcBadge   = dcTotal > 0
-          ? `<span class="revision-badge" style="cursor:pointer;font-size:0.68rem;white-space:nowrap" title="${dcPending > 0 ? dcPending + ' pending' : ''} ${dcTotal} change${dcTotal !== 1 ? 's' : ''}" onclick="App.openDesignChangeModal('${s.id}')">🕒 ${dcTotal}${dcPending > 0 ? `<span style='color:#f59e0b;font-weight:700'> ·${dcPending}p</span>` : ''}</span>`
+          ? `<span class="revision-badge" style="cursor:pointer;font-size:0.68rem;white-space:nowrap" title="${dcPending > 0 ? dcPending + ' pending' : ''} ${dcTotal} change${dcTotal !== 1 ? 's' : ''}" onclick="App.openStyleTimeline('${s.id}')">🕒 ${dcTotal}${dcPending > 0 ? `<span style='color:#f59e0b;font-weight:700'> ·${dcPending}p</span>` : ''}</span>`
           : '';
 
         let rowHtml = `
           <td class="sticky-col mat-cell-white" style="width:28px;min-width:28px;padding:2px 4px;text-align:center">${dcBadge}</td>
-          <td data-col="styleNum" class="sticky-col mat-cell-white">${s.styleNumber}${s._linkAnchorBadge||''}</td>
+          <td data-col="styleNum" class="sticky-col mat-cell-white">${s.styleNumber}${s._linkAnchorBadge||''}${s.releasedBatch ? `<span class="tag" style="font-size:0.6rem;margin-left:4px;background:rgba(99,102,241,0.12);color:#6366f1;vertical-align:middle">${s.releasedBatch}</span>` : ''}</td>
           <td data-col="styleName" class="mat-cell-white mat-cell-normal">${styleNameInput}</td>
           <td data-col="cat" class="mat-cell-white mat-cell-normal">${catInput}</td>
           <td data-col="fab" class="mat-cell-white mat-cell-normal">${fabInput}</td>
@@ -1552,7 +1549,7 @@ const AdminViews = (() => {
         if (isCancelled) {
           rowHtml += `<td data-col="actions"><button class="btn-restore-style" onclick="App.uncancelStyle('${s.id}','${pid}')">↩ Restore</button></td>`;
         } else {
-          rowHtml += `<td data-col="actions"><button class="btn-cancel-style" onclick="App.cancelStyle('${s.id}','${pid}')">🚫 Cancel</button></td>`;
+          rowHtml += `<td data-col="actions" style="white-space:nowrap"><button class="btn-cancel-style" onclick="App.cancelStyle('${s.id}','${pid}')">🚫</button><button class="btn btn-ghost btn-sm" style="font-size:0.7rem;padding:2px 5px;margin-left:2px" title="Log design change" onclick="App.openDesignChangeModal('${s.id}')">📌</button></td>`;
         }
 
         // Repeat Style column
@@ -1653,7 +1650,7 @@ const AdminViews = (() => {
       const bestTcHtml = bestGroup ? `<span class="tag ${tagCls}">${bestGroup.tc.code} — ${bestGroup.coo}</span>` : '—';
       let rowHtml = `
         <td data-col="styleNum" class="sticky-col mat-cell-white" style="border-left:3px solid ${color};padding-left:18px">
-          <span style="color:${color};font-size:0.85em;margin-right:4px">↳</span>${s.styleNumber}${badge}
+          <span style="color:${color};font-size:0.85em;margin-right:4px">↳</span>${s.styleNumber}${badge}${s.releasedBatch ? `<span class="tag" style="font-size:0.6rem;margin-left:4px;background:rgba(99,102,241,0.12);color:#6366f1;vertical-align:middle">${s.releasedBatch}</span>` : ''}
         </td>
         <td data-col="styleName" class="mat-cell-white mat-cell-normal">${styleNameInput}</td>
         <td data-col="cat" class="mat-cell-white mat-cell-normal">${catInput}</td>
@@ -1711,7 +1708,7 @@ const AdminViews = (() => {
           <td data-col="${k}_freight" class="col-vendor-sub tc-detail-col text-sm ${tcColorClass}" data-tckey="${k}"${hideStyle}>${freightCell}</td>
           <td data-col="${k}_ldp" class="col-vendor-sub col-ldp ${tcColorClass}">${ldpCell}</td>`;
       });
-      rowHtml += `<td data-col="actions"><button class="btn-cancel-style" onclick="App.cancelStyle('${s.id}','${programId}')">🚫 Cancel</button></td>`;
+      rowHtml += `<td data-col="actions" style="white-space:nowrap"><button class="btn-cancel-style" onclick="App.cancelStyle('${s.id}','${programId}')">🚫</button><button class="btn btn-ghost btn-sm" style="font-size:0.7rem;padding:2px 5px;margin-left:2px" title="Log design change" onclick="App.openDesignChangeModal('${s.id}')">📌</button></td>`;
       const sn2 = (s.styleNumber||'').trim();
       const hist2 = sn2 ? (repeatHistory[sn2]||[]) : [];
       if (!hist2.length) {
@@ -1729,6 +1726,35 @@ const AdminViews = (() => {
     // Build active rows — optionally grouped
     let activeRows = '';
     const totalFixedCols = 12 + colGroups.length * 6 + 2; // +2 actual/wtd, +2 actions+repeat
+
+    // Unreleased handoff styles — ghost rows so production sees upcoming styles
+    const linkedHandoff = (API.DesignHandoffs?.all?.() || []).find(h => h.linkedProgramId === programId);
+    const unreleasedByFab = {};
+    if (linkedHandoff) {
+      const releasedIds = new Set((linkedHandoff.batchReleases || []).flatMap(b => b.styleIds || []));
+      (linkedHandoff.stylesList || []).forEach(hs => {
+        if (!releasedIds.has(hs.id)) {
+          const fab = (hs.fabrication || hs.fabric || '—').trim() || '—';
+          if (!unreleasedByFab[fab]) unreleasedByFab[fab] = [];
+          unreleasedByFab[fab].push(hs);
+        }
+      });
+    }
+    const ghostColspan = totalFixedCols - 3;
+    function buildGhostRows(handoffStyles) {
+      return handoffStyles.map(hs => `<tr style="opacity:0.35;pointer-events:none">
+        <td class="sel-col sticky-col mat-cell-white" style="width:36px;min-width:36px"></td>
+        <td class="sticky-col mat-cell-white" style="width:28px;min-width:28px;padding:0"></td>
+        <td data-col="styleNum" class="sticky-col mat-cell-white" style="color:#94a3b8;font-style:italic">${hs.styleNumber || '—'}</td>
+        <td colspan="${ghostColspan}" style="color:#94a3b8;font-size:0.8rem;padding:6px 8px">
+          <span style="font-style:italic">${hs.styleName || ''}</span>
+          <span class="tag" style="font-size:0.62rem;margin-left:6px;background:rgba(148,163,184,0.12);color:#94a3b8">⏳ ${hs.batchLabel || 'Batch 1'}</span>
+          <span style="font-size:0.7rem;opacity:0.7;margin-left:6px">Unreleased</span>
+        </td>
+      </tr>`).join('');
+    }
+    const consumedFabs = new Set();
+
     if (groupBy === 'fabrication') {
       const groups = {};
       const groupOrder = [];
@@ -1783,9 +1809,28 @@ const AdminViews = (() => {
           const lnk = styleToLink[g.id];
           if (lnk) activeRows += buildGuestRow(g, lnk);
         });
+        // Render ghost rows for unreleased handoff styles in this fabric group
+        if (unreleasedByFab[fab]?.length) {
+          activeRows += buildGhostRows(unreleasedByFab[fab]);
+          consumedFabs.add(fab);
+        }
+      });
+      // Fabric groups that exist only in the handoff (no released styles yet)
+      Object.entries(unreleasedByFab).forEach(([fab, ghosts]) => {
+        if (consumedFabs.has(fab)) return;
+        activeRows += `<tr class="cs-group-row">
+          <td colspan="${totalFixedCols}">
+            <span style="font-weight:600">📁 ${fab}</span>
+            <span class="cs-group-count">${ghosts.length} style${ghosts.length !== 1 ? 's' : ''} — unreleased</span>
+          </td>
+        </tr>`;
+        activeRows += buildGhostRows(ghosts);
       });
     } else {
       activeRows = buildRows(activeStyles, false);
+      // Append unreleased ghost rows at the end
+      const allGhosts = Object.values(unreleasedByFab).flat();
+      if (allGhosts.length) activeRows += buildGhostRows(allGhosts);
     }
 
     // ── Grand Totals ──────────────────────────────────────────
@@ -1878,7 +1923,7 @@ const AdminViews = (() => {
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
           <button class="btn btn-ghost btn-sm" onclick="App.navigate('cost-summary','${style.programId}')">← ${prog.name}</button>
         </div>
-        <h1 class="page-title">${style.styleNumber} — ${style.styleName}</h1>
+        <h1 class="page-title">${[prog.season, prog.year, prog.name, style.styleNumber].filter(Boolean).join(' · ')} — ${style.styleName}</h1>
         <p class="page-subtitle">${style.category || ''} · ${(style.fabrication || '').substring(0, 50)} · Sell: ${fmt(style.projSellPrice)} · Qty: ${fmtN(style.projQty)}</p>
       </div>
       ${targetLDP ? `<div class="card card-sm" style="text-align:center;min-width:130px"><div class="text-sm text-muted">Target LDP</div><div class="font-bold text-accent" style="font-size:1.3rem">${fmt(targetLDP)}</div></div>` : ''}
@@ -2235,8 +2280,8 @@ const AdminViews = (() => {
     return `
     ${programTabBar(programId, 'buys', prog)}
     <div class="page-header" style="margin-top:12px">
-      <div><h1 class="page-title">${prog.name} — Buy Summary</h1>
-        <p class="page-subtitle">${prog.season || ''} ${prog.year || ''}${prog.gender ? ' · ' + prog.gender : ''}${prog.retailer ? ' · ' + prog.retailer : ''}</p></div>
+      <div><h1 class="page-title">${[prog.season, prog.year, prog.name].filter(Boolean).join(' · ')} — Buy Summary</h1>
+        <p class="page-subtitle">${[prog.gender, prog.retailer].filter(Boolean).join(' · ')}</p></div>
       <div style="display:flex;gap:8px">${assignBtn}${dlBtn}${upBtn}</div>
     </div>
     ${headerTiles}
@@ -2660,38 +2705,6 @@ const AdminViews = (() => {
     const handoffs  = API.DesignHandoffs.all().slice().reverse();
     const allSRs    = API.SalesRequests.all();
 
-    // SalesRequests that have no design handoff linked to them yet, and aren't converted
-    const awaitingHandoff = allSRs.filter(r =>
-      !r.linkedProgramId &&
-      !handoffs.find(h => h.sourceSalesRequestId === r.id)
-    );
-
-    const awaitingPanel = awaitingHandoff.length ? `
-      <div class="card mb-4" style="border-color:#f59e0b;border-left:3px solid #f59e0b">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-          <div>
-            <div class="font-bold" style="color:#f59e0b">📝 Costing Requests Ready for Design Handoff</div>
-            <div class="text-sm text-muted mt-1">Sales created these requests — upload a Style &amp; Fabric list to respond with a handoff.</div>
-          </div>
-        </div>
-        <div style="display:flex;flex-direction:column;gap:10px">
-          ${awaitingHandoff.map(r => {
-            const d = new Date(r.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-            const labels = [r.brand, r.retailer, r.gender].filter(Boolean).join(' · ');
-            return `<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:var(--bg-elevated);border-radius:var(--radius-sm);border:1px solid var(--border)">
-              <div style="display:flex;gap:16px;align-items:center">
-                <div>
-                  <div class="font-bold">${r.season||'—'} ${r.year||''}${labels ? ' · ' + labels : ''}</div>
-                  <div class="text-sm text-muted">From ${r.submittedByName||'—'} · ${d}</div>
-                </div>
-                <span class="tag">${(r.styles||[]).length} styles</span>
-              </div>
-              <button class="btn btn-primary btn-sm" onclick="App.openNewHandoffModal('${r.id}')">Start Handoff →</button>
-            </div>`;
-          }).join('')}
-        </div>
-      </div>` : '';
-
     // Handoffs that have a matching unlinked Sales Request (by season+year+brand) — ready to reconcile
     const norm = s => (s || '').trim().toLowerCase();
     const reconcilePairs = handoffs
@@ -2862,7 +2875,6 @@ const AdminViews = (() => {
       </div>
     </div>
     ${reconcilePanel}
-    ${awaitingPanel}
     ${handoffSections}`;
   }
 
@@ -2990,7 +3002,23 @@ const AdminViews = (() => {
         </details>`;
     };
 
-    const batchReviewPanel = batchReviewRequests.length ? `
+    // Consolidate batch-review SRs by linkedProgramId so Sales sees one row per program
+    const _brGroups = {};   // programId → [sr, ...]
+    const _brOrphan = [];   // SRs without a linkedProgramId (legacy fallback)
+    batchReviewRequests.forEach(r => {
+      if (r.linkedProgramId) {
+        if (!_brGroups[r.linkedProgramId]) _brGroups[r.linkedProgramId] = [];
+        _brGroups[r.linkedProgramId].push(r);
+      } else {
+        _brOrphan.push(r);
+      }
+    });
+    const _brEntries = [
+      ...Object.entries(_brGroups).map(([pid, srs]) => ({ pid, srs })),
+      ..._brOrphan.map(r => ({ pid: null, srs: [r] })),
+    ];
+
+    const batchReviewPanel = _brEntries.length ? `
       <div class="card mb-4" style="border-color:#f59e0b;border-left:3px solid #f59e0b">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
           <div>
@@ -2999,21 +3027,29 @@ const AdminViews = (() => {
           </div>
         </div>
         <div style="display:flex;flex-direction:column;gap:10px">
-          ${batchReviewRequests.map(r => {
-            const d = new Date(r.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-            const batchStyles = (r.styles || []);
-            const batchLabel  = batchStyles[0]?.batchLabel || 'Batch';
+          ${_brEntries.map(({ pid, srs }) => {
+            const prog       = pid ? API.Programs.get(pid) : null;
+            const latest     = srs.reduce((a, r) => new Date(r.createdAt) > new Date(a.createdAt) ? r : a, srs[0]);
+            const d          = new Date(latest.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+            const dateHint   = srs.length > 1 ? `${d} (${srs.length} batches)` : d;
+            const title      = prog?.name || [latest.season, latest.year, latest.brand, latest.retailer].filter(Boolean).join(' · ');
+            const totalStyles = srs.reduce((n, r) => n + (r.styles||[]).length, 0);
+            const batchBadges = srs.map(r => {
+              const lbl = (r.styles||[])[0]?.batchLabel || 'Batch';
+              return `<span class="tag" style="background:rgba(245,158,11,0.12);color:#f59e0b">📦 ${lbl} · ${(r.styles||[]).length} styles</span>`;
+            }).join('');
+            const reviewBtn = (srs.length > 1 && pid)
+              ? `<button class="btn btn-secondary btn-sm" onclick="App.openConsolidatedBatchReview('${pid}')">Review Quantities</button>`
+              : `<button class="btn btn-secondary btn-sm" onclick="App.openSalesRequestDetail('${srs[0].id}')">Review Quantities</button>`;
             return `<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:var(--bg-elevated);border-radius:var(--radius-sm);border:1px solid var(--border)">
-              <div style="display:flex;gap:16px;align-items:center">
-                <div>
-                  <div class="font-bold">${r.season||'—'} ${r.year||''}${r.brand ? ' · '+r.brand : ''}${r.retailer ? ' · '+r.retailer : ''}</div>
-                  <div class="text-sm text-muted">${batchLabel} · ${batchStyles.length} new styles · Released ${d}</div>
-                </div>
-                <span class="tag" style="background:rgba(245,158,11,0.12);color:#f59e0b">📦 ${batchLabel}</span>
+              <div>
+                <div class="font-bold">${title}</div>
+                <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px">${batchBadges}</div>
+                <div class="text-sm text-muted" style="margin-top:4px">${totalStyles} new styles · Released ${dateHint}</div>
               </div>
-              <div style="display:flex;gap:8px">
-                <button class="btn btn-secondary btn-sm" onclick="App.openSalesRequestDetail('${r.id}')">Review Quantities</button>
-                ${r.linkedProgramId ? `<span class="badge badge-placed" style="cursor:pointer" onclick="App.navigate('cost-summary','${r.linkedProgramId}')">→ Program</span>` : ''}
+              <div style="display:flex;gap:8px;flex-shrink:0;margin-left:16px">
+                ${reviewBtn}
+                ${pid ? `<span class="badge badge-placed" style="cursor:pointer" onclick="App.navigate('cost-summary','${pid}')">→ Program</span>` : ''}
               </div>
             </div>`;
           }).join('')}
@@ -3045,18 +3081,22 @@ const AdminViews = (() => {
     const h = API.DesignHandoffs.get(handoffId);
     if (!h) return `<div class="empty-state"><div class="icon">❌</div><h3>Handoff not found</h3><p><button class="btn btn-secondary" onclick="App.navigate('design-handoff')">← Back</button></p></div>`;
 
-    const styles       = h.stylesList || [];
-    const releases     = h.batchReleases || [];
-    const releasedSet  = new Set(releases.flatMap(b => b.styleIds || []));
-    const releasedCount = releasedSet.size;
-    const totalCount   = styles.length;
-
-    // Next logical batch label
-    const existingLabels = releases.map(b => b.batchLabel);
-    const nextBatchNum   = existingLabels.length + 1;
-    const suggestedLabel = `Batch ${nextBatchNum}`;
+    const styles         = h.stylesList || [];
+    const releases       = h.batchReleases || [];
+    const releasedSet    = new Set(releases.flatMap(b => b.styleIds || []));
+    const unreleasedStyles = styles.filter(s => !releasedSet.has(s.id));
+    const releasedStyles   = styles.filter(s =>  releasedSet.has(s.id));
+    const releasedCount  = releasedSet.size;
+    const totalCount     = styles.length;
+    const hasPending     = unreleasedStyles.length > 0;
+    const hasReleased    = releasedStyles.length > 0;
 
     const fmtDate = iso => iso ? new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
+
+    // Color palette indexed by batch label
+    const batchColors = ['#6366f1','#22c55e','#f59e0b','#ef4444','#0ea5e9','#a855f7'];
+    const batchColorMap = {};
+    releases.forEach((b, i) => { batchColorMap[b.batchLabel] = batchColors[i % batchColors.length]; });
 
     // Progress bar
     const pct = totalCount ? Math.round((releasedCount / totalCount) * 100) : 0;
@@ -3068,80 +3108,44 @@ const AdminViews = (() => {
         <span class="text-sm font-bold" style="color:#6366f1;white-space:nowrap">${releasedCount} / ${totalCount} styles released</span>
       </div>`;
 
-    // Batch release history chips
+    // Batch history chips
     const historyChips = releases.length ? `
       <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px">
         ${releases.map((b, i) => {
-          const colors = ['#6366f1','#22c55e','#f59e0b','#ef4444','#0ea5e9','#a855f7'];
-          const c = colors[i % colors.length];
+          const c = batchColors[i % batchColors.length];
           return `<span class="tag" style="background:${c}20;color:${c};font-weight:600;border:1px solid ${c}40">
             ${b.batchLabel} <span class="text-muted" style="font-weight:400">· ${(b.styleIds||[]).length} styles · ${fmtDate(b.releasedAt)}</span>
           </span>`;
         }).join('')}
       </div>` : '';
 
-    // Color palette indexed by batch label
-    const batchColors = ['#6366f1','#22c55e','#f59e0b','#ef4444','#0ea5e9','#a855f7'];
-    const batchColorMap = {};
-    releases.forEach((b, i) => { batchColorMap[b.batchLabel] = batchColors[i % batchColors.length]; });
+    // ── PENDING BATCHES SECTION ────────────────────────────────
+    let pendingSection = '';
+    if (hasPending) {
+      const suggestedLabel = `Batch ${releases.length + 1}`;
+      const pendingRows = unreleasedStyles.map(s => `
+        <tr class="hd-row-unreleased" data-style-id="${s.id}">
+          <td style="width:32px;text-align:center;padding:8px"><span style="color:#94a3b8;font-size:1rem">○</span></td>
+          <td class="primary font-bold" style="padding:8px 12px">${s.styleNumber || '—'}</td>
+          <td style="padding:8px 12px">${s.styleName || '—'}</td>
+          <td class="text-sm text-muted" style="padding:8px 12px">${s.fabrication || s.fabric || '—'}</td>
+          <td style="padding:8px 12px">
+            <input class="form-input hd-label-input" type="text"
+              data-style-id="${s.id}"
+              value="${(s.batchLabel || suggestedLabel).replace(/"/g,'&quot;')}"
+              placeholder="${suggestedLabel}"
+              style="width:110px;padding:4px 8px;font-size:0.82rem"
+              oninput="App._hdUpdateReleaseCount('${h.id}')"
+              onblur="App._hdSaveBatchLabel('${h.id}',this.dataset.styleId,this.value.trim()||'${suggestedLabel}')"
+              onkeydown="if(event.key==='Enter')this.blur()">
+          </td>
+          <td class="text-sm text-muted" style="padding:8px 12px">
+            <span class="tag" style="color:#f59e0b">Pending</span>
+          </td>
+        </tr>`).join('');
 
-    // Style rows — unreleased rows have an editable per-style batchLabel input
-    const styleRows = styles.map((s) => {
-      const isReleased   = releasedSet.has(s.id);
-      const releasedBatch = isReleased ? releases.find(b => (b.styleIds||[]).includes(s.id)) : null;
-      const batchColor    = releasedBatch ? (batchColorMap[releasedBatch.batchLabel] || '#6366f1') : null;
-      const batchCell     = releasedBatch
-        ? `<span class="tag" style="background:${batchColor}20;color:${batchColor};font-weight:700;font-size:0.7rem">${releasedBatch.batchLabel}</span>`
-        : `<input class="form-input hd-label-input" type="text"
-             data-style-id="${s.id}"
-             value="${(s.batchLabel || suggestedLabel).replace(/"/g,'&quot;')}"
-             placeholder="${suggestedLabel}"
-             style="width:110px;padding:4px 8px;font-size:0.82rem"
-             oninput="App._hdUpdateReleaseCount('${h.id}')"
-             onblur="App._hdSaveBatchLabel('${h.id}',this.dataset.styleId,this.value.trim()||'${suggestedLabel}')"
-             onkeydown="if(event.key==='Enter')this.blur()">`;
-      return `<tr class="${isReleased ? 'hd-row-released' : 'hd-row-unreleased'}" data-style-id="${s.id}" style="${isReleased ? 'opacity:0.55' : ''}">
-        <td style="width:32px;text-align:center;padding:8px">
-          ${isReleased ? `<span style="color:#6366f1;font-size:1.1rem">✓</span>` : `<span style="color:#94a3b8;font-size:1rem">○</span>`}
-        </td>
-        <td class="primary font-bold" style="padding:8px 12px">${s.styleNumber || '—'}</td>
-        <td style="padding:8px 12px">${s.styleName || '—'}</td>
-        <td class="text-sm text-muted" style="padding:8px 12px">${s.fabrication || s.fabric || '—'}</td>
-        <td style="padding:8px 12px">${batchCell}</td>
-        <td class="text-sm text-muted" style="padding:8px 12px">
-          ${isReleased ? `<span class="tag" style="color:#22c55e">Released</span>` : `<span class="tag" style="color:#f59e0b">Pending</span>`}
-        </td>
-      </tr>`;
-    }).join('');
-
-    // Fabrics collapsible
-    const fabricRows = (h.fabricsList || []).map(f =>
-      `<tr><td class="font-bold" style="padding:8px 12px">${f.fabricCode||'—'}</td><td style="padding:8px 12px">${f.fabricName||'—'}</td><td class="text-sm" style="padding:8px 12px">${f.content||'—'}</td><td class="text-sm text-muted" style="padding:8px 12px">${f.supplier||'—'}</td></tr>`
-    ).join('');
-
-    return `
-    <div id="hd-page">
-      <!-- PAGE HEADER -->
-      <div class="page-header">
-        <div style="display:flex;align-items:center;gap:14px">
-          <button class="btn btn-ghost btn-sm" onclick="App.navigate('design-handoff')">← Back</button>
-          <div>
-            <h1 class="page-title" style="margin:0">🎨 ${[h.season,h.year,h.brand,h.tier,h.gender].filter(Boolean).join(' · ')}</h1>
-            <p class="page-subtitle" style="margin:4px 0 0">Design Handoff${h.supplierRequestNumber ? ` · SR# ${h.supplierRequestNumber}` : ''}</p>
-          </div>
-        </div>
-        ${h.linkedProgramId
-          ? `<button class="btn btn-secondary btn-sm" onclick="App.navigate('cost-summary','${h.linkedProgramId}')">→ View Program</button>`
-          : ''}
-      </div>
-
-      <!-- PROGRESS -->
-      <div class="card mb-4">
-        ${progressBar}
-        ${historyChips}
-      </div>
-
-      <!-- TOOLBAR -->
+      pendingSection = `
+      ${hasReleased ? `<div class="font-bold" style="font-size:0.95rem;margin:20px 0 10px">⏳ Pending Batches <span class="tag" style="margin-left:6px">${unreleasedStyles.length}</span></div>` : ''}
       <div style="margin-bottom:12px">
         <p class="text-sm text-muted" style="margin:0 0 8px">
           ① Assign batch labels to styles in the table below &nbsp;·&nbsp;
@@ -3166,23 +3170,120 @@ const AdminViews = (() => {
         </div>
         <div id="hd-import-preview" style="margin-top:10px"></div>
       </div>
-
-      <!-- STYLES TABLE -->
       <div class="card" style="padding:0;margin-bottom:16px">
         <div class="table-wrap">
           <table>
             <thead><tr>
               <th style="width:32px"></th>
-              <th>Style #</th>
-              <th>Style Name</th>
-              <th>Fabrication</th>
+              <th>Style #</th><th>Style Name</th><th>Fabrication</th>
               <th>Batch <span class="text-muted" style="font-weight:400;font-size:0.75rem">(assign label per style)</span></th>
               <th>Status</th>
             </tr></thead>
-            <tbody id="hd-style-tbody">${styleRows}</tbody>
+            <tbody id="hd-style-tbody">${pendingRows}</tbody>
           </table>
         </div>
+      </div>`;
+    }
+
+    // ── RELEASED STYLES SECTION ────────────────────────────────
+    let releasedSection = '';
+    if (hasReleased) {
+      // Look up program styles for cancelled badge + 📌 button IDs
+      const progStyles = h.linkedProgramId ? (API.Styles.byProgram(h.linkedProgramId) || []) : [];
+      const progStyleByNum = {};
+      progStyles.forEach(ps => { progStyleByNum[ps.styleNumber] = ps; });
+
+      // Group released styles by fabric
+      const fabGroups = {};
+      const fabOrder  = [];
+      releasedStyles.forEach(s => {
+        const fab = (s.fabrication || s.fabric || '—').trim() || '—';
+        if (!fabGroups[fab]) { fabGroups[fab] = []; fabOrder.push(fab); }
+        fabGroups[fab].push(s);
+      });
+      const colCount = h.linkedProgramId ? 5 : 4;
+
+      const releasedTableRows = fabOrder.map(fab => {
+        const fabStyles = fabGroups[fab];
+        const groupHdr = `<tr class="cs-group-row"><td colspan="${colCount}"><span style="font-weight:600">📁 ${fab}</span><span class="cs-group-count">${fabStyles.length} style${fabStyles.length !== 1 ? 's' : ''}</span></td></tr>`;
+        const rows = fabStyles.map(s => {
+          const batch = releases.find(b => (b.styleIds || []).includes(s.id));
+          const batchColor = batch ? (batchColorMap[batch.batchLabel] || '#6366f1') : '#6366f1';
+          const batchBadge = batch
+            ? `<span class="tag" style="background:${batchColor}20;color:${batchColor};font-weight:700;font-size:0.7rem">${batch.batchLabel}</span>`
+            : '—';
+          const progStyle = progStyleByNum[s.styleNumber];
+          const isCancelled = progStyle?.status === 'cancelled';
+          const statusBadge = isCancelled
+            ? `<span class="tag" style="background:rgba(239,68,68,0.12);color:#ef4444;margin-left:6px">Cancelled</span>`
+            : `<span class="tag" style="color:#22c55e;margin-left:6px">Released</span>`;
+          const logBtn = (h.linkedProgramId && progStyle?.id)
+            ? `<button class="btn btn-ghost btn-sm" style="font-size:0.7rem;padding:2px 5px" title="Log design change" onclick="App.openDesignChangeModal('${progStyle.id}')">📌</button>`
+            : '';
+          return `<tr style="${isCancelled ? 'opacity:0.5' : ''}">
+            <td class="primary font-bold" style="padding:8px 12px">${s.styleNumber || '—'}</td>
+            <td style="padding:8px 12px">${s.styleName || '—'}</td>
+            <td class="text-sm text-muted" style="padding:8px 12px">${s.fabrication || s.fabric || '—'}</td>
+            <td style="padding:8px 12px">${batchBadge}${statusBadge}</td>
+            ${h.linkedProgramId ? `<td style="padding:4px 8px">${logBtn}</td>` : ''}
+          </tr>`;
+        }).join('');
+        return groupHdr + rows;
+      }).join('');
+
+      const progLink = h.linkedProgramId
+        ? `<button class="btn btn-secondary btn-sm" onclick="App.navigate('cost-summary','${h.linkedProgramId}')">→ Open Program</button>`
+        : `<span class="text-sm text-muted" style="font-style:italic">No linked program</span>`;
+
+      releasedSection = `
+      <div class="font-bold" style="font-size:0.95rem;margin:${hasPending ? '0' : '20px'} 0 10px">✅ Released Styles <span class="tag" style="margin-left:6px">${releasedStyles.length}</span></div>
+      <div class="card" style="padding:0;margin-bottom:16px">
+        <div style="padding:10px 16px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border)">
+          <span class="text-sm text-muted">Grouped by fabrication · ${h.linkedProgramId ? 'Click 📌 to log a design change' : 'Legacy handoff — no program linked'}</span>
+          ${progLink}
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr>
+              <th>Style #</th><th>Style Name</th><th>Fabrication</th>
+              <th>Batch · Status</th>
+              ${h.linkedProgramId ? '<th></th>' : ''}
+            </tr></thead>
+            <tbody>${releasedTableRows}</tbody>
+          </table>
+        </div>
+      </div>`;
+    }
+
+    // Fabrics collapsible
+    const fabricRows = (h.fabricsList || []).map(f =>
+      `<tr><td class="font-bold" style="padding:8px 12px">${f.fabricCode||'—'}</td><td style="padding:8px 12px">${f.fabricName||'—'}</td><td class="text-sm" style="padding:8px 12px">${f.content||'—'}</td><td class="text-sm text-muted" style="padding:8px 12px">${f.supplier||'—'}</td></tr>`
+    ).join('');
+
+    return `
+    <div id="hd-page">
+      <!-- PAGE HEADER -->
+      <div class="page-header">
+        <div style="display:flex;align-items:center;gap:14px">
+          <button class="btn btn-ghost btn-sm" onclick="App.navigate('design-handoff')">← Back</button>
+          <div>
+            <h1 class="page-title" style="margin:0">🎨 ${[h.season,h.year,h.brand,h.tier,h.gender].filter(Boolean).join(' · ')}</h1>
+            <p class="page-subtitle" style="margin:4px 0 0">Design Handoff${h.supplierRequestNumber ? ` · SR# ${h.supplierRequestNumber}` : ''}</p>
+          </div>
+        </div>
+        ${h.linkedProgramId
+          ? `<button class="btn btn-secondary btn-sm" onclick="App.navigate('cost-summary','${h.linkedProgramId}')">→ View Program</button>`
+          : ''}
       </div>
+
+      <!-- PROGRESS + HISTORY -->
+      ${totalCount > 0 ? `<div class="card mb-4">${progressBar}${historyChips}</div>` : ''}
+
+      <!-- PENDING BATCHES (only when unreleased styles exist) -->
+      ${pendingSection}
+
+      <!-- RELEASED STYLES (only when released styles exist) -->
+      ${releasedSection}
 
       <!-- FABRICS (collapsible) -->
       ${(h.fabricsList||[]).length ? `
@@ -3199,14 +3300,7 @@ const AdminViews = (() => {
       </details>` : ''}
     </div>
 
-    <script>
-    (function(){
-      // Prime the release button count on initial render
-      if (typeof App !== 'undefined' && App._hdUpdateReleaseCount) {
-        App._hdUpdateReleaseCount('${h.id}');
-      }
-    })();
-    </script>`;
+`;
   }
 
   // ── Build Request from Handoff — FULL PAGE SPREADSHEET ─────────────────────
@@ -4051,17 +4145,155 @@ const AdminViews = (() => {
     </div>`;
   }
 
+  function renderStyleTimeline(styleId) {
+    const changes = API.DesignChanges.byStyle(styleId).slice().reverse();
+    if (!changes.length) return `<div class="text-muted text-sm" style="padding:16px 0">No changes logged for this style yet.</div>`;
+    const userRole  = (typeof App !== 'undefined' && App._getState) ? App._getState()?.user?.role : '';
+    const isAdmin   = userRole === 'admin';
+    const isPC      = userRole === 'pc';
+    const isPlanning = userRole === 'planning' || userRole === 'sales';
+    const fmtDate   = d => new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+
+    return `<div class="design-change-timeline">${changes.map(c => {
+      const isPending = c.status === 'pending';
+      const rcr = API.RecostRequests.getByDesignChange(c.id);
+      const isFieldUpdate = !!c.field && !isPending; // auto-logged confirmed field update
+
+      const rcrBadge = (() => {
+        if (!rcr) return '';
+        const map = {
+          pending_sales:      `<span style="padding:1px 7px;border-radius:8px;font-size:0.65rem;font-weight:600;background:#f59e0b22;color:#d97706;border:1px solid #f59e0b55">Recost: Pending Sales</span>`,
+          pending:            `<span style="padding:1px 7px;border-radius:8px;font-size:0.65rem;font-weight:600;background:#f59e0b22;color:#d97706;border:1px solid #f59e0b55">Recost: Pending Sales</span>`,
+          pending_production: `<span style="padding:1px 7px;border-radius:8px;font-size:0.65rem;font-weight:600;background:#6366f122;color:#818cf8;border:1px solid #6366f155">Recost: Pending Production</span>`,
+          released:           `<span style="padding:1px 7px;border-radius:8px;font-size:0.65rem;font-weight:600;background:#22c55e22;color:#16a34a;border:1px solid #22c55e55">Recost: Released ✓</span>`,
+          rejected:           `<span style="padding:1px 7px;border-radius:8px;font-size:0.65rem;font-weight:600;background:#ef444422;color:#dc2626;border:1px solid #ef444455">Recost: Rejected</span>`,
+        };
+        return map[rcr.status] || '';
+      })();
+
+      const rcrActions = (() => {
+        if (!rcr) return '';
+        if ((rcr.status === 'pending_sales' || rcr.status === 'pending') && (isAdmin || isPC || isPlanning)) {
+          return `<div style="display:flex;gap:4px;margin-top:6px">` +
+            `<button class="btn btn-primary btn-sm" style="font-size:0.72rem;padding:2px 10px" onclick="App.salesApproveRecost('${rcr.id}','${rcr.programId}')">✅ Approve</button>` +
+            `<button class="btn btn-danger btn-sm" style="font-size:0.72rem;padding:2px 10px" onclick="App.rejectRecostRequest('${rcr.id}','${rcr.programId}','sales')">✕ Reject</button></div>`;
+        }
+        if (rcr.status === 'pending_production' && (isAdmin || isPC)) {
+          return `<div style="display:flex;gap:4px;margin-top:6px">` +
+            `<button class="btn btn-warning btn-sm" style="font-size:0.72rem;padding:2px 10px" onclick="App.releaseRecosting('${rcr.id}','${rcr.programId}')">🔄 Release to TC</button>` +
+            `<button class="btn btn-danger btn-sm" style="font-size:0.72rem;padding:2px 10px" onclick="App.rejectRecostRequest('${rcr.id}','${rcr.programId}','production')">✕ Reject</button></div>`;
+        }
+        return '';
+      })();
+
+      return `
+      <div class="dc-entry${isPending ? ' dc-entry-pending' : ''}">
+        <div class="dc-dot${isPending ? ' dc-dot-pending' : isFieldUpdate ? '' : ''}"></div>
+        <div class="dc-body">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            ${isFieldUpdate
+              ? `<span class="dc-desc" style="color:var(--text-secondary)">Field updated</span>`
+              : `<span class="dc-desc">${c.description || '—'}</span>`}
+            ${isPending
+              ? `<span class="badge badge-pending" style="font-size:0.65rem">Pending</span>
+                 <button class="btn btn-secondary btn-sm" style="padding:2px 8px;font-size:0.72rem" onclick="App.confirmDesignChange('${c.id}','${styleId}')">✓ Confirm</button>`
+              : (rcr ? '' : `<span class="badge badge-placed" style="font-size:0.65rem">Confirmed</span>`)}
+            ${rcrBadge}
+          </div>
+          ${c.field ? `<div class="dc-field text-sm text-muted">${c.field}${c.previousValue ? ': <span style="text-decoration:line-through;color:#ef4444">' + c.previousValue + '</span>' : ''} ${c.newValue ? '→ <strong>' + c.newValue + '</strong>' : ''}</div>` : ''}
+          ${!isFieldUpdate && c.description && c.field ? `<div class="dc-field text-sm text-muted" style="font-style:italic">${c.description}</div>` : ''}
+          <div class="dc-meta text-sm text-muted">${fmtDate(c.changedAt)} · ${c.changedByName || c.changedBy || '—'}${!isPending && c.confirmedByName ? ` · ✓ ${c.confirmedByName}` : ''}</div>
+          ${rcrActions}
+        </div>
+      </div>`;
+    }).join('')}
+    </div>`;
+  }
+
   function renderAllDesignChanges(filter) {
+    const perms  = (typeof App !== 'undefined' && App.getPerms) ? App.getPerms() : {};
+    const userRole = (typeof App !== 'undefined' && App._getState) ? App._getState()?.user?.role : '';
+    const isAdmin = userRole === 'admin';
+    const isPC    = userRole === 'pc';
+    const isPlanning = userRole === 'planning' || userRole === 'sales';
+
     const all = API.DesignChanges.all().slice().reverse();
-    const pendingCount = all.filter(c => c.status === 'pending').length;
-    const activeFilter = filter || (pendingCount > 0 ? 'pending' : 'all');
-    const changes = activeFilter === 'pending' ? all.filter(c => c.status === 'pending') : all;
     const fmtDate = d => new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
     const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
-    const rows = changes.length ? changes.map(c => {
+
+    // Classify each change by recost status for tab counts
+    const classify = c => {
+      const rcr = API.RecostRequests.getByDesignChange(c.id);
+      if (!rcr) return 'log-only';
+      if (rcr.status === 'released') return 'recost-released';
+      if (rcr.status === 'rejected') return 'recost-released'; // show in released tab (terminal)
+      return 'recost-pending'; // pending_sales or pending_production
+    };
+
+    const pendingDCCount   = all.filter(c => c.status === 'pending').length;
+    const recostPendCount  = all.filter(c => classify(c) === 'recost-pending').length;
+    const recostRelCount   = all.filter(c => classify(c) === 'recost-released').length;
+    const logOnlyCount     = all.filter(c => classify(c) === 'log-only').length;
+    const activeFilter     = filter || 'all';
+
+    // 30-day window for KPI tiles
+    const now30 = Date.now(), ms30 = 30 * 24 * 60 * 60 * 1000;
+    const inLast30 = c => (now30 - new Date(c.changedAt).getTime()) < ms30;
+    const totalRecent    = all.filter(inLast30).length;
+    const relRecent      = all.filter(c => classify(c) === 'recost-released' && inLast30(c)).length;
+    const logOnlyRecent  = all.filter(c => classify(c) === 'log-only' && inLast30(c)).length;
+
+    // Role-scoped pending count for KPI tile (matches sidebar badge logic)
+    const pendingTileCount = (isAdmin || isPC)
+      ? (API.RecostRequests?.pendingProduction?.() || []).length
+      : isPlanning
+      ? (API.RecostRequests?.pendingSales?.() || []).length
+      : recostPendCount;
+
+    const filtered = (() => {
+      if (activeFilter === 'recost-pending')  return all.filter(c => classify(c) === 'recost-pending');
+      if (activeFilter === 'recost-released') return all.filter(c => classify(c) === 'recost-released');
+      if (activeFilter === 'log-only')        return all.filter(c => classify(c) === 'log-only');
+      return all;
+    })();
+
+    const rcrStatusBadge = rcr => {
+      if (!rcr) return `<span class="badge" style="background:#334155;color:#94a3b8;font-size:0.7rem">Log only</span>`;
+      const map = {
+        pending_sales:      { label: 'Recost: Pending Sales',      bg: '#f59e0b22', color: '#d97706', border: '#f59e0b55' },
+        pending:            { label: 'Recost: Pending Sales',      bg: '#f59e0b22', color: '#d97706', border: '#f59e0b55' },
+        pending_production: { label: 'Recost: Pending Production', bg: '#6366f122', color: '#818cf8', border: '#6366f155' },
+        released:           { label: 'Recost: Released',           bg: '#22c55e22', color: '#16a34a', border: '#22c55e55' },
+        rejected:           { label: 'Recost: Rejected',           bg: '#ef444422', color: '#dc2626', border: '#ef444455' },
+      };
+      const cfg = map[rcr.status] || { label: rcr.status, bg: '#33415522', color: '#94a3b8', border: '#33415555' };
+      return `<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:0.7rem;font-weight:600;background:${cfg.bg};color:${cfg.color};border:1px solid ${cfg.border}">${cfg.label}</span>`;
+    };
+
+    const rcrActions = (rcr, c) => {
+      if (!rcr) return '';
+      if (rcr.status === 'pending_sales' || rcr.status === 'pending') {
+        if (isAdmin || isPC || isPlanning) {
+          return `<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px">` +
+            `<button class="btn btn-primary btn-sm" onclick="App.salesApproveRecost('${rcr.id}','${rcr.programId}')">✅ Approve</button>` +
+            `<button class="btn btn-danger btn-sm" onclick="App.rejectRecostRequest('${rcr.id}','${rcr.programId}','sales')">✕ Reject</button></div>`;
+        }
+      }
+      if (rcr.status === 'pending_production') {
+        if (isAdmin || isPC) {
+          return `<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px">` +
+            `<button class="btn btn-warning btn-sm" onclick="App.releaseRecosting('${rcr.id}','${rcr.programId}')">🔄 Release to TC</button>` +
+            `<button class="btn btn-danger btn-sm" onclick="App.rejectRecostRequest('${rcr.id}','${rcr.programId}','production')">✕ Reject</button></div>`;
+        }
+      }
+      return '';
+    };
+
+    const rows = filtered.length ? filtered.map(c => {
       const style = API.Styles.get(c.styleId);
       const prog  = style ? API.Programs.get(style.programId) : null;
       const isPending = c.status === 'pending';
+      const rcr   = API.RecostRequests.getByDesignChange(c.id);
       return `<tr
         data-flt-style="${esc(c.styleNumber || c.styleId || '')}"
         data-flt-program="${esc(prog?.name || '')}"
@@ -4076,26 +4308,40 @@ const AdminViews = (() => {
         <td class="text-sm">${c.newValue ? `<strong>${c.newValue}</strong>` : '—'}</td>
         <td class="text-sm text-muted">${c.changedByName || c.changedBy || '—'}</td>
         <td>${isPending
-          ? `<span class="badge badge-pending">Pending</span>`
-          : `<span class="badge badge-placed">Confirmed</span>`}
-        </td>
-        <td>${isPending
           ? `<button class="btn btn-secondary btn-sm" onclick="App.confirmDesignChange('${c.id}','${c.styleId}',true)">✓ Confirm</button>`
           : `<span class="text-muted text-sm">${c.confirmedByName || '—'}</span>`}
         </td>
+        <td style="min-width:170px">${rcrStatusBadge(rcr)}${rcrActions(rcr, c)}</td>
       </tr>`;
-    }).join('') : `<tr><td colspan="10" class="text-center text-muted" style="padding:40px">${activeFilter === 'pending' ? 'No pending design changes.' : 'No design changes logged yet.'}</td></tr>`;
+    }).join('') : `<tr><td colspan="10" class="text-center text-muted" style="padding:40px">No entries for this filter.</td></tr>`;
 
-    const tabBtn = (val, label, count) => {
-      const active = activeFilter === val;
-      return `<button class="btn btn-sm ${active ? 'btn-primary' : 'btn-secondary'}" onclick="App.renderDesignChangesTab('${val}')" style="min-width:90px">${label}${count > 0 ? ` <span style="background:${active?'rgba(255,255,255,0.25)':'var(--accent)'};color:${active?'#fff':'#fff'};border-radius:10px;padding:1px 7px;font-size:0.72rem;margin-left:4px">${count}</span>` : ''}</button>`;
+    const kpiTile = (bucket, icon, label, count, color, sub) => {
+      const isActive = activeFilter === bucket;
+      const muted = count === 0;
+      return `<div class="kpi-card" style="cursor:pointer${isActive ? `;border-color:${color};box-shadow:0 0 0 2px ${color}22` : ''}"
+        onclick="App.renderDesignChangesTab('${bucket}')">
+        <div class="kpi-icon" style="background:${color}22;color:${muted ? '#64748b' : color}">${icon}</div>
+        <div class="kpi-body">
+          <div class="kpi-value" style="${muted ? 'color:var(--text-muted)' : ''}">${count}</div>
+          <div class="kpi-label">${label}</div>
+          ${sub ? `<div class="kpi-sub">${sub}</div>` : ''}
+        </div>
+      </div>`;
     };
+
+    const pendingColor = pendingTileCount > 0 ? '#ef4444' : '#64748b';
+    const pendingSub   = (isAdmin || isPC) ? 'Awaiting your release' : isPlanning ? 'Awaiting your approval' : 'In progress';
 
     return `
     <div class="page-header">
-      <div><h1 class="page-title">Design Change Log</h1>
-        <p class="page-subtitle">All logged design changes across programs, newest first</p></div>
-      <div style="display:flex;gap:6px">${tabBtn('pending','Pending',pendingCount)}${tabBtn('all','All',all.length)}</div>
+      <div><h1 class="page-title">Design Changes</h1>
+        <p class="page-subtitle">Design change log and re-cost requests across all programs</p></div>
+    </div>
+    <div class="kpi-grid" style="margin-bottom:20px">
+      ${kpiTile('all',              '📌', 'Total Changes',     totalRecent,       '#6366f1', `${all.length} all-time · last 30 days shown`)}
+      ${kpiTile('recost-pending',   '🔄', 'Pending Recosts',   pendingTileCount,  pendingColor, pendingSub)}
+      ${kpiTile('recost-released',  '✅', 'Released Recosts',  relRecent,         '#22c55e', `${recostRelCount} all-time · last 30 days shown`)}
+      ${kpiTile('log-only',         '📝', 'Log-Only Entries',  logOnlyRecent,     '#64748b', `${logOnlyCount} all-time · last 30 days shown`)}
     </div>
     <div class="card" style="padding:0"><div class="table-wrap"><table id="design-changes-tbl" data-column-filter>
       <thead><tr>
@@ -4105,7 +4351,8 @@ const AdminViews = (() => {
         <th data-filter-col="field">Field</th>
         <th>Description</th><th>Previous</th><th>New Value</th>
         <th data-filter-col="by">Logged By</th>
-        <th>Status</th><th>Action</th>
+        <th>DC Status</th>
+        <th>Recost Status</th>
       </tr></thead>
       <tbody>${rows}</tbody>
     </table></div></div>`;
@@ -4167,6 +4414,32 @@ const AdminViews = (() => {
         onchange="App.saveStyleDeptStatus('${styleId}','${field}',this.value)">${opts.join('')}</select>`;
       return `<div class="dcv-fill-wrap">${sel}<div class="dcv-fill-handle" title="Drag down to copy" onmousedown="App.startDcvDrag(event,'${styleId}','${field}')">⣿</div></div>`;
     }
+
+    // Unreleased handoff styles — ghost rows for pipeline visibility (matches buildCostMatrix logic)
+    const dcvLinkedHandoff = (API.DesignHandoffs?.all?.() || []).find(h => h.linkedProgramId === programId);
+    const dcvUnreleasedByFab = {};
+    if (dcvLinkedHandoff) {
+      const releasedIds = new Set((dcvLinkedHandoff.batchReleases || []).flatMap(b => b.styleIds || []));
+      (dcvLinkedHandoff.stylesList || []).forEach(hs => {
+        if (!releasedIds.has(hs.id)) {
+          const fab = (hs.fabrication || hs.fabric || '—').trim() || '—';
+          if (!dcvUnreleasedByFab[fab]) dcvUnreleasedByFab[fab] = [];
+          dcvUnreleasedByFab[fab].push(hs);
+        }
+      });
+    }
+    function buildDcvGhostRows(handoffStyles) {
+      return handoffStyles.map(hs => `<tr style="opacity:0.35;pointer-events:none">
+        <td style="display:none"></td>
+        <td data-col="styleNum" style="color:#94a3b8;font-style:italic">${hs.styleNumber || '—'}</td>
+        <td colspan="12" style="color:#94a3b8;font-size:0.8rem;padding:6px 8px">
+          <span style="font-style:italic">${hs.styleName || ''}</span>
+          <span class="tag" style="font-size:0.62rem;margin-left:6px;background:rgba(148,163,184,0.12);color:#94a3b8">⏳ ${hs.batchLabel || 'Batch 1'}</span>
+          <span style="font-size:0.7rem;opacity:0.7;margin-left:6px">Unreleased</span>
+        </td>
+      </tr>`).join('');
+    }
+    const dcvConsumedFabs = new Set();
 
     // Build style rows grouped by fabrication
     const groups = {}; const groupOrder = [];
@@ -4270,6 +4543,22 @@ const AdminViews = (() => {
           <td data-col="recosting" style="min-width:140px">${recostCell}${histBtn}</td>
         </tr>`;
       });
+
+      // Ghost rows for unreleased handoff styles in this fabric group
+      if (dcvUnreleasedByFab[fab]?.length) {
+        bodyRows += buildDcvGhostRows(dcvUnreleasedByFab[fab]);
+        dcvConsumedFabs.add(fab);
+      }
+    });
+
+    // Fabric groups that exist only in the handoff (no released styles yet)
+    Object.entries(dcvUnreleasedByFab).forEach(([fab, ghosts]) => {
+      if (dcvConsumedFabs.has(fab)) return;
+      bodyRows += `<tr class="cs-group-row"><td colspan="14">
+        <span style="font-weight:600">📁 ${fab}</span>
+        <span class="cs-group-count">${ghosts.length} style${ghosts.length !== 1 ? 's' : ''} — unreleased</span>
+      </td></tr>`;
+      bodyRows += buildDcvGhostRows(ghosts);
     });
 
     if (!bodyRows) bodyRows = `<tr><td colspan="14" class="text-center text-muted" style="padding:40px">No styles yet.</td></tr>`;
@@ -4441,7 +4730,7 @@ const AdminViews = (() => {
       return `
       ${tabBar}
       <div class="page-header" style="margin-top:12px">
-        <div><h1 class="page-title">🚢 Delivery Plan — ${esc(prog.name)}</h1>
+        <div><h1 class="page-title">🚢 Delivery Plan — ${[prog.season, prog.year, prog.name].filter(Boolean).map(v => esc(String(v))).join(' · ')}</h1>
           <p class="page-subtitle">No plan yet. ${isProd
             ? `Initialize to pre-fill lines from the ${placedCount} placed ${placedCount === 1 ? 'style' : 'styles'} and customer buys.`
             : 'Production will initialize the plan once the program is confirmed.'}</p></div>
@@ -4559,7 +4848,7 @@ const AdminViews = (() => {
     ${tabBar}
     <div class="page-header" style="margin-top:12px">
       <div>
-        <h1 class="page-title">🚢 Delivery Plan — ${esc(prog.name)}</h1>
+        <h1 class="page-title">🚢 Delivery Plan — ${[prog.season, prog.year, prog.name].filter(Boolean).map(v => esc(String(v))).join(' · ')}</h1>
         <p class="page-subtitle">${lines.length} line${lines.length !== 1 ? 's' : ''} · role: ${esc(roleLabel(role))}${plan.updatedAt ? ` · updated ${fmtDate(plan.updatedAt)}` : ''}</p>
       </div>
       <div style="display:flex;gap:8px">
@@ -4703,7 +4992,7 @@ const AdminViews = (() => {
       ${programTabBar(programId, 'overview', prog)}
       <div class="page-header" style="margin-top:12px">
         <div>
-          <h1 class="page-title">📈 Overview — ${esc(prog.name)}</h1>
+          <h1 class="page-title">📈 Overview — ${[prog.season, prog.year, prog.name].filter(Boolean).map(v => esc(String(v))).join(' · ')}</h1>
           <p class="page-subtitle">${marketBadge} · Target margin ${prog.targetMargin ? fmtPct(prog.targetMargin) : '—'}</p>
         </div>
       </div>
@@ -4843,7 +5132,7 @@ const AdminViews = (() => {
       return `
       ${tabBar}
       <div class="page-header" style="margin-top:12px">
-        <div><h1 class="page-title">🏭 Capacity Plan — ${esc(prog.name)}</h1>
+        <div><h1 class="page-title">🏭 Capacity Plan — ${[prog.season, prog.year, prog.name].filter(Boolean).map(v => esc(String(v))).join(' · ')}</h1>
           <p class="page-subtitle">No plan yet. ${isProd
             ? `Initialize to pre-fill lines from the ${placedCount} placed ${placedCount === 1 ? 'style' : 'styles'} (one line per style × factory).`
             : 'Production will initialize the plan once styles are placed.'}</p></div>
@@ -4983,7 +5272,7 @@ const AdminViews = (() => {
     ${tabBar}
     <div class="page-header" style="margin-top:12px">
       <div>
-        <h1 class="page-title">🏭 Capacity Plan — ${esc(prog.name)}</h1>
+        <h1 class="page-title">🏭 Capacity Plan — ${[prog.season, prog.year, prog.name].filter(Boolean).map(v => esc(String(v))).join(' · ')}</h1>
         <p class="page-subtitle">
           <span class="badge" style="background:${statusInfo.color}22;color:${statusInfo.color};font-weight:600">${statusInfo.label}</span>
           · ${lines.length} line${lines.length !== 1 ? 's' : ''}
@@ -5475,7 +5764,7 @@ const AdminViews = (() => {
     crossProgramTable, statusBadge, toggleTCCols, expandAllTCs, collapseAllTCs,
     // Pre-costing workflow (v11 + v12 batch release)
     renderDesignHandoff, renderHandoffDetail, renderSalesRequests, renderBuildFromHandoff, renderFabricStandards, renderRecostQueue,
-    renderBottleneckTracker, designChangeHistoryPanel, renderAllDesignChanges,
+    renderBottleneckTracker, designChangeHistoryPanel, renderAllDesignChanges, renderStyleTimeline,
     // Design/Sales costing view (v13)
     renderDesignCostingView, renderCostHistoryTimeline,
     // Factory matrix

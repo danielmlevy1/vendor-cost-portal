@@ -199,6 +199,20 @@ const stmt = {
     WHERE s.program_id = ?
       AND EXISTS (SELECT 1 FROM submissions sub WHERE sub.style_id = s.id)
   `),
+  countCosted:         db.prepare(`
+    SELECT COUNT(DISTINCT s.id) AS n
+    FROM styles s
+    WHERE s.program_id = ?
+      AND EXISTS (SELECT 1 FROM submissions sub WHERE sub.style_id = s.id AND sub.fob IS NOT NULL)
+  `),
+  countPlaced:         db.prepare(`
+    SELECT COUNT(DISTINCT s.id) AS n
+    FROM styles s
+    WHERE s.program_id = ?
+      AND EXISTS (SELECT 1 FROM placements pl WHERE pl.style_id = s.id)
+  `),
+  sumProjQty:          db.prepare('SELECT COALESCE(SUM(proj_qty), 0) AS n FROM styles WHERE program_id = ?'),
+  sumActlQty:          db.prepare('SELECT COALESCE(SUM(actual_qty), 0) AS n FROM styles WHERE program_id = ?'),
   insertProgram:       db.prepare(`
     INSERT INTO programs
       (id, name, brand, retailer, gender, season, year, status, market,
@@ -344,9 +358,13 @@ const stmt = {
 function programWithCounts(row) {
   return {
     ...programFromRow(row),
-    styleCount:  stmt.countStyles.get(row.id).n,
-    tcCount:     stmt.countTCs.get(row.id).n,
-    quotedCount: stmt.countQuoted.get(row.id).n,
+    styleCount:   stmt.countStyles.get(row.id).n,
+    tcCount:      stmt.countTCs.get(row.id).n,
+    quotedCount:  stmt.countQuoted.get(row.id).n,
+    costedCount:  stmt.countCosted.get(row.id).n,
+    placedCount:  stmt.countPlaced.get(row.id).n,
+    projQtyTotal: stmt.sumProjQty.get(row.id).n || 0,
+    actlQtyTotal: stmt.sumActlQty.get(row.id).n || 0,
   };
 }
 

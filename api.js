@@ -103,6 +103,7 @@ const API = (() => {
     deliveryPlans:       {},   // programId -> {plan, lines}  (null = 404 "no plan")
     capacityPlans:       {},   // programId -> {plan, lines}  (null = 404 "no plan")
     recostByProgram:     {},   // programId -> [rcrs]
+    recostAll:           {},   // id -> rcr (full set, loaded by fetchAll)
     recostPendingSales:      [],
     recostPendingProduction: [],
     pendingChanges:      [],
@@ -803,8 +804,9 @@ const API = (() => {
   function _updateRcrInCache(updated) {
     for (const list of Object.values(cache.recostByProgram)) {
       const idx = list.findIndex(r => r.id === updated.id);
-      if (idx >= 0) { list[idx] = updated; return; }
+      if (idx >= 0) { list[idx] = updated; }
     }
+    if (cache.recostAll[updated.id]) cache.recostAll[updated.id] = updated;
   }
 
   const RecostRequests = {
@@ -812,11 +814,27 @@ const API = (() => {
     byProgram(pid)      { return cache.recostByProgram[pid] || []; },
     pendingSales()      { return cache.recostPendingSales; },
     pendingProduction() { return cache.recostPendingProduction; },
+    getByDesignChange(dcId) {
+      if (!dcId) return null;
+      const fromAll = Object.values(cache.recostAll).find(r => r.designChangeId === dcId);
+      if (fromAll) return fromAll;
+      for (const list of Object.values(cache.recostByProgram)) {
+        const r = list.find(x => x.designChangeId === dcId); if (r) return r;
+      }
+      return null;
+    },
     get(id) {
+      if (cache.recostAll[id]) return cache.recostAll[id];
       for (const list of Object.values(cache.recostByProgram)) {
         const r = list.find(x => x.id === id); if (r) return r;
       }
       return null;
+    },
+    async fetchAll() {
+      const rows = await GET('/api/recost-requests');
+      cache.recostAll = {};
+      rows.forEach(r => { cache.recostAll[r.id] = r; });
+      return rows;
     },
     async fetchByProgram(pid) {
       cache.recostByProgram[pid] = await GET(`/api/programs/${pid}/recost-requests`);
@@ -834,6 +852,7 @@ const API = (() => {
       const r = await POST('/api/recost-requests', data);
       if (!cache.recostByProgram[data.programId]) cache.recostByProgram[data.programId] = [];
       cache.recostByProgram[data.programId].push(r);
+      if (r.id) cache.recostAll[r.id] = r;
       return r;
     },
     async salesApprove(id, approvedBy, approvedByName) {
@@ -1368,6 +1387,7 @@ const API = (() => {
         StyleLinks.fetchByProgram(id).catch(() => {}),
         RecostRequests.fetchByProgram(id).catch(() => {}),
         Factories.fetchAll().catch(() => {}),
+        DesignHandoffs.fetchAll().catch(() => {}),
         preload.nav(),
       ]);
       // Post-load: cell flags, revisions, cost history (parallel)

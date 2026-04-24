@@ -493,8 +493,82 @@ function backfillAssignmentCoos() {
   console.log(`[db] Backfilled assignment_coos for ${rows.length} legacy assignments`);
 }
 
+// ── Backfill: recost_requests → design_changes ─────────────────
+// For every recost_request that has no linked design_change, create a
+// design_changes row using the recost's own data and back-link the two
+// records. Idempotent: skips any recost that already has a design_change_id.
+function backfillRecostDesignChanges() {
+  const orphans = db.prepare(`
+    SELECT * FROM recost_requests
+    WHERE design_change_id IS NULL
+    ORDER BY created_at ASC
+  `).all();
+
+  if (!orphans.length) return;
+
+  const insertDC = db.prepare(`
+    INSERT INTO design_changes
+      (id, style_id, program_id, style_number, description, field,
+       previous_value, new_value, changed_by, changed_by_name, changed_at, status,
+       confirmed_at, confirmed_by, confirmed_by_name)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+  `);
+  const linkRCR = db.prepare(`
+    UPDATE recost_requests SET design_change_id = ? WHERE id = ?
+  `);
+  const uidFn = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+
+  const tx = db.transaction(() => {
+    for (const r of orphans) {
+      // Parse style_ids JSON for the first style if style_id is missing
+      let styleId = r.style_id;
+      if (!styleId) {
+        try { const ids = JSON.parse(r.style_ids || '[]'); styleId = ids[0] || null; }
+        catch (_) { styleId = null; }
+      }
+      if (!styleId) continue; // can't create DC without a style
+
+      // Resolve style number from styles table if possible
+      const styleRow = styleId ? db.prepare('SELECT style_number FROM styles WHERE id = ?').get(styleId) : null;
+      const styleNumber = styleRow?.style_number || null;
+
+      const dcId = uidFn();
+      const description = r.note || (r.category ? `Re-cost request: ${r.category}` : 'Re-cost request');
+      const isTerminal = ['released', 'rejected', 'dismissed'].includes(r.status);
+
+      // For confirmed_by: use released_by for released entries, null otherwise
+      // (rejected recosts have no rejector column on recost_requests)
+      const confirmedBy     = r.status === 'released' ? (r.released_by || null) : null;
+      const confirmedByName = r.status === 'released' ? (r.released_by_name || null) : null;
+      const confirmedAt     = isTerminal ? (r.released_at || r.rejected_at || r.created_at) : null;
+
+      insertDC.run(
+        dcId,
+        styleId,
+        r.program_id,
+        styleNumber,
+        description,
+        r.category || null,
+        r.previous_value || null,
+        r.new_value || null,
+        r.requested_by || null,
+        r.requested_by_name || null,
+        r.created_at,          // preserve original timestamp
+        isTerminal ? 'confirmed' : 'pending',
+        confirmedAt,
+        confirmedBy,
+        confirmedByName
+      );
+      linkRCR.run(dcId, r.id);
+    }
+  });
+  tx();
+  console.log(`[db] Backfilled design_changes for ${orphans.length} legacy recost_requests`);
+}
+
 // ── Run all seeders ────────────────────────────────────────────
 runMigrations();
+backfillRecostDesignChanges();
 seedUsers();
 seedTradingCompanies();
 seedCooRates();
