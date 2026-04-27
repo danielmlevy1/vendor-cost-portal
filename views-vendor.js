@@ -233,6 +233,31 @@ const VendorViews = (() => {
       });
     }
 
+    const vpBatchReleases  = linkedHandoff?.batchReleases || [];
+    const vpBatchColors    = ['#6366f1','#22c55e','#f59e0b','#ef4444','#0ea5e9','#a855f7'];
+    const vpAllBatchLabels = [...new Set([
+      ...styles.map(s => s.releasedBatch).filter(Boolean),
+      ...(linkedHandoff?.stylesList || []).map(s => s.batchLabel).filter(Boolean),
+    ])];
+    const vpHasManyBatches = vpAllBatchLabels.length >= 2;
+    const vpBatchTileRow = vpHasManyBatches ? (() => {
+      const tiles = vpAllBatchLabels.map((label, i) => {
+        const rel      = vpBatchReleases.find(r => r.batchLabel === label);
+        const color    = vpBatchColors[i % vpBatchColors.length];
+        const count    = styles.filter(s => s.releasedBatch === label).length;
+        const dateStr  = rel ? new Date(rel.releasedAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : 'Pending';
+        const isPending = !rel;
+        const safeLabel = label.replace(/&/g,'&amp;').replace(/"/g,'&quot;');
+        return `<div class="kpi-card-wide" data-batch-tile="${safeLabel}"
+          onclick="App._toggleBatchFilter('tc-costing-table',this.dataset.batchTile,this)"
+          style="cursor:pointer;border-top:3px solid ${isPending?'#94a3b8':color};min-width:120px;user-select:none">
+          <div class="kpi-value" style="font-size:1.1rem;color:${isPending?'#94a3b8':color}">${label}</div>
+          <div class="kpi-label">${count} style${count!==1?'s':''} · ${dateStr}</div>
+        </div>`;
+      }).join('');
+      return `<div class="kpi-grid" style="margin-bottom:16px">${tiles}</div>`;
+    })() : '';
+
     // Group styles by fabrication
     const fabGroups = {};
     styles.forEach(s => {
@@ -262,8 +287,8 @@ const VendorViews = (() => {
             const sub = styleSubs.find(s2 => s2.coo === coo);
             return sub?.isOutdated;
           });
-          bodyRows += `<tr class="${hasRevised ? 'flagged-row' : allSkipped ? 'tc-skipped-row' : isOutdatedQuote ? 'outdated-quote-row' : ''}">
-            <td class="primary font-bold" style="white-space:nowrap">${s.styleNumber}${isOutdatedQuote ? ' <span class="tag" style="background:rgba(245,158,11,0.15);color:#f59e0b;font-size:0.65rem;vertical-align:middle">⚠ Re-cost</span>' : ''}${s.releasedBatch ? `<span class="tag" style="font-size:0.6rem;margin-left:4px;background:rgba(99,102,241,0.12);color:#6366f1;vertical-align:middle">${s.releasedBatch}</span>` : ''}</td>
+          bodyRows += `<tr class="${hasRevised ? 'flagged-row' : allSkipped ? 'tc-skipped-row' : isOutdatedQuote ? 'outdated-quote-row' : ''}" data-batch-label="${(s.releasedBatch||'').replace(/"/g,'&quot;')}">
+            <td class="primary font-bold" style="white-space:nowrap">${s.styleNumber}${isOutdatedQuote ? ' <span class="tag" style="background:rgba(245,158,11,0.15);color:#f59e0b;font-size:0.65rem;vertical-align:middle">⚠ Re-cost</span>' : ''}${vpHasManyBatches && s.releasedBatch ? `<span class="tag" style="font-size:0.6rem;margin-left:4px;background:rgba(99,102,241,0.12);color:#6366f1;vertical-align:middle">${s.releasedBatch}</span>` : ''}</td>
             <td style="min-width:120px">${s.styleName}</td>
             <td class="text-sm text-muted" style="max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${(s.fabrication||'').replace(/"/g,'&quot;')}">${(s.fabrication||'').substring(0,25)}${(s.fabrication||'').length>25?'…':''}</td>
             ${coos.map(coo => {
@@ -298,12 +323,12 @@ const VendorViews = (() => {
         // Unreleased batch styles for this fabric group — greyed out, non-actionable
         (unreleasedByFab[fab] || []).forEach(s => {
           const batchLabel = s.batchLabel || 'Batch 1';
-          bodyRows += `<tr style="opacity:0.45;pointer-events:none">
+          bodyRows += `<tr style="opacity:0.45;pointer-events:none" data-batch-label="${(s.batchLabel||'').replace(/"/g,'&quot;')}">
             <td class="primary font-bold" style="white-space:nowrap">${s.styleNumber || '—'}</td>
             <td style="min-width:120px">${s.styleName || '—'}</td>
             <td class="text-sm text-muted">${(s.fabrication || s.fabric || '').substring(0,25)}</td>
             ${coos.map(() => `<td class="text-muted" style="text-align:center;padding:4px 6px" colspan="${showFC ? 3 : 2}">—</td>`).join('')}
-            <td><span class="tag" style="font-size:0.68rem;background:rgba(148,163,184,0.15);color:#94a3b8">⏳ ${batchLabel}</span></td>
+            <td>${vpHasManyBatches ? `<span class="tag" style="font-size:0.68rem;background:rgba(148,163,184,0.15);color:#94a3b8">⏳ ${batchLabel}</span>` : ''}</td>
           </tr>`;
         });
       });
@@ -362,6 +387,7 @@ const VendorViews = (() => {
     ${prog?.status === 'cancelled' ? `<div class="alert" style="background:rgba(100,116,139,0.12);border-color:#94a3b8;color:#94a3b8;margin-bottom:16px">🚫 This program has been cancelled${prog.cancelledAt ? ' on ' + new Date(prog.cancelledAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : ''}. Your quotes are preserved below for reference only.</div>` : ''}
     ${factoryPanel}
     ${flaggedSubs.length ? `<div class="alert alert-warning">🚩 ${flaggedSubs.length} cost(s) flagged for review. See the 🚩 notes below each style for details.</div>` : ''}
+    ${vpBatchTileRow}
     <div class="card">
       <div class="table-wrap">
         <table id="tc-costing-table" class="tc-style-table">
@@ -438,6 +464,18 @@ const VendorViews = (() => {
       });
     });
 
+    // Per-program batch label sets — used to conditionally show batch badges
+    const progBatchSets = {};
+    styles.forEach(s => {
+      if (!progBatchSets[s.programId]) progBatchSets[s.programId] = new Set();
+      if (s.releasedBatch) progBatchSets[s.programId].add(s.releasedBatch);
+    });
+    API.DesignHandoffs.all().forEach(h => {
+      if (!h.linkedProgramId) return;
+      if (!progBatchSets[h.linkedProgramId]) progBatchSets[h.linkedProgramId] = new Set();
+      (h.stylesList || []).forEach(hs => { if (hs.batchLabel) progBatchSets[h.linkedProgramId].add(hs.batchLabel); });
+    });
+
     // Flatten styles × their program's COOs into rows; skip any style
     // whose program has zero COOs assigned for this vendor.
     const rowCount = styles.reduce((n, s) => n + coosFor(s.programId).length, 0);
@@ -446,15 +484,16 @@ const VendorViews = (() => {
       const prog = API.Programs.get(s.programId);
       const styleSubs = subs.filter(sub => sub.styleId === s.id);
       const coos = coosFor(s.programId);
+      const msHasManyBatches = (progBatchSets[s.programId]?.size || 0) >= 2;
       return coos.map(coo => {
         const sub = styleSubs.find(x => x.coo === coo) || null;
         const isSkipped = sub?.status === 'skipped';
         const skipBtn = isSkipped
           ? `<button class="btn btn-ghost btn-sm tc-skip-btn" title="Un-skip this COO" onclick="App.unskipVendorCoo('${s.id}','${tcId}','${coo}')">↩ Un-skip</button>`
           : `<button class="btn btn-ghost btn-sm tc-skip-btn" title="Skip this COO" onclick="App.openSkipVendorCoo('${s.id}','${tcId}','${coo}')">⊘ Skip</button>`;
-        return `<tr class="${sub?.status === 'flagged' ? 'flagged-row' : isSkipped ? 'tc-skipped-row' : ''}">
+        return `<tr class="${sub?.status === 'flagged' ? 'flagged-row' : isSkipped ? 'tc-skipped-row' : ''}" data-batch-label="${(s.releasedBatch||'').replace(/"/g,'&quot;')}">
           <td class="text-sm">${prog?.name || '—'}</td>
-          <td class="primary font-bold">${s.styleNumber}${s.releasedBatch ? `<span class="tag" style="font-size:0.6rem;margin-left:4px;background:rgba(99,102,241,0.12);color:#6366f1;vertical-align:middle">${s.releasedBatch}</span>` : ''}</td>
+          <td class="primary font-bold">${s.styleNumber}${msHasManyBatches && s.releasedBatch ? `<span class="tag" style="font-size:0.6rem;margin-left:4px;background:rgba(99,102,241,0.12);color:#6366f1;vertical-align:middle">${s.releasedBatch}</span>` : ''}</td>
           <td>${s.styleName}</td>
           <td class="text-sm">${(s.fabrication || '').substring(0, 30)}${(s.fabrication || '').length > 30 ? '…' : ''}</td>
           <td><span class="badge badge-pending">${coo}</span></td>
@@ -493,13 +532,17 @@ const VendorViews = (() => {
       <div class="table-wrap"><table>
         <thead><tr><th>Handoff</th><th>Style #</th><th>Style Name</th><th>Fabrication</th><th>Batch</th></tr></thead>
         <tbody>
-          ${pendingBatchStyles.map(({ s, h }) => `<tr style="opacity:0.6">
-            <td class="text-sm text-muted">${[h.season,h.year,h.brand].filter(Boolean).join(' ')}</td>
-            <td class="primary font-bold">${s.styleNumber || '—'}</td>
-            <td>${s.styleName || '—'}</td>
-            <td class="text-sm text-muted">${(s.fabrication || s.fabric || '—').substring(0,30)}</td>
-            <td><span class="tag" style="font-size:0.68rem;background:rgba(148,163,184,0.15);color:#94a3b8">${s.batchLabel || 'Batch 1'}</span></td>
-          </tr>`).join('')}
+          ${pendingBatchStyles.map(({ s, h }) => {
+            const hBatchSet = new Set((h.stylesList||[]).map(x => x.batchLabel).filter(Boolean));
+            const hHasMany  = hBatchSet.size >= 2;
+            return `<tr style="opacity:0.6">
+              <td class="text-sm text-muted">${[h.season,h.year,h.brand].filter(Boolean).join(' ')}</td>
+              <td class="primary font-bold">${s.styleNumber || '—'}</td>
+              <td>${s.styleName || '—'}</td>
+              <td class="text-sm text-muted">${(s.fabrication || s.fabric || '—').substring(0,30)}</td>
+              <td>${hHasMany ? `<span class="tag" style="font-size:0.68rem;background:rgba(148,163,184,0.15);color:#94a3b8">${s.batchLabel || 'Batch 1'}</span>` : ''}</td>
+            </tr>`;
+          }).join('')}
         </tbody>
       </table></div>
     </div>` : ''}

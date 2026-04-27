@@ -986,6 +986,32 @@ const AdminViews = (() => {
     const links  = API.StyleLinks.byProgram(programId);
     const linkedIds = new Set(links.flatMap(l => l.styleIds || []));
 
+    const smLinkedHandoff  = (API.DesignHandoffs?.all?.() || []).find(h => h.linkedProgramId === programId);
+    const smBatchReleases  = smLinkedHandoff?.batchReleases || [];
+    const smBatchColors    = ['#6366f1','#22c55e','#f59e0b','#ef4444','#0ea5e9','#a855f7'];
+    const smAllBatchLabels = [...new Set([
+      ...styles.map(s => s.releasedBatch).filter(Boolean),
+      ...(smLinkedHandoff?.stylesList || []).map(s => s.batchLabel).filter(Boolean),
+    ])];
+    const smHasManyBatches = smAllBatchLabels.length >= 2;
+    const smBatchTileRow = smHasManyBatches ? (() => {
+      const tiles = smAllBatchLabels.map((label, i) => {
+        const rel      = smBatchReleases.find(r => r.batchLabel === label);
+        const color    = smBatchColors[i % smBatchColors.length];
+        const count    = styles.filter(s => s.releasedBatch === label).length;
+        const dateStr  = rel ? new Date(rel.releasedAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : 'Pending';
+        const isPending = !rel;
+        const safeLabel = label.replace(/&/g,'&amp;').replace(/"/g,'&quot;');
+        return `<div class="kpi-card-wide" data-batch-tile="${safeLabel}"
+          onclick="App._toggleBatchFilter('style-table',this.dataset.batchTile,this)"
+          style="cursor:pointer;border-top:3px solid ${isPending?'#94a3b8':color};min-width:120px;user-select:none">
+          <div class="kpi-value" style="font-size:1.1rem;color:${isPending?'#94a3b8':color}">${label}</div>
+          <div class="kpi-label">${count} style${count!==1?'s':''} · ${dateStr}</div>
+        </div>`;
+      }).join('');
+      return `<div class="kpi-grid" style="margin-bottom:16px">${tiles}</div>`;
+    })() : '';
+
     // ── Link Groups summary panel ──────────────────────────────
     const linkGroupCards = links.map(lnk => {
       const members = (lnk.styleIds||[]).map(id => styles.find(s => s.id === id)).filter(Boolean);
@@ -1041,6 +1067,7 @@ const AdminViews = (() => {
     </div>
     ${tcs.length === 0 ? `<div class="alert alert-warning mb-3">⚠ No trading companies assigned. <button class="btn btn-warning btn-sm" onclick="App.openAssignTCs('${programId}')">Assign Now</button></div>` : ''}
     ${linkGroupsPanel}
+    ${smBatchTileRow}
     <div class="card">
       <div class="table-controls" id="style-table-controls"></div>
       <div class="table-wrap" id="style-table-wrap">
@@ -1055,7 +1082,7 @@ const AdminViews = (() => {
             <th data-col="quotes">Quotes</th><th data-col="status">Status</th><th data-col="tp" style="min-width:130px">Tech Pack</th><th data-col="actions">Actions</th>
           </tr></thead>
           <tbody>
-            ${styles.length ? styles.map(s => styleRow(s, prog, linkedIds)).join('') : `<tr><td colspan="12" class="text-center text-muted" style="padding:40px">No styles yet.</td></tr>`}
+            ${styles.length ? styles.map(s => styleRow(s, prog, linkedIds, smHasManyBatches)).join('') : `<tr><td colspan="12" class="text-center text-muted" style="padding:40px">No styles yet.</td></tr>`}
           </tbody>
         </table>
       </div>
@@ -1070,7 +1097,7 @@ const AdminViews = (() => {
     </div>`;
   }
 
-  function styleRow(s, prog, linkedIds) {
+  function styleRow(s, prog, linkedIds, showBatchBadge) {
     linkedIds = linkedIds || new Set();
     const link = API.StyleLinks.byStyle(s.id);
     const isLinked = !!link;
@@ -1087,7 +1114,7 @@ const AdminViews = (() => {
     }, null);
     const cooRate = API.CooRates.get(s.defaultCoo || 'KH');
     const totalDuty = ((s.dutyRate || 0) + (cooRate?.addlDuty || 0)) * 100;
-    return `<tr data-style-id="${s.id}">
+    return `<tr data-style-id="${s.id}" data-batch-label="${(s.releasedBatch||'').replace(/"/g,'&quot;')}">
       <td class="sel-col">
         <input type="checkbox" class="style-sel-chk" data-sid="${s.id}"
           onchange="App.onStyleSelect('${s.id}',this.checked,'${s.programId}')">
@@ -1097,7 +1124,7 @@ const AdminViews = (() => {
           ${linkedIds.has(s.id) ? 'disabled title="Already in a group"' : ''}
           onchange="App.onStyleLinkCheck('${s.programId}')">
       </td>
-      <td data-col="styleNum" class="primary">${s.styleNumber}${linkBadge}${prog && ['Costing','Placed'].includes(prog.status) ? ' <span title=\'Style Locked — re-cost required for changes\' style=\'font-size:0.75rem;opacity:0.6\'>🔒</span>' : ''}${s.releasedBatch ? `<span class="tag" style="font-size:0.6rem;margin-left:4px;background:rgba(99,102,241,0.12);color:#6366f1;vertical-align:middle">${s.releasedBatch}</span>` : ''}</td>
+      <td data-col="styleNum" class="primary">${s.styleNumber}${linkBadge}${prog && ['Costing','Placed'].includes(prog.status) ? ' <span title=\'Style Locked — re-cost required for changes\' style=\'font-size:0.75rem;opacity:0.6\'>🔒</span>' : ''}${showBatchBadge && s.releasedBatch ? `<span class="tag" style="font-size:0.6rem;margin-left:4px;background:rgba(99,102,241,0.12);color:#6366f1;vertical-align:middle">${s.releasedBatch}</span>` : ''}</td>
       <td data-col="styleName">${s.styleName}</td>
       <td data-col="cat">${s.category || '—'}</td>
       <td data-col="fab" class="text-sm">${(s.fabrication || '').substring(0, 35)}${(s.fabrication || '').length > 35 ? '…' : ''}</td>
@@ -1204,6 +1231,32 @@ const AdminViews = (() => {
         ${tile('Est. spend', totalSpend > 0 ? `$${totalSpend.toLocaleString(undefined,{maximumFractionDigits:0})}` : '—', 'FOB × projected qty', '#a855f7')}
       </div>` : '';
 
+    const _csLinkedHandoff  = (API.DesignHandoffs?.all?.() || []).find(h => h.linkedProgramId === programId);
+    const _csBatchReleases  = _csLinkedHandoff?.batchReleases || [];
+    const _csBatchColors    = ['#6366f1','#22c55e','#f59e0b','#ef4444','#0ea5e9','#a855f7'];
+    const _csBatchLabels    = [...new Set([
+      ...styles.map(s => s.releasedBatch).filter(Boolean),
+      ...(_csLinkedHandoff?.stylesList || []).map(s => s.batchLabel).filter(Boolean),
+    ])];
+    const _csHasManyBatches = _csBatchLabels.length >= 2;
+    const batchTileRow = _csHasManyBatches ? (() => {
+      const tiles = _csBatchLabels.map((label, i) => {
+        const rel      = _csBatchReleases.find(r => r.batchLabel === label);
+        const color    = _csBatchColors[i % _csBatchColors.length];
+        const count    = styles.filter(s => s.releasedBatch === label).length;
+        const dateStr  = rel ? new Date(rel.releasedAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : 'Pending';
+        const isPending = !rel;
+        const safeLabel = label.replace(/&/g,'&amp;').replace(/"/g,'&quot;');
+        return `<div class="kpi-card-wide" data-batch-tile="${safeLabel}"
+          onclick="App._toggleBatchFilter('cost-summary-table',this.dataset.batchTile,this)"
+          style="cursor:pointer;border-top:3px solid ${isPending?'#94a3b8':color};min-width:120px;user-select:none">
+          <div class="kpi-value" style="font-size:1.1rem;color:${isPending?'#94a3b8':color}">${label}</div>
+          <div class="kpi-label">${count} style${count!==1?'s':''} · ${dateStr}</div>
+        </div>`;
+      }).join('');
+      return `<div class="kpi-grid" style="margin-bottom:16px">${tiles}</div>`;
+    })() : '';
+
     return `
     ${programTabBar(programId, 'cost', prog)}
     <div class="page-header" style="margin-top:12px">
@@ -1228,6 +1281,7 @@ const AdminViews = (() => {
       </div>
     </div>
     ${headerTiles}
+    ${batchTileRow}
     ${tcs.length === 0 ? `<div class="alert alert-warning">No trading companies assigned. <button class="btn btn-warning btn-sm" onclick="App.openAssignTCs('${programId}')">Assign</button></div>` : ''}
     <div id="recosting-banner">${typeof App !== 'undefined' && App._renderRecostBanner ? App._renderRecostBanner(programId) : ''}</div>
     <div class="card" style="padding:0;overflow:hidden">
@@ -1369,6 +1423,13 @@ const AdminViews = (() => {
     // sort each list by most recent program first
     Object.values(repeatHistory).forEach(arr => arr.sort((a, b) => b.progCreatedAt - a.progCreatedAt));
 
+    // Batch context — computed early so buildRows/buildGhostRows closures can use it
+    const linkedHandoff = (API.DesignHandoffs?.all?.() || []).find(h => h.linkedProgramId === programId);
+    const hasManyBatches = new Set([
+      ...styles.map(s => s.releasedBatch).filter(Boolean),
+      ...(linkedHandoff?.stylesList || []).map(s => s.batchLabel).filter(Boolean),
+    ]).size >= 2;
+
     // Build data rows
     function buildRows(styleList, isCancelled) {
       return styleList.map(s => {
@@ -1457,7 +1518,7 @@ const AdminViews = (() => {
 
         let rowHtml = `
           <td class="sticky-col mat-cell-white" style="width:28px;min-width:28px;padding:2px 4px;text-align:center">${dcBadge}</td>
-          <td data-col="styleNum" class="sticky-col mat-cell-white">${s.styleNumber}${s._linkAnchorBadge||''}${s.releasedBatch ? `<span class="tag" style="font-size:0.6rem;margin-left:4px;background:rgba(99,102,241,0.12);color:#6366f1;vertical-align:middle">${s.releasedBatch}</span>` : ''}</td>
+          <td data-col="styleNum" class="sticky-col mat-cell-white">${s.styleNumber}${s._linkAnchorBadge||''}${hasManyBatches && s.releasedBatch ? `<span class="tag" style="font-size:0.6rem;margin-left:4px;background:rgba(99,102,241,0.12);color:#6366f1;vertical-align:middle">${s.releasedBatch}</span>` : ''}</td>
           <td data-col="styleName" class="mat-cell-white mat-cell-normal">${styleNameInput}</td>
           <td data-col="cat" class="mat-cell-white mat-cell-normal">${catInput}</td>
           <td data-col="fab" class="mat-cell-white mat-cell-normal">${fabInput}</td>
@@ -1584,7 +1645,7 @@ const AdminViews = (() => {
             bestLDP <= targetLDP ? 'row-on-target' : 'row-over-target'
           ) : ''
         );
-        return `<tr class="${rowClass}" data-style-id="${s.id}"><td class="sel-col sticky-col mat-cell-white" style="width:36px;min-width:36px"><input type="checkbox" class="style-sel-chk" data-sid="${s.id}" onchange="App.onStyleSelect('${s.id}',this.checked,'${programId}')"></td>${rowHtml}</tr>`;
+        return `<tr class="${rowClass}" data-style-id="${s.id}" data-batch-label="${(s.releasedBatch||'').replace(/"/g,'&quot;')}"><td class="sel-col sticky-col mat-cell-white" style="width:36px;min-width:36px"><input type="checkbox" class="style-sel-chk" data-sid="${s.id}" onchange="App.onStyleSelect('${s.id}',this.checked,'${programId}')"></td>${rowHtml}</tr>`;
       }).join('');
     }
 
@@ -1658,7 +1719,7 @@ const AdminViews = (() => {
       const bestTcHtml = bestGroup ? `<span class="tag ${tagCls}">${bestGroup.tc.code} — ${bestGroup.coo}</span>` : '—';
       let rowHtml = `
         <td data-col="styleNum" class="sticky-col mat-cell-white" style="border-left:3px solid ${color};padding-left:18px">
-          <span style="color:${color};font-size:0.85em;margin-right:4px">↳</span>${s.styleNumber}${badge}${s.releasedBatch ? `<span class="tag" style="font-size:0.6rem;margin-left:4px;background:rgba(99,102,241,0.12);color:#6366f1;vertical-align:middle">${s.releasedBatch}</span>` : ''}
+          <span style="color:${color};font-size:0.85em;margin-right:4px">↳</span>${s.styleNumber}${badge}${hasManyBatches && s.releasedBatch ? `<span class="tag" style="font-size:0.6rem;margin-left:4px;background:rgba(99,102,241,0.12);color:#6366f1;vertical-align:middle">${s.releasedBatch}</span>` : ''}
         </td>
         <td data-col="styleName" class="mat-cell-white mat-cell-normal">${styleNameInput}</td>
         <td data-col="cat" class="mat-cell-white mat-cell-normal">${catInput}</td>
@@ -1728,7 +1789,7 @@ const AdminViews = (() => {
       const rowClass2 = bestLDP !== null && targetLDP ? (bestLDP <= targetLDP ? 'row-on-target' : 'row-over-target') : '';
       // Two leading empty cells to match anchor row structure:
       // col 1 = bulk-select (36px), col 2 = design-change badge (28px).
-      return `<tr class="style-link-guest-row ${rowClass2}" data-style-id="${s.id}" style="background:${colorAlpha}"><td class="sel-col sticky-col mat-cell-white" style="width:36px;min-width:36px"></td><td class="sticky-col mat-cell-white" style="width:28px;min-width:28px;padding:0"></td>${rowHtml}</tr>`;
+      return `<tr class="style-link-guest-row ${rowClass2}" data-style-id="${s.id}" data-batch-label="${(s.releasedBatch||'').replace(/"/g,'&quot;')}" style="background:${colorAlpha}"><td class="sel-col sticky-col mat-cell-white" style="width:36px;min-width:36px"></td><td class="sticky-col mat-cell-white" style="width:28px;min-width:28px;padding:0"></td>${rowHtml}</tr>`;
     }
 
     // Build active rows — optionally grouped
@@ -1736,7 +1797,6 @@ const AdminViews = (() => {
     const totalFixedCols = 12 + colGroups.length * 6 + 2; // +2 actual/wtd, +2 actions+repeat
 
     // Unreleased handoff styles — ghost rows so production sees upcoming styles
-    const linkedHandoff = (API.DesignHandoffs?.all?.() || []).find(h => h.linkedProgramId === programId);
     const unreleasedByFab = {};
     if (linkedHandoff) {
       const releasedIds = new Set((linkedHandoff.batchReleases || []).flatMap(b => b.styleIds || []));
@@ -1750,13 +1810,13 @@ const AdminViews = (() => {
     }
     const ghostColspan = totalFixedCols - 3;
     function buildGhostRows(handoffStyles) {
-      return handoffStyles.map(hs => `<tr style="opacity:0.35;pointer-events:none">
+      return handoffStyles.map(hs => `<tr style="opacity:0.35;pointer-events:none" data-batch-label="${(hs.batchLabel||'').replace(/"/g,'&quot;')}">
         <td class="sel-col sticky-col mat-cell-white" style="width:36px;min-width:36px"></td>
         <td class="sticky-col mat-cell-white" style="width:28px;min-width:28px;padding:0"></td>
         <td data-col="styleNum" class="sticky-col mat-cell-white" style="color:#94a3b8;font-style:italic">${hs.styleNumber || '—'}</td>
         <td colspan="${ghostColspan}" style="color:#94a3b8;font-size:0.8rem;padding:6px 8px">
           <span style="font-style:italic">${hs.styleName || ''}</span>
-          <span class="tag" style="font-size:0.62rem;margin-left:6px;background:rgba(148,163,184,0.12);color:#94a3b8">⏳ ${hs.batchLabel || 'Batch 1'}</span>
+          ${hasManyBatches ? `<span class="tag" style="font-size:0.62rem;margin-left:6px;background:rgba(148,163,184,0.12);color:#94a3b8">⏳ ${hs.batchLabel || 'Batch 1'}</span>` : ''}
           <span style="font-size:0.7rem;opacity:0.7;margin-left:6px">Unreleased</span>
         </td>
       </tr>`).join('');
@@ -3024,6 +3084,10 @@ const AdminViews = (() => {
         <td>${srDash}</td>
         <td><span class="tag">${(r.styles || []).length}</span></td>
         <td style="text-align:center">${srCosted}</td>
+        <td style="text-align:center">${srLinkedProg ? `<span class="tag ${(srLinkedProg.placedCount||0)>0?'tag-success':''}">${srLinkedProg.placedCount||0}</span>` : srDash}</td>
+        <td style="text-align:center">${srLinkedProg ? `<span class="tag">${(srLinkedProg.projQtyTotal||0)>0?(srLinkedProg.projQtyTotal).toLocaleString():'—'}</span>` : srDash}</td>
+        <td style="text-align:center">${srLinkedProg ? `<span class="tag">${(srLinkedProg.actlQtyTotal||0)>0?(srLinkedProg.actlQtyTotal).toLocaleString():'—'}</span>` : srDash}</td>
+        <td style="text-align:center">${srLinkedProg ? `<span class="tag">${srLinkedProg.tcCount||0}</span>` : srDash}</td>
         <td class="text-sm">${srFmtDate(r.costDueDate)}</td>
         <td class="text-sm">${srFmtDate(r.inWhseDate)}</td>
         <td class="text-sm text-muted">${d}</td>
@@ -3054,6 +3118,10 @@ const AdminViews = (() => {
       <th>SR #</th><th>Ver.</th>
       <th>Styles</th>
       <th style="text-align:center">Costed</th>
+      <th style="text-align:center">Placed</th>
+      <th style="text-align:center">TTL Proj Qty</th>
+      <th style="text-align:center">TTL Actual Qty</th>
+      <th style="text-align:center">TCs</th>
       <th>Costs Due Date</th>
       <th>In-Whse</th><th>Date</th><th>Submitted By</th>
       <th data-filter-col="source">Source</th>
@@ -4505,13 +4573,38 @@ const AdminViews = (() => {
         }
       });
     }
+    const dcvBatchReleases  = dcvLinkedHandoff?.batchReleases || [];
+    const dcvBatchColors    = ['#6366f1','#22c55e','#f59e0b','#ef4444','#0ea5e9','#a855f7'];
+    const dcvAllBatchLabels = [...new Set([
+      ...styles.map(s => s.releasedBatch).filter(Boolean),
+      ...(dcvLinkedHandoff?.stylesList || []).map(s => s.batchLabel).filter(Boolean),
+    ])];
+    const dcvHasManyBatches = dcvAllBatchLabels.length >= 2;
+    const dcvBatchTileRow = dcvHasManyBatches ? (() => {
+      const tiles = dcvAllBatchLabels.map((label, i) => {
+        const rel      = dcvBatchReleases.find(r => r.batchLabel === label);
+        const color    = dcvBatchColors[i % dcvBatchColors.length];
+        const count    = styles.filter(s => s.releasedBatch === label).length;
+        const dateStr  = rel ? new Date(rel.releasedAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : 'Pending';
+        const isPending = !rel;
+        const safeLabel = label.replace(/&/g,'&amp;').replace(/"/g,'&quot;');
+        return `<div class="kpi-card-wide" data-batch-tile="${safeLabel}"
+          onclick="App._toggleBatchFilter('dcv-table',this.dataset.batchTile,this)"
+          style="cursor:pointer;border-top:3px solid ${isPending?'#94a3b8':color};min-width:120px;user-select:none">
+          <div class="kpi-value" style="font-size:1.1rem;color:${isPending?'#94a3b8':color}">${label}</div>
+          <div class="kpi-label">${count} style${count!==1?'s':''} · ${dateStr}</div>
+        </div>`;
+      }).join('');
+      return `<div class="kpi-grid" style="margin-bottom:16px">${tiles}</div>`;
+    })() : '';
+
     function buildDcvGhostRows(handoffStyles) {
-      return handoffStyles.map(hs => `<tr style="opacity:0.35;pointer-events:none">
+      return handoffStyles.map(hs => `<tr style="opacity:0.35;pointer-events:none" data-batch-label="${(hs.batchLabel||'').replace(/"/g,'&quot;')}">
         <td style="display:none"></td>
         <td data-col="styleNum" style="color:#94a3b8;font-style:italic">${hs.styleNumber || '—'}</td>
         <td colspan="12" style="color:#94a3b8;font-size:0.8rem;padding:6px 8px">
           <span style="font-style:italic">${hs.styleName || ''}</span>
-          <span class="tag" style="font-size:0.62rem;margin-left:6px;background:rgba(148,163,184,0.12);color:#94a3b8">⏳ ${hs.batchLabel || 'Batch 1'}</span>
+          ${dcvHasManyBatches ? `<span class="tag" style="font-size:0.62rem;margin-left:6px;background:rgba(148,163,184,0.12);color:#94a3b8">⏳ ${hs.batchLabel || 'Batch 1'}</span>` : ''}
           <span style="font-size:0.7rem;opacity:0.7;margin-left:6px">Unreleased</span>
         </td>
       </tr>`).join('');
@@ -4588,7 +4681,7 @@ const AdminViews = (() => {
           : '';
 
         const rowBg = isPlaced ? 'background:rgba(34,197,94,0.04)' : '';
-        bodyRows += `<tr style="${rowBg}">
+        bodyRows += `<tr style="${rowBg}" data-batch-label="${(s.releasedBatch||'').replace(/"/g,'&quot;')}">
           <td id="link-chk-cell-${s.id}" style="display:none;vertical-align:middle;text-align:center">
             <input type="checkbox" class="style-link-chk" data-sid="${s.id}"
               onchange="App.onStyleLinkCheck('${programId}',this)">
@@ -4686,6 +4779,7 @@ const AdminViews = (() => {
       </div>
     </div>
     ${recostPanel}
+    ${dcvBatchTileRow}
     <div class="card">
       <div class="table-wrap">
         <table id="dcv-table">

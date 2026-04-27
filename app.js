@@ -25,7 +25,7 @@ App = (() => {
         state.user = user;
         // Pre-load data needed by the sidebar (users list for role switcher, badges)
         await Promise.all([
-          API.Users.all().catch(() => {}),
+          user.role !== 'vendor' ? API.Users.all().catch(() => {}) : Promise.resolve(),
           API.TradingCompanies.all().catch(() => {}),
           API.preload.nav(),
         ]);
@@ -3389,6 +3389,29 @@ App.showCostHistory = function(styleId, styleName) {
   `);
 };
 
+// Batch filter: click a tile to show only that batch's rows; click again to clear.
+// tableId — id of the <table> element; label — the batch label string; tileEl — the clicked tile div.
+App._toggleBatchFilter = function(tableId, label, tileEl) {
+  const table = document.getElementById(tableId);
+  if (!table) return;
+
+  const isActive = tileEl.classList.contains('batch-tile-active');
+  // Deactivate all tiles in the same kpi-grid
+  const grid = tileEl.closest('.kpi-grid');
+  if (grid) grid.querySelectorAll('[data-batch-tile]').forEach(t => t.classList.remove('batch-tile-active'));
+
+  if (isActive) {
+    // Show all rows
+    table.querySelectorAll('tr[data-batch-label]').forEach(tr => { tr.style.display = ''; });
+  } else {
+    // Show only rows matching this label; keep group-header rows (no data-batch-label) visible always
+    tileEl.classList.add('batch-tile-active');
+    table.querySelectorAll('tr[data-batch-label]').forEach(tr => {
+      tr.style.display = tr.dataset.batchLabel === label ? '' : 'none';
+    });
+  }
+};
+
 // Cost Summary: renders pending re-cost banner — role-aware (Sales sees pending_sales, PC sees pending_production)
 App._renderRecostBanner = function(programId) {
   if (!API.RecostRequests) return '';
@@ -4280,8 +4303,36 @@ App.openAssignVendorsToHandoff = function(handoffId) {
   const h   = API.DesignHandoffs.get(handoffId);
   if (!h) return;
   const tcs      = API.cache.tradingCompanies;
-  const assigned = h.assignedTCIds || [];
+  const assigned = new Set(h.assignedTCIds || []);
   const name     = [h.season, h.year, h.retailer].filter(Boolean).join(' ') || 'Design Handoff';
+
+  const tcRow = tc => {
+    const isAssigned = assigned.has(tc.id);
+    const tcCoos     = tc.coos || [];
+    const cooChips   = tcCoos.length
+      ? tcCoos.map(coo => {
+          return `<label class="coo-chip" style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border:1px solid var(--border);border-radius:14px;font-size:0.75rem;cursor:pointer;background:${isAssigned ? 'rgba(99,102,241,0.12)' : 'transparent'}">
+            <input type="checkbox" class="assign-coo-chk" data-tcid="${tc.id}" value="${coo}" ${isAssigned ? 'checked' : ''}
+                   onclick="event.stopPropagation()"
+                   onchange="this.parentElement.style.background=this.checked?'rgba(99,102,241,0.12)':'transparent';App._syncParentFromCoos(this.dataset.tcid)">
+            ${coo}
+          </label>`;
+        }).join(' ')
+      : '<span class="text-muted" style="font-size:0.75rem">No COOs configured</span>';
+    return `
+    <tr style="border-top:1px solid var(--border);cursor:pointer" onclick="App._toggleTcRow(this)">
+      <td style="padding:10px 12px;text-align:center" onclick="event.stopPropagation()">
+        <input type="checkbox" class="assign-tc-chk" data-tcid="${tc.id}" value="${tc.id}" ${isAssigned ? 'checked' : ''}
+               onchange="App._syncTcRowCoos(this)">
+      </td>
+      <td style="padding:10px 12px;font-weight:600;font-size:0.88rem">${tc.code}</td>
+      <td style="padding:10px 12px;font-size:0.88rem">${tc.name}</td>
+      <td style="padding:10px 12px" data-tcid="${tc.id}">
+        <div style="display:flex;flex-wrap:wrap;gap:6px">${cooChips}</div>
+      </td>
+    </tr>`;
+  };
+
   App.showModal(`
   <div class="modal-header">
     <div>
@@ -4310,23 +4361,31 @@ App.openAssignVendorsToHandoff = function(handoffId) {
     </div>
   </div>
 
-  <div id="htc-chips" style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:20px">
-    ${tcs.map(tc => `
-    <div data-tcid="${tc.id}" class="vendor-chip ${assigned.includes(tc.id) ? 'selected' : ''}"
-         onclick="this.classList.toggle('selected')">
-      <strong>${tc.code}</strong><br>
-      <span class="text-muted text-sm">${tc.name}</span><br>
-      <span class="text-muted" style="font-size:0.7rem">${(tc.coos || []).join(', ')}</span>
-    </div>`).join('')}
+  <div style="border:1px solid var(--border);border-radius:var(--radius-sm);overflow:hidden;margin-bottom:20px">
+    <table style="width:100%;border-collapse:collapse">
+      <thead style="background:var(--bg-elevated)">
+        <tr>
+          <th style="width:40px;padding:10px 12px;text-align:center"><input type="checkbox" id="htc-check-all" onchange="App._toggleAllTcRows(this.checked)" title="Select all"></th>
+          <th style="padding:10px 12px;text-align:left;font-size:0.78rem;color:#94a3b8;text-transform:uppercase;letter-spacing:.05em">Code</th>
+          <th style="padding:10px 12px;text-align:left;font-size:0.78rem;color:#94a3b8;text-transform:uppercase;letter-spacing:.05em">Name</th>
+          <th style="padding:10px 12px;text-align:left;font-size:0.78rem;color:#94a3b8;text-transform:uppercase;letter-spacing:.05em">COOs</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${tcs.map(tcRow).join('')}
+        ${tcs.length === 0 ? `<tr><td colspan="4" style="padding:24px;text-align:center;color:#94a3b8">No trading companies configured yet.</td></tr>` : ''}
+      </tbody>
+    </table>
   </div>
   <div class="modal-footer">
     <button class="btn btn-secondary" onclick="App.closeModal()">Cancel</button>
     <button class="btn btn-primary" onclick="App.saveHandoffVendors('${handoffId}')">Save Allocation</button>
   </div>`);
+  document.querySelectorAll('.assign-tc-chk').forEach(chk => App._syncParentFromCoos(chk.dataset.tcid));
 };
 
 App.saveHandoffVendors = async function(handoffId) {
-  const tcIds     = [...document.querySelectorAll('#htc-chips div[data-tcid].selected')].map(el => el.dataset.tcid);
+  const tcIds     = [...document.querySelectorAll('.assign-tc-chk:checked')].map(el => el.value);
   const firstCRD  = document.getElementById('hv-first-crd')?.value  || null;
   const startDate = document.getElementById('hv-start-date')?.value || null;
   const endDate   = document.getElementById('hv-end-date')?.value   || null;
@@ -4340,8 +4399,36 @@ App.openAssignVendorsToRequest = function(requestId) {
   const r   = API.SalesRequests.get(requestId);
   if (!r) return;
   const tcs      = API.cache.tradingCompanies;
-  const assigned = r.assignedTCIds || [];
+  const assigned = new Set(r.assignedTCIds || []);
   const name     = [r.season, r.year, r.retailer].filter(Boolean).join(' ') || 'Sales Request';
+
+  const tcRow = tc => {
+    const isAssigned = assigned.has(tc.id);
+    const tcCoos     = tc.coos || [];
+    const cooChips   = tcCoos.length
+      ? tcCoos.map(coo => {
+          return `<label class="coo-chip" style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border:1px solid var(--border);border-radius:14px;font-size:0.75rem;cursor:pointer;background:${isAssigned ? 'rgba(99,102,241,0.12)' : 'transparent'}">
+            <input type="checkbox" class="assign-coo-chk" data-tcid="${tc.id}" value="${coo}" ${isAssigned ? 'checked' : ''}
+                   onclick="event.stopPropagation()"
+                   onchange="this.parentElement.style.background=this.checked?'rgba(99,102,241,0.12)':'transparent';App._syncParentFromCoos(this.dataset.tcid)">
+            ${coo}
+          </label>`;
+        }).join(' ')
+      : '<span class="text-muted" style="font-size:0.75rem">No COOs configured</span>';
+    return `
+    <tr style="border-top:1px solid var(--border);cursor:pointer" onclick="App._toggleTcRow(this)">
+      <td style="padding:10px 12px;text-align:center" onclick="event.stopPropagation()">
+        <input type="checkbox" class="assign-tc-chk" data-tcid="${tc.id}" value="${tc.id}" ${isAssigned ? 'checked' : ''}
+               onchange="App._syncTcRowCoos(this)">
+      </td>
+      <td style="padding:10px 12px;font-weight:600;font-size:0.88rem">${tc.code}</td>
+      <td style="padding:10px 12px;font-size:0.88rem">${tc.name}</td>
+      <td style="padding:10px 12px" data-tcid="${tc.id}">
+        <div style="display:flex;flex-wrap:wrap;gap:6px">${cooChips}</div>
+      </td>
+    </tr>`;
+  };
+
   App.showModal(`
   <div class="modal-header">
     <div>
@@ -4370,23 +4457,31 @@ App.openAssignVendorsToRequest = function(requestId) {
     </div>
   </div>
 
-  <div id="rtc-chips" style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:20px">
-    ${tcs.map(tc => `
-    <div data-tcid="${tc.id}" class="vendor-chip ${assigned.includes(tc.id) ? 'selected' : ''}"
-         onclick="this.classList.toggle('selected')">
-      <strong>${tc.code}</strong><br>
-      <span class="text-muted text-sm">${tc.name}</span><br>
-      <span class="text-muted" style="font-size:0.7rem">${(tc.coos || []).join(', ')}</span>
-    </div>`).join('')}
+  <div style="border:1px solid var(--border);border-radius:var(--radius-sm);overflow:hidden;margin-bottom:20px">
+    <table style="width:100%;border-collapse:collapse">
+      <thead style="background:var(--bg-elevated)">
+        <tr>
+          <th style="width:40px;padding:10px 12px;text-align:center"><input type="checkbox" id="rtc-check-all" onchange="App._toggleAllTcRows(this.checked)" title="Select all"></th>
+          <th style="padding:10px 12px;text-align:left;font-size:0.78rem;color:#94a3b8;text-transform:uppercase;letter-spacing:.05em">Code</th>
+          <th style="padding:10px 12px;text-align:left;font-size:0.78rem;color:#94a3b8;text-transform:uppercase;letter-spacing:.05em">Name</th>
+          <th style="padding:10px 12px;text-align:left;font-size:0.78rem;color:#94a3b8;text-transform:uppercase;letter-spacing:.05em">COOs</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${tcs.map(tcRow).join('')}
+        ${tcs.length === 0 ? `<tr><td colspan="4" style="padding:24px;text-align:center;color:#94a3b8">No trading companies configured yet.</td></tr>` : ''}
+      </tbody>
+    </table>
   </div>
   <div class="modal-footer">
     <button class="btn btn-secondary" onclick="App.closeModal()">Cancel</button>
     <button class="btn btn-primary" onclick="App.saveRequestVendors('${requestId}')">Save Allocation</button>
   </div>`);
+  document.querySelectorAll('.assign-tc-chk').forEach(chk => App._syncParentFromCoos(chk.dataset.tcid));
 };
 
 App.saveRequestVendors = async function(requestId) {
-  const tcIds     = [...document.querySelectorAll('#rtc-chips div[data-tcid].selected')].map(el => el.dataset.tcid);
+  const tcIds     = [...document.querySelectorAll('.assign-tc-chk:checked')].map(el => el.value);
   const firstCRD  = document.getElementById('rv-first-crd')?.value  || null;
   const startDate = document.getElementById('rv-start-date')?.value || null;
   const endDate   = document.getElementById('rv-end-date')?.value   || null;
@@ -5828,10 +5923,11 @@ App.openSalesRequestDetail = function(requestId) {
   const canEdit = !r.linkedProgramId || isBatchReview;
 
   const allStyles = [...(r.styles||[]), ...(r.cancelledStyles||[])];
+  const srHasManyBatches = new Set((r.styles||[]).map(s => s.batchLabel).filter(Boolean)).size >= 2;
   const rows = allStyles.map(s => {
     const isCancelled = s.cancelled || (r.cancelledStyles||[]).some(cs => cs.styleNumber === s.styleNumber);
-    return `<tr style="${isCancelled ? 'opacity:0.45;background:rgba(239,68,68,0.05)' : ''}">
-      <td class="primary font-bold">${s.styleNumber||'—'}${s.batchLabel ? `<span class="tag" style="font-size:0.6rem;margin-left:4px;background:rgba(99,102,241,0.12);color:#6366f1;vertical-align:middle">${s.batchLabel}</span>` : ''}</td>
+    return `<tr style="${isCancelled ? 'opacity:0.45;background:rgba(239,68,68,0.05)' : ''}" data-batch-label="${(s.batchLabel||'').replace(/"/g,'&quot;')}">
+      <td class="primary font-bold">${s.styleNumber||'—'}${srHasManyBatches && s.batchLabel ? `<span class="tag" style="font-size:0.6rem;margin-left:4px;background:rgba(99,102,241,0.12);color:#6366f1;vertical-align:middle">${s.batchLabel}</span>` : ''}</td>
       <td>${s.styleName||'—'}</td>
       <td class="text-sm text-muted">${s.fabrication||s.fabric||'—'}</td>
       <td style="padding:4px 6px">

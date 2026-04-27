@@ -991,6 +991,9 @@ const API = (() => {
       cache.handoffMap[id] = h;
       const idx = cache.designHandoffs.findIndex(x => x.id === id);
       if (idx >= 0) cache.designHandoffs[idx] = h; else cache.designHandoffs.push(h);
+      if (h.linkedProgramId && !cache.programMap[h.linkedProgramId]) {
+        await Programs.fetch(h.linkedProgramId);
+      }
       return h;
     },
     async delete(id) {
@@ -1407,11 +1410,12 @@ const API = (() => {
     },
     async nav() {
       // Lightweight preload for sidebar badges
+      const isVendor = _userRole() === 'vendor';
       await Promise.all([
         preload.global(),
         RecostRequests.fetchQueues().catch(() => {}),
-        PendingChanges.fetch().catch(() => {}),
-        DesignChanges.fetchAll().catch(() => {}),
+        isVendor ? Promise.resolve() : PendingChanges.fetch().catch(() => {}),
+        isVendor ? Promise.resolve() : DesignChanges.fetchAll().catch(() => {}),
       ]);
     },
     async programs() {

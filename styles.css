@@ -2853,6 +2853,7 @@ td.tc-skipped-cell   { opacity: 0.4; }
   border-radius: 12px; padding: 20px; transition: border-color .2s;
 }
 .kpi-card-wide:hover { border-color: rgba(99,102,241,.4); }
+.kpi-card-wide.batch-tile-active { border-color: rgba(99,102,241,.7); box-shadow: 0 0 0 2px rgba(99,102,241,.2); }
 .kpi-wide-title { font-size: 0.78rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 6px; }
 .kpi-wide-big   { font-size: 2rem; font-weight: 700; color: var(--text-primary); line-height: 1; }
 .kpi-wide-of    { font-size: 1.1rem; font-weight: 400; color: var(--text-muted); }
