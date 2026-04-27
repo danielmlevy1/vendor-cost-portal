@@ -676,7 +676,7 @@ const AdminViews = (() => {
       shownRequests = [];
     } else {
       shownPrograms = allPrograms.filter(p => p.status === 'Draft' || p.status === 'Costing');
-      shownHandoffs = allHandoffs.filter(h => !allRequests.find(r => r.sourceHandoffId === h.id));
+      shownHandoffs = allHandoffs.filter(h => !h.linkedProgramId && !allRequests.find(r => r.sourceHandoffId === h.id));
       shownRequests = allRequests.filter(r => !r.linkedProgramId);
     }
 

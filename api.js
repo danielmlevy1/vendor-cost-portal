@@ -1419,7 +1419,7 @@ const API = (() => {
       ]);
     },
     async programs() {
-      await Promise.all([Programs.all(), preload.nav()]);
+      await Promise.all([Programs.all(), SalesRequests.fetchAll(), DesignHandoffs.fetchAll(), preload.nav()]);
     },
     async program(id) {
       await Promise.all([
