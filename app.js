@@ -3866,7 +3866,7 @@ App.openNewHandoffModal = function() {
   const brands  = (() => { const b = [...new Set(API.cache.brandTierMargins.map(m => m.brand).filter(Boolean))].sort(); return b.length ? b : ['Reebok','Champion','And1','Gaiam','Head']; })();
   App.showModal(`
   <div class="modal-header"><h2>🎨 New Design Handoff</h2><button class="btn btn-ghost btn-icon" onclick="App.closeModal()">✕</button></div>
-  <p class="text-muted mb-3">Upload the Style List and Fabric List from Design. Both are needed for a complete handoff, but you can add the Fabric List later.</p>
+  <p class="text-muted mb-3">Upload the Design Handoff file — one Excel with three tabs: <strong>Styles, Fabrics, Trims</strong>. Use the template below to get started.</p>
   <form onsubmit="App.saveNewHandoff(event)">
     <div class="form-row form-row-2">
       <div class="form-group"><label class="form-label">Season</label>
@@ -3906,42 +3906,25 @@ App.openNewHandoffModal = function() {
       <input class="form-input" id="dh-supplier-req" placeholder="e.g. SR-2026-014" autocomplete="off">
     </div>
 
-    <div class="form-row form-row-2" style="gap:16px;align-items:start">
-      <!-- Style List -->
-      <div class="form-group" style="margin:0">
-        <label class="form-label">📋 Style List <span style="color:var(--danger)">*</span></label>
-        <div class="upload-zone upload-zone-sm" id="dh-upload-zone"
-          ondragover="event.preventDefault();this.classList.add('dragover')"
-          ondragleave="this.classList.remove('dragover')"
-          ondrop="App.handleHandoffDrop(event)">
-          <input type="file" id="dh-file-input" accept=".xlsx,.xls,.csv,.tsv,.txt" style="display:none" onchange="App.handleHandoffFile(event)">
-          <div class="upload-icon" style="font-size:1.4rem;margin-bottom:6px">📄</div>
-          <p class="text-sm font-bold" style="color:var(--text-primary)">Drop or <button type="button" class="btn btn-secondary btn-xs" onclick="document.getElementById('dh-file-input').click()">Browse</button></p>
-          <p class="text-sm text-muted mt-1">Style #, Style Name, Fabric, Notes</p>
-        </div>
-        <div id="dh-preview" class="mt-2"></div>
+    <div class="form-group">
+      <label class="form-label">📄 Upload Handoff <span style="color:var(--danger)">*</span>
+        <span class="text-muted" style="font-weight:400;font-size:0.82rem"> — Styles tab required · Fabrics &amp; Trims optional</span>
+      </label>
+      <div class="upload-zone upload-zone-sm" id="dh-upload-zone"
+        ondragover="event.preventDefault();this.classList.add('dragover')"
+        ondragleave="this.classList.remove('dragover')"
+        ondrop="App.handleHandoffDrop(event)">
+        <input type="file" id="dh-file-input" accept=".xlsx,.xls,.csv,.tsv,.txt" style="display:none" onchange="App.handleHandoffFile(event)">
+        <div class="upload-icon" style="font-size:1.4rem;margin-bottom:6px">📄</div>
+        <p class="text-sm font-bold" style="color:var(--text-primary)">Drop or <button type="button" class="btn btn-secondary btn-xs" onclick="document.getElementById('dh-file-input').click()">Browse</button></p>
+        <p class="text-sm text-muted mt-1">Styles · Fabrics · Trims (3-tab Excel)</p>
       </div>
-
-      <!-- Fabric List -->
-      <div class="form-group" style="margin:0">
-        <label class="form-label">🧵 Fabric List <span class="text-muted">(optional — can add later)</span></label>
-        <div class="upload-zone upload-zone-sm" id="dh-fab-upload-zone"
-          ondragover="event.preventDefault();this.classList.add('dragover')"
-          ondragleave="this.classList.remove('dragover')"
-          ondrop="App.handleHandoffFabricDrop(event)">
-          <input type="file" id="dh-fab-file-input" accept=".xlsx,.xls,.csv,.tsv,.txt" style="display:none" onchange="App.handleHandoffFabricFile(event)">
-          <div class="upload-icon" style="font-size:1.4rem;margin-bottom:6px">🧵</div>
-          <p class="text-sm font-bold" style="color:var(--text-primary)">Drop or <button type="button" class="btn btn-secondary btn-xs" onclick="document.getElementById('dh-fab-file-input').click()">Browse</button></p>
-          <p class="text-sm text-muted mt-1">Fabric Code, Fabric Name, Content</p>
-        </div>
-        <div id="dh-fab-preview" class="mt-2"></div>
-      </div>
+      <div id="dh-preview" class="mt-2"></div>
     </div>
 
     <div class="modal-footer">
       <button type="button" class="btn btn-secondary" onclick="App.closeModal()">Cancel</button>
-      <button type="button" class="btn btn-ghost btn-sm" onclick="App.downloadHandoffTemplate()">⬇ Style Template</button>
-      <button type="button" class="btn btn-ghost btn-sm" onclick="App.downloadFabricListTemplate()">⬇ Fabric Template</button>
+      <button type="button" class="btn btn-ghost btn-sm" onclick="App.downloadHandoffTemplate()">⬇ Handoff Template</button>
       <button type="submit" class="btn btn-primary" id="dh-submit-btn" disabled>Save Handoff</button>
     </div>
   </form>`, 'modal-lg');
@@ -4024,8 +4007,12 @@ App._processHandoffFile = function(file) {
       return;
     }
     if (btn) btn.disabled = false;
+    const fabCount  = (App._handoffParsedFabrics || []).length;
+    const trimCount = (App._handoffParsedTrims   || []).length;
+    const extras = [fabCount ? fabCount + ' fabric' + (fabCount !== 1 ? 's' : '') : '', trimCount ? trimCount + ' trim' + (trimCount !== 1 ? 's' : '') : ''].filter(Boolean);
+    const extraStr = extras.length ? ' · ' + extras.join(' · ') : '';
     preview.innerHTML =
-      '<div class="alert alert-info" style="margin-bottom:12px">✓ ' + rows.length + ' styles loaded from <strong>' + file.name + '</strong></div>' +
+      '<div class="alert alert-info" style="margin-bottom:12px">✓ ' + rows.length + ' styles' + extraStr + ' loaded from <strong>' + file.name + '</strong></div>' +
       '<div class="table-wrap"><table><thead><tr><th>Style Number</th><th>Style Name</th><th>Fabric</th><th>Notes</th><th>Batch</th></tr></thead><tbody>' +
       rows.slice(0, 10).map(r =>
         '<tr>' +
@@ -4878,16 +4865,28 @@ App.downloadHandoffStylesSheet = function(handoffId) {
   if (!h) return;
   const releasedSet = new Set((h.batchReleases || []).flatMap(b => b.styleIds || []));
 
-  const headerStyle = {
+  const hdrStyle = {
     font:      { bold: true, color: { rgb: '1E293B' } },
     fill:      { fgColor: { rgb: 'C7D8F0' }, patternType: 'solid' },
     alignment: { horizontal: 'center' },
     border:    { bottom: { style: 'thin', color: { rgb: '94A3B8' } } },
   };
-  const releasedFill = { font: { color: { rgb: '94A3B8' } }, fill: { fgColor: { rgb: 'F8FAFC' }, patternType: 'solid' } };
+  const relFill = { font: { color: { rgb: '94A3B8' } }, fill: { fgColor: { rgb: 'F8FAFC' }, patternType: 'solid' } };
 
-  const header = ['Style ID', 'Style Number', 'Style Name', 'Fabrication / Fabric', 'Notes', 'Batch', 'Released'];
-  const dataRows = (h.stylesList || []).map(s => [
+  const styledSheet = (rows, colWidths) => {
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    ws['!cols'] = colWidths;
+    const nCols = rows[0].length;
+    for (let c = 0; c < nCols; c++) {
+      const ref = XLSX.utils.encode_cell({ r: 0, c });
+      if (ws[ref]) ws[ref].s = hdrStyle;
+    }
+    return ws;
+  };
+
+  // ── Tab 1: Styles ─────────────────────────────────────────────
+  const stylesHeader = ['Style ID', 'Style Number', 'Style Name', 'Fabrication / Fabric', 'Notes', 'Batch', 'Released'];
+  const stylesData   = (h.stylesList || []).map(s => [
     s.id || '',
     s.styleNumber || '',
     s.styleName || '',
@@ -4896,24 +4895,45 @@ App.downloadHandoffStylesSheet = function(handoffId) {
     s.batchLabel || 'Batch 1',
     releasedSet.has(s.id) ? 'YES' : '',
   ]);
-
-  const ws = XLSX.utils.aoa_to_sheet([header, ...dataRows]);
-  ws['!cols'] = [{ wch: 18 }, { wch: 14 }, { wch: 24 }, { wch: 28 }, { wch: 28 }, { wch: 12 }, { wch: 10 }];
-  header.forEach((_, c) => { const ref = XLSX.utils.encode_cell({ r: 0, c }); if (ws[ref]) ws[ref].s = headerStyle; });
-  dataRows.forEach((row, r) => {
+  const wsStyles = styledSheet([stylesHeader, ...stylesData],
+    [{ wch: 18 }, { wch: 14 }, { wch: 24 }, { wch: 28 }, { wch: 28 }, { wch: 12 }, { wch: 10 }]);
+  stylesData.forEach((row, r) => {
     if (row[6] === 'YES') {
-      row.forEach((_, c) => { const ref = XLSX.utils.encode_cell({ r: r + 1, c }); if (ws[ref]) ws[ref].s = releasedFill; });
+      row.forEach((_, c) => { const ref = XLSX.utils.encode_cell({ r: r + 1, c }); if (wsStyles[ref]) wsStyles[ref].s = relFill; });
     }
   });
 
+  // ── Tab 2: Fabrics ────────────────────────────────────────────
+  const fabHeader = ['Fabric Ref #', 'Supplier', 'Fabric Name', 'Color', 'Content / Composition', 'Weight (gsm)', 'Notes'];
+  const fabData   = (h.fabricsList || []).map(f => [
+    f.fabricCode || '', f.supplier || '', f.fabricName || '',
+    f.color || '', f.content || '', f.weight || '', f.notes || '',
+  ]);
+  const wsFabrics = styledSheet([fabHeader, ...fabData],
+    [{ wch: 14 }, { wch: 18 }, { wch: 22 }, { wch: 14 }, { wch: 28 }, { wch: 14 }, { wch: 24 }]);
+
+  // ── Tab 3: Trims ──────────────────────────────────────────────
+  const trimHeader = ['Trim Ref #', 'Supplier', 'Description', 'Color', 'Unit', 'Notes'];
+  const trimData   = (h.trimsList || []).map(t => [
+    t.refNumber || '', t.supplier || '', t.description || '',
+    t.color || '', t.unit || '', t.notes || '',
+  ]);
+  const wsTrims = styledSheet([trimHeader, ...trimData],
+    [{ wch: 14 }, { wch: 18 }, { wch: 28 }, { wch: 14 }, { wch: 10 }, { wch: 24 }]);
+
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Styles');
-  const fname = ['handoff', h.season, h.year, h.brand].filter(Boolean).join('-') + '-styles.xlsx';
+  XLSX.utils.book_append_sheet(wb, wsStyles,  'Styles');
+  XLSX.utils.book_append_sheet(wb, wsFabrics, 'Fabrics');
+  XLSX.utils.book_append_sheet(wb, wsTrims,   'Trims');
+
+  const fname = ['handoff', h.season, h.year, h.brand].filter(Boolean).join('-') + '.xlsx';
   App._xlsxDownload(wb, fname);
 };
 
-// ── Re-upload: update batch labels on an existing handoff ──────────────────────
-App.importHandoffStyles = async function(handoffId, event) {
+// ── Re-upload: smart merge an existing handoff with a new file ─────────────────
+// Flow: parse 3 tabs → compute diff → show inline preview with Replace All
+// toggle → user clicks Apply → server merge endpoint applies authoritatively.
+App.importHandoffStyles = function(handoffId, event) {
   const file = event?.target?.files?.[0];
   if (!file) return;
   event.target.value = '';
@@ -4922,110 +4942,384 @@ App.importHandoffStyles = async function(handoffId, event) {
   if (!h) return;
   if (typeof XLSX === 'undefined') { alert('SheetJS not loaded — please reload.'); return; }
 
+  const preview = document.getElementById('hd-import-preview');
+  if (preview) preview.innerHTML = '<div class="text-sm text-muted" style="padding:8px">⏳ Parsing file…</div>';
+
   const reader = new FileReader();
-  reader.onload = async ev => {
+  reader.onload = ev => {
     try {
-      const wb  = XLSX.read(ev.target.result, { type: 'array' });
-      const ws  = wb.Sheets[wb.SheetNames[0]];
-      const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
-      if (aoa.length < 2) { alert('No data rows found.'); return; }
+      const wb = XLSX.read(ev.target.result, { type: 'array' });
 
-      const norm = h => String(h || '').trim().toLowerCase().replace(/[\s#*_]+/g, '');
-      const hdrs = aoa[0].map(norm);
-      const ci = {
-        styleId:    hdrs.findIndex(h => h === 'styleid'),
-        styleNum:   hdrs.findIndex(h => /stylenum|style#|stylenumber/.test(h)),
-        styleName:  hdrs.findIndex(h => h === 'stylename'),
-        fabric:     hdrs.findIndex(h => /fabric|fabrication/.test(h)),
-        notes:      hdrs.findIndex(h => /note|comment/.test(h)),
-        batchLabel: hdrs.findIndex(h => /^batch/.test(h)),
+      const parseSheet = (name, altIdx) => {
+        const ws = wb.Sheets[name] || (altIdx >= 0 ? wb.Sheets[wb.SheetNames[altIdx]] : null);
+        return ws ? XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' }) : [];
       };
-      const get = (row, key) => ci[key] >= 0 ? String(row[ci[key]] || '').trim() : '';
+      const normHdr = s => String(s || '').trim().toLowerCase().replace(/[\s#*_]+/g, '');
 
-      // Build lookup by Style ID (primary) and Style Number (fallback)
-      const byId = {}, byNum = {};
-      aoa.slice(1).forEach(row => {
-        const id  = get(row, 'styleId');
-        const num = get(row, 'styleNum').toUpperCase();
-        if (id)  byId[id]  = row;
-        if (num) byNum[num] = row;
-      });
+      // ── Parse Styles tab ──────────────────────────────────────
+      const stylesAoa = parseSheet('Styles', 0);
+      let uploadedStyles = [];
+      if (stylesAoa.length > 1) {
+        const hdrs = stylesAoa[0].map(normHdr);
+        const ci = {
+          styleId:    hdrs.findIndex(h => h === 'styleid'),
+          styleNum:   hdrs.findIndex(h => /stylenum|style#|stylenumber/.test(h)),
+          styleName:  hdrs.findIndex(h => h === 'stylename'),
+          fabric:     hdrs.findIndex(h => /fabric|fabrication/.test(h)),
+          notes:      hdrs.findIndex(h => /note|comment/.test(h)),
+          batchLabel: hdrs.findIndex(h => /^batch/.test(h)),
+        };
+        const get = (row, key) => ci[key] >= 0 ? String(row[ci[key]] || '').trim() : '';
+        uploadedStyles = stylesAoa.slice(1)
+          .filter(row => row.some(c => String(c).trim()))
+          .map(row => ({
+            styleId:    get(row, 'styleId'),
+            styleNumber: get(row, 'styleNum') || String(row[0] || '').trim(),
+            styleName:  get(row, 'styleName'),
+            fabric:     get(row, 'fabric'),
+            notes:      get(row, 'notes'),
+            batchLabel: get(row, 'batchLabel') || 'Batch 1',
+          }))
+          .filter(r => r.styleNumber || r.styleId);
+      }
 
-      const releasedSet = new Set((h.batchReleases || []).flatMap(b => b.styleIds || []));
+      // ── Parse Fabrics tab ─────────────────────────────────────
+      const fabAoa = parseSheet('Fabrics', -1);
+      let uploadedFabrics = [];
+      if (fabAoa.length > 1) {
+        const fHdrs = fabAoa[0].map(normHdr);
+        const fGet = (row, patterns, pos) => {
+          const i = fHdrs.findIndex(h => patterns.some(p => h.includes(p)));
+          return String(row[i >= 0 ? i : pos] || '').trim();
+        };
+        uploadedFabrics = fabAoa.slice(1)
+          .filter(row => row.some(c => String(c).trim()))
+          .map(row => ({
+            fabricCode: fGet(row, ['ref','code'], 0),
+            fabricName: fGet(row, ['name'], 2),
+            supplier:   fGet(row, ['supplier'], 1),
+            color:      fGet(row, ['color'], 3),
+            content:    fGet(row, ['content','composition'], 4),
+            weight:     fGet(row, ['weight','gsm'], 5),
+            notes:      fGet(row, ['note','comment'], 6),
+          }))
+          .filter(r => r.fabricCode || r.fabricName);
+      }
 
-      // Safety check: any uploaded row that maps to an already-released styleId blocks the whole upload
-      const blockedBatches = {};
-      (h.stylesList || []).forEach(s => {
-        if (!releasedSet.has(s.id)) return;
-        const match = byId[s.id] || byNum[(s.styleNumber || '').toUpperCase()];
-        if (!match) return;
-        const batch = (h.batchReleases || []).find(b => (b.styleIds || []).includes(s.id));
-        const label = batch?.batchLabel || 'Released';
-        blockedBatches[label] = (blockedBatches[label] || 0) + 1;
-      });
+      // ── Parse Trims tab ───────────────────────────────────────
+      const trimAoa = parseSheet('Trims', -1);
+      let uploadedTrims = [];
+      if (trimAoa.length > 1) {
+        const tHdrs = trimAoa[0].map(normHdr);
+        const tGet = (row, patterns, pos) => {
+          const i = tHdrs.findIndex(h => patterns.some(p => h.includes(p)));
+          return String(row[i >= 0 ? i : pos] || '').trim();
+        };
+        uploadedTrims = trimAoa.slice(1)
+          .filter(row => row.some(c => String(c).trim()))
+          .map(row => ({
+            refNumber:   tGet(row, ['ref','code'], 0),
+            supplier:    tGet(row, ['supplier'], 1),
+            description: tGet(row, ['desc','name'], 2),
+            color:       tGet(row, ['color'], 3),
+            unit:        tGet(row, ['unit'], 4),
+            notes:       tGet(row, ['note','comment'], 5),
+          }))
+          .filter(r => r.refNumber || r.description);
+      }
 
-      const preview = document.getElementById('hd-import-preview');
-
-      if (Object.keys(blockedBatches).length > 0) {
-        const detail = Object.entries(blockedBatches).map(([l, n]) => `${l} (${n} style${n !== 1 ? 's' : ''})`).join(', ');
-        const errMsg = `Cannot modify styles that have already been released. Released styles: ${detail}.`;
-
-        const stylesList = h.stylesList || [];
-        const previewRows = aoa.slice(1).map(row => {
-          const id  = get(row, 'styleId');
-          const num = get(row, 'styleNum');
-          const matchedStyle = stylesList.find(s =>
-            (id && s.id === id) || (num && (s.styleNumber || '').toUpperCase() === num.toUpperCase()));
-          const isBlocked = matchedStyle && releasedSet.has(matchedStyle.id);
-          const batch = get(row, 'batchLabel') || 'Batch 1';
-          return `<tr style="${isBlocked ? 'background:#fef2f2' : ''}">
-            <td class="primary font-bold">${num || id || '—'}</td>
-            <td class="text-sm">${get(row, 'styleName') || '—'}</td>
-            <td class="text-sm">${batch}</td>
-            <td>${isBlocked
-              ? '<span class="badge" style="background:#fee2e2;color:#b91c1c;font-size:0.7rem">🔒 Released — blocked</span>'
-              : '<span class="badge badge-placed" style="font-size:0.7rem">✓ OK</span>'}</td>
-          </tr>`;
-        }).join('');
-
-        if (preview) {
-          preview.innerHTML = `
-            <div class="alert alert-danger" style="margin-bottom:8px">${errMsg}</div>
-            <div class="table-wrap"><table>
-              <thead><tr><th>Style #</th><th>Style Name</th><th>Batch</th><th>Status</th></tr></thead>
-              <tbody>${previewRows}</tbody>
-            </table></div>`;
-        } else {
-          alert(errMsg);
-        }
+      if (!uploadedStyles.length && !uploadedFabrics.length && !uploadedTrims.length) {
+        if (preview) preview.innerHTML = '<div class="alert alert-danger">❌ No data found — make sure the file has a Styles, Fabrics, or Trims tab with a header row.</div>';
         return;
       }
 
-      // All clear — apply updates to unreleased styles only
-      const hasBatchCol = ci.batchLabel >= 0;
-      const updated = (h.stylesList || []).map(s => {
-        if (releasedSet.has(s.id)) return s;
-        const match = byId[s.id] || byNum[(s.styleNumber || '').toUpperCase()];
-        if (!match) return s;
-        return Object.assign({}, s, {
-          batchLabel:  hasBatchCol ? (get(match, 'batchLabel') || 'Batch 1') : (s.batchLabel || 'Batch 1'),
-          styleName:   ci.styleName >= 0 && get(match, 'styleName')  ? get(match, 'styleName')  : s.styleName,
-          fabrication: ci.fabric    >= 0 && get(match, 'fabric')     ? get(match, 'fabric')     : s.fabrication,
-          fabric:      ci.fabric    >= 0 && get(match, 'fabric')     ? get(match, 'fabric')     : s.fabric,
-          notes:       ci.notes     >= 0                              ? get(match, 'notes')      : s.notes,
-        });
-      });
+      // Store parsed data for Apply step
+      App._pendingHandoffMerge = { handoffId, styles: uploadedStyles, fabrics: uploadedFabrics, trims: uploadedTrims };
 
-      await API.DesignHandoffs.update(handoffId, { stylesList: updated });
-      if (preview) preview.innerHTML = '';
-      const mc = document.getElementById('content');
-      if (mc) mc.innerHTML = AdminViews.renderHandoffDetail(handoffId);
-      App._hdUpdateReleaseCount(handoffId);
+      // ── Compute diff for preview ──────────────────────────────
+      App._renderHandoffMergePreview(h, uploadedStyles, uploadedFabrics, uploadedTrims, false);
     } catch (err) {
-      alert('❌ Could not read file: ' + err.message);
+      if (preview) preview.innerHTML = '<div class="alert alert-danger">❌ Could not read file: ' + err.message + '</div>';
     }
   };
   reader.readAsArrayBuffer(file);
+};
+
+// Compute and render the merge diff preview in #hd-import-preview.
+// Called on file parse and again when the Replace All toggle changes.
+App._renderHandoffMergePreview = function(h, uploadedStyles, uploadedFabrics, uploadedTrims, replaceAll) {
+  const preview = document.getElementById('hd-import-preview');
+  if (!preview) return;
+
+  const releasedSet = new Set((h.batchReleases || []).flatMap(b => b.styleIds || []));
+
+  // ── Styles diff ───────────────────────────────────────────────
+  const existingStyleByNum = {};
+  const existingStyleById  = {};
+  (h.stylesList || []).forEach(s => {
+    existingStyleById[s.id] = s;
+    existingStyleByNum[(s.styleNumber || '').toUpperCase()] = s;
+  });
+
+  // Dedup upload rows by (id → num fallback), take last occurrence
+  const seenStyleKeys = new Set();
+  const dedupedStyles  = [];
+  const dupWarnings    = [];
+  for (let i = uploadedStyles.length - 1; i >= 0; i--) {
+    const r = uploadedStyles[i];
+    const key = r.styleId || (r.styleNumber || '').toUpperCase();
+    if (!key) continue;
+    if (seenStyleKeys.has(key)) {
+      dupWarnings.push(r.styleNumber || r.styleId);
+    } else {
+      seenStyleKeys.add(key);
+      dedupedStyles.unshift(r);
+    }
+  }
+
+  const stylesDiff = [];
+  if (replaceAll) {
+    // KEEP released; BLOCK released rows in upload; ADD everything else from upload
+    const uploadNums  = new Set(dedupedStyles.map(r => (r.styleNumber || '').toUpperCase()));
+    const uploadIds   = new Set(dedupedStyles.map(r => r.styleId).filter(Boolean));
+    (h.stylesList || []).forEach(s => {
+      const inUpload = uploadIds.has(s.id) || uploadNums.has((s.styleNumber || '').toUpperCase());
+      if (releasedSet.has(s.id)) {
+        stylesDiff.push({ action: inUpload ? 'block' : 'keep-released', s, r: null });
+      }
+      // unreleased + not in upload → will be REMOVED (shown as 'remove')
+      if (!releasedSet.has(s.id) && !inUpload) {
+        stylesDiff.push({ action: 'remove', s, r: null });
+      }
+    });
+    dedupedStyles.forEach(r => {
+      const existing = existingStyleById[r.styleId] || existingStyleByNum[(r.styleNumber || '').toUpperCase()];
+      if (existing && releasedSet.has(existing.id)) {
+        stylesDiff.push({ action: 'block', s: existing, r });
+      } else {
+        stylesDiff.push({ action: 'add', s: null, r });
+      }
+    });
+  } else {
+    // Smart merge
+    const seenExistingIds = new Set();
+    dedupedStyles.forEach(r => {
+      const existing = existingStyleById[r.styleId] || existingStyleByNum[(r.styleNumber || '').toUpperCase()];
+      if (!existing) {
+        stylesDiff.push({ action: 'add', s: null, r });
+      } else if (releasedSet.has(existing.id)) {
+        stylesDiff.push({ action: 'block', s: existing, r });
+        seenExistingIds.add(existing.id);
+      } else {
+        stylesDiff.push({ action: 'update', s: existing, r });
+        seenExistingIds.add(existing.id);
+      }
+    });
+    // Existing styles not in upload → KEEP
+    (h.stylesList || []).forEach(s => {
+      if (!seenExistingIds.has(s.id)) {
+        const inUpload = seenStyleKeys.has(s.id) || seenStyleKeys.has((s.styleNumber || '').toUpperCase());
+        if (!inUpload) stylesDiff.push({ action: releasedSet.has(s.id) ? 'keep-released' : 'keep', s, r: null });
+      }
+    });
+  }
+
+  const removeCount = stylesDiff.filter(d => d.action === 'remove').length;
+
+  // ── Fabrics diff ──────────────────────────────────────────────
+  const fabDiff = [];
+  if (uploadedFabrics.length) {
+    const existingFabByCode = {};
+    (h.fabricsList || []).forEach(f => { if (f.fabricCode) existingFabByCode[f.fabricCode.toUpperCase()] = f; });
+    if (replaceAll) {
+      uploadedFabrics.forEach(f => fabDiff.push({ action: 'add', e: null, u: f }));
+      (h.fabricsList || []).filter(f => {
+        const code = (f.fabricCode || '').toUpperCase();
+        return !uploadedFabrics.some(u => (u.fabricCode || '').toUpperCase() === code);
+      }).forEach(f => fabDiff.push({ action: 'remove', e: f, u: null }));
+    } else {
+      const uploadFabCodes = new Set(uploadedFabrics.map(f => (f.fabricCode || '').toUpperCase()));
+      uploadedFabrics.forEach(f => {
+        const code = (f.fabricCode || '').toUpperCase();
+        const existing = existingFabByCode[code];
+        if (!existing) {
+          fabDiff.push({ action: 'add', e: null, u: f });
+        } else if (existing.fabricName && f.fabricName && existing.fabricName.toLowerCase() !== f.fabricName.toLowerCase()) {
+          fabDiff.push({ action: 'conflict', e: existing, u: f });
+        } else {
+          fabDiff.push({ action: 'update', e: existing, u: f });
+        }
+      });
+      (h.fabricsList || []).forEach(f => {
+        if (!uploadFabCodes.has((f.fabricCode || '').toUpperCase())) {
+          fabDiff.push({ action: 'keep', e: f, u: null });
+        }
+      });
+    }
+  }
+
+  // ── Trims diff (same pattern as fabrics) ─────────────────────
+  const trimDiff = [];
+  if (uploadedTrims.length) {
+    const existingTrimByRef = {};
+    (h.trimsList || []).forEach(t => { if (t.refNumber) existingTrimByRef[t.refNumber.toUpperCase()] = t; });
+    if (replaceAll) {
+      uploadedTrims.forEach(t => trimDiff.push({ action: 'add', e: null, u: t }));
+      (h.trimsList || []).filter(t => {
+        const ref = (t.refNumber || '').toUpperCase();
+        return !uploadedTrims.some(u => (u.refNumber || '').toUpperCase() === ref);
+      }).forEach(t => trimDiff.push({ action: 'remove', e: t, u: null }));
+    } else {
+      const uploadTrimRefs = new Set(uploadedTrims.map(t => (t.refNumber || '').toUpperCase()));
+      uploadedTrims.forEach(t => {
+        const ref = (t.refNumber || '').toUpperCase();
+        const existing = existingTrimByRef[ref];
+        trimDiff.push(existing ? { action: 'update', e: existing, u: t } : { action: 'add', e: null, u: t });
+      });
+      (h.trimsList || []).forEach(t => {
+        if (!uploadTrimRefs.has((t.refNumber || '').toUpperCase())) trimDiff.push({ action: 'keep', e: t, u: null });
+      });
+    }
+  }
+
+  // ── Render preview ────────────────────────────────────────────
+  const pill = (label, color, bg) =>
+    `<span class="badge" style="background:${bg};color:${color};font-size:0.68rem;white-space:nowrap">${label}</span>`;
+
+  const styleRows = stylesDiff.map(d => {
+    const num  = d.r?.styleNumber || d.s?.styleNumber || '—';
+    const name = d.r?.styleName  || d.s?.styleName   || '—';
+    const batch= d.r?.batchLabel || d.s?.batchLabel  || '—';
+    const actionPill = {
+      add:          pill('✅ ADD',     '#166534', 'rgba(34,197,94,0.15)'),
+      update:       pill('✏ UPDATE',  '#92400e', 'rgba(245,158,11,0.15)'),
+      keep:         pill('↩ KEEP',    '#64748b', 'rgba(100,116,139,0.1)'),
+      'keep-released': pill('🔒 Released','#64748b','rgba(100,116,139,0.1)'),
+      block:        pill('🔒 BLOCK',  '#991b1b', 'rgba(239,68,68,0.15)'),
+      remove:       pill('✕ REMOVE',  '#991b1b', 'rgba(239,68,68,0.12)'),
+    }[d.action] || '';
+    const rowBg = { add:'rgba(34,197,94,0.04)', update:'rgba(245,158,11,0.04)', block:'rgba(239,68,68,0.06)', remove:'rgba(239,68,68,0.06)' }[d.action] || '';
+    return `<tr style="background:${rowBg}">
+      <td class="font-bold">${num}</td>
+      <td class="text-sm">${name}</td>
+      <td class="text-sm">${batch}</td>
+      <td>${actionPill}</td>
+    </tr>`;
+  }).join('');
+
+  const fabRows = fabDiff.map(d => {
+    const code = d.u?.fabricCode || d.e?.fabricCode || '—';
+    const name = d.u?.fabricName || d.e?.fabricName || '—';
+    let actionPill;
+    if (d.action === 'conflict') {
+      actionPill = pill('⚠ CONFLICT', '#92400e', 'rgba(245,158,11,0.2)');
+    } else {
+      actionPill = { add: pill('✅ ADD','#166534','rgba(34,197,94,0.15)'), update: pill('✏ UPDATE','#92400e','rgba(245,158,11,0.15)'), keep: pill('↩ KEEP','#64748b','rgba(100,116,139,0.1)'), remove: pill('✕ REMOVE','#991b1b','rgba(239,68,68,0.12)') }[d.action] || '';
+    }
+    const conflict = d.action === 'conflict' ? `<div class="text-sm text-muted" style="font-size:0.72rem">${d.e.fabricName} → ${d.u.fabricName}</div>` : '';
+    const rowBg = { add:'rgba(34,197,94,0.04)', conflict:'rgba(245,158,11,0.06)', remove:'rgba(239,68,68,0.06)' }[d.action] || '';
+    return `<tr style="background:${rowBg}"><td class="font-bold">${code}</td><td class="text-sm">${name}${conflict}</td><td>${actionPill}</td></tr>`;
+  }).join('');
+
+  const trimRows = trimDiff.map(d => {
+    const ref  = d.u?.refNumber  || d.e?.refNumber  || '—';
+    const desc = d.u?.description|| d.e?.description|| '—';
+    const actionPill = { add: pill('✅ ADD','#166534','rgba(34,197,94,0.15)'), update: pill('✏ UPDATE','#92400e','rgba(245,158,11,0.15)'), keep: pill('↩ KEEP','#64748b','rgba(100,116,139,0.1)'), remove: pill('✕ REMOVE','#991b1b','rgba(239,68,68,0.12)') }[d.action] || '';
+    const rowBg = { add:'rgba(34,197,94,0.04)', remove:'rgba(239,68,68,0.06)' }[d.action] || '';
+    return `<tr style="background:${rowBg}"><td class="font-bold">${ref}</td><td class="text-sm">${desc}</td><td>${actionPill}</td></tr>`;
+  }).join('');
+
+  const counts = {
+    sAdd:    stylesDiff.filter(d => d.action === 'add').length,
+    sUpd:    stylesDiff.filter(d => d.action === 'update').length,
+    sKeep:   stylesDiff.filter(d => d.action === 'keep' || d.action === 'keep-released').length,
+    sBlock:  stylesDiff.filter(d => d.action === 'block').length,
+    sRem:    stylesDiff.filter(d => d.action === 'remove').length,
+    fConf:   fabDiff.filter(d => d.action === 'conflict').length,
+  };
+  const hasBlocked = counts.sBlock > 0;
+
+  const warnBanner = dupWarnings.length
+    ? `<div class="alert" style="background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.3);color:#92400e;padding:8px 12px;font-size:0.82rem;margin-bottom:8px">⚠ Duplicate style numbers in upload — keeping last occurrence: ${dupWarnings.join(', ')}</div>`
+    : '';
+  const conflictBanner = counts.fConf
+    ? `<div class="alert" style="background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.3);color:#92400e;padding:8px 12px;font-size:0.82rem;margin-bottom:8px">⚠ ${counts.fConf} fabric name conflict${counts.fConf > 1 ? 's' : ''} — existing name will be overwritten with uploaded name.</div>`
+    : '';
+  const blockBanner = hasBlocked
+    ? `<div class="alert alert-danger" style="padding:8px 12px;font-size:0.82rem;margin-bottom:8px">🔒 ${counts.sBlock} released style${counts.sBlock > 1 ? 's' : ''} in upload cannot be modified — ${counts.sBlock > 1 ? 'they are' : 'it is'} already released and locked.</div>`
+    : '';
+
+  const hid = h.id;
+  const escHid = hid.replace(/'/g, "\\'");
+  const replaceAllChecked = replaceAll ? 'checked' : '';
+  const removeLabel = removeCount > 0 ? ` (will remove ${removeCount} unreleased style${removeCount !== 1 ? 's' : ''} not in this file)` : '';
+
+  preview.innerHTML = `
+    ${warnBanner}${conflictBanner}${blockBanner}
+    <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:12px">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:0.85rem">
+        <input type="checkbox" id="hd-replace-all-toggle" ${replaceAllChecked}
+          onchange="App._onReplaceAllToggle('${escHid}')">
+        <span>Replace All<span id="hd-replace-count" style="color:#ef4444;font-weight:600">${removeLabel}</span></span>
+      </label>
+      <div style="flex:1"></div>
+      ${hasBlocked
+        ? `<span class="text-sm text-muted">Fix blocked styles before applying.</span>`
+        : `<button class="btn btn-primary btn-sm" onclick="App._applyHandoffMerge('${escHid}')">Apply Changes</button>`}
+      <button class="btn btn-secondary btn-sm" onclick="App._cancelHandoffMergePreview()">✕ Cancel</button>
+    </div>
+    <details open style="margin-bottom:8px">
+      <summary style="cursor:pointer;font-size:0.85rem;font-weight:600;list-style:none;padding:4px 0">
+        Styles (${counts.sAdd} add · ${counts.sUpd} update · ${counts.sKeep} keep${counts.sRem > 0 ? ' · <span style="color:#ef4444">'+counts.sRem+' remove</span>' : ''})
+      </summary>
+      <div class="table-wrap" style="margin-top:6px"><table>
+        <thead><tr><th>Style #</th><th>Style Name</th><th>Batch</th><th>Action</th></tr></thead>
+        <tbody>${styleRows || '<tr><td colspan="4" class="text-muted text-sm text-center">No styles in upload</td></tr>'}</tbody>
+      </table></div>
+    </details>
+    ${fabRows ? `<details style="margin-bottom:8px"><summary style="cursor:pointer;font-size:0.85rem;font-weight:600;list-style:none;padding:4px 0">Fabrics (${fabDiff.filter(d=>d.action==='add').length} add · ${fabDiff.filter(d=>d.action==='update'||d.action==='conflict').length} update · ${fabDiff.filter(d=>d.action==='keep').length} keep)</summary>
+      <div class="table-wrap" style="margin-top:6px"><table><thead><tr><th>Ref #</th><th>Name</th><th>Action</th></tr></thead><tbody>${fabRows}</tbody></table></div>
+    </details>` : ''}
+    ${trimRows ? `<details style="margin-bottom:8px"><summary style="cursor:pointer;font-size:0.85rem;font-weight:600;list-style:none;padding:4px 0">Trims (${trimDiff.filter(d=>d.action==='add').length} add · ${trimDiff.filter(d=>d.action==='update').length} update · ${trimDiff.filter(d=>d.action==='keep').length} keep)</summary>
+      <div class="table-wrap" style="margin-top:6px"><table><thead><tr><th>Ref #</th><th>Description</th><th>Action</th></tr></thead><tbody>${trimRows}</tbody></table></div>
+    </details>` : ''}
+  `;
+};
+
+App._onReplaceAllToggle = function(handoffId) {
+  const toggle = document.getElementById('hd-replace-all-toggle');
+  if (!toggle || !App._pendingHandoffMerge) return;
+  const h = API.DesignHandoffs.get(handoffId);
+  if (!h) return;
+  const { styles, fabrics, trims } = App._pendingHandoffMerge;
+  App._renderHandoffMergePreview(h, styles, fabrics, trims, toggle.checked);
+};
+
+App._cancelHandoffMergePreview = function() {
+  App._pendingHandoffMerge = null;
+  const preview = document.getElementById('hd-import-preview');
+  if (preview) preview.innerHTML = '';
+};
+
+App._applyHandoffMerge = async function(handoffId) {
+  if (!App._pendingHandoffMerge || App._pendingHandoffMerge.handoffId !== handoffId) return;
+  const toggle = document.getElementById('hd-replace-all-toggle');
+  const replaceAll = toggle ? toggle.checked : false;
+  const { styles, fabrics, trims } = App._pendingHandoffMerge;
+
+  const btn = document.querySelector(`[onclick*="_applyHandoffMerge"]`);
+  if (btn) { btn.disabled = true; btn.textContent = 'Applying…'; }
+
+  try {
+    await API.DesignHandoffs.mergeUpload(handoffId, { styles, fabrics, trims, replaceAll });
+    App._pendingHandoffMerge = null;
+    const mc = document.getElementById('content');
+    if (mc) mc.innerHTML = AdminViews.renderHandoffDetail(handoffId);
+    App._hdUpdateReleaseCount(handoffId);
+  } catch (err) {
+    alert('❌ Merge failed: ' + err.message);
+    if (btn) { btn.disabled = false; btn.textContent = 'Apply Changes'; }
+  }
 };
 
 App.saveNewHandoff = async function(e) {
@@ -5053,15 +5347,20 @@ App.saveNewHandoff = async function(e) {
     batchLabel:  r.batchLabel || 'Batch 1',
   }));
 
-  // Include fabric list if it was uploaded in the same session
+  // Include fabric and trim lists if parsed from the unified 3-tab file.
+  // _processHandoffFile stores fabrics as {refNumber, name, ...}, so normalise
+  // to the canonical {fabricCode, fabricName, ...} schema before saving.
   const trimsList   = (App._handoffParsedTrims || []).map(t => ({
     refNumber: t.refNumber||'', supplier: t.supplier||'', description: t.description||'', color: t.color||'', unit: t.unit||'', notes: t.notes||'',
   }));
   const fabricsList = (App._handoffParsedFabrics || []).map(f => ({
-    fabricCode: f.fabricCode,
-    fabricName: f.fabricName,
-    content:    f.content,
-    weight:     f.weight,
+    fabricCode: f.fabricCode || f.refNumber || '',
+    fabricName: f.fabricName || f.name      || '',
+    supplier:   f.supplier   || '',
+    color:      f.color      || '',
+    content:    f.content    || '',
+    weight:     f.weight     || '',
+    notes:      f.notes      || '',
   }));
 
   await API.DesignHandoffs.create({ season, year, brand, gender, tier, supplierRequestNumber, stylesList, fabricsList, trimsList, trimsUploaded: trimsList.length > 0,

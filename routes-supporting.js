@@ -736,6 +736,225 @@ router.post('/design-handoffs/:id/reactivate', requireAuth, requireRole('admin',
   res.json(handoffFromRow(db.prepare('SELECT * FROM design_handoffs WHERE id = ?').get(req.params.id)));
 });
 
+// POST /api/design-handoffs/:id/merge-upload
+// Smart merge: ADD new items, UPDATE existing unreleased, KEEP missing, BLOCK released.
+// Body: { styles: [...], fabrics: [...], trims: [...], replaceAll: bool }
+// Returns: { handoff: {...}, diff: { styles, fabrics, trims } }
+router.post('/design-handoffs/:id/merge-upload', requireAuth, requireRole('admin', 'pc', 'design'), (req, res) => {
+  const row = db.prepare('SELECT * FROM design_handoffs WHERE id = ?').get(req.params.id);
+  if (!row) return res.status(404).json({ error: 'Handoff not found' });
+
+  const { styles: uploadStyles = [], fabrics: uploadFabrics = [], trims: uploadTrims = [], replaceAll = false } = req.body;
+
+  const h          = handoffFromRow(row);
+  const releasedSet = new Set((h.batchReleases || []).flatMap(b => b.styleIds || []));
+
+  const diff = {
+    styles:  { added: 0, updated: 0, kept: 0, blocked: 0 },
+    fabrics: { added: 0, updated: 0, kept: 0, conflicts: [] },
+    trims:   { added: 0, updated: 0, kept: 0 },
+  };
+
+  // ── Merge styles ──────────────────────────────────────────────
+  // Dedup upload rows by (styleId → styleNumber), take last occurrence.
+  const uploadById  = {};
+  const uploadByNum = {};
+  for (const r of uploadStyles) {
+    const id  = (r.styleId   || '').trim();
+    const num = (r.styleNumber || '').trim().toUpperCase();
+    if (id)  uploadById[id]   = r;
+    if (num) uploadByNum[num] = r;
+  }
+
+  let newStylesList;
+  if (replaceAll) {
+    // Keep released styles as-is; replace all unreleased with upload.
+    const releasedStyles = h.stylesList.filter(s => releasedSet.has(s.id));
+    const uploadNums  = new Set(Object.keys(uploadByNum));
+    const uploadIds   = new Set(Object.keys(uploadById));
+    // Block any upload row that matches a released style
+    const blockedNums = new Set();
+    releasedStyles.forEach(s => {
+      if (uploadIds.has(s.id) || uploadNums.has((s.styleNumber || '').toUpperCase())) {
+        blockedNums.add((s.styleNumber || '').toUpperCase());
+        diff.styles.blocked++;
+      } else {
+        diff.styles.kept++;
+      }
+    });
+    const newFromUpload = uploadStyles
+      .filter(r => !blockedNums.has((r.styleNumber || '').toUpperCase()))
+      .map(r => ({
+        id:          uid(),
+        styleNumber: r.styleNumber || '',
+        styleName:   r.styleName   || '',
+        fabric:      r.fabric      || '',
+        fabrication: r.fabric      || '',
+        notes:       r.notes       || '',
+        batchLabel:  r.batchLabel  || 'Batch 1',
+      }));
+    diff.styles.added = newFromUpload.length;
+    newStylesList = [...releasedStyles, ...newFromUpload];
+  } else {
+    // Smart merge
+    const existingById  = {};
+    const existingByNum = {};
+    h.stylesList.forEach(s => {
+      existingById[s.id] = s;
+      existingByNum[(s.styleNumber || '').toUpperCase()] = s;
+    });
+
+    const seenExistingIds = new Set();
+    newStylesList = [...h.stylesList]; // start with existing; we'll mutate in-place by index
+
+    for (const r of uploadStyles) {
+      const id  = (r.styleId   || '').trim();
+      const num = (r.styleNumber || '').trim().toUpperCase();
+      const existing = existingById[id] || existingByNum[num];
+
+      if (!existing) {
+        // ADD new style
+        diff.styles.added++;
+        newStylesList.push({
+          id:          uid(),
+          styleNumber: r.styleNumber || '',
+          styleName:   r.styleName   || '',
+          fabric:      r.fabric      || '',
+          fabrication: r.fabric      || '',
+          notes:       r.notes       || '',
+          batchLabel:  r.batchLabel  || 'Batch 1',
+        });
+      } else if (releasedSet.has(existing.id)) {
+        // BLOCK — can't modify released styles
+        diff.styles.blocked++;
+        seenExistingIds.add(existing.id);
+      } else {
+        // UPDATE unreleased
+        diff.styles.updated++;
+        seenExistingIds.add(existing.id);
+        const idx = newStylesList.findIndex(s => s.id === existing.id);
+        if (idx >= 0) {
+          newStylesList[idx] = Object.assign({}, existing, {
+            styleName:   r.styleName  || existing.styleName,
+            fabric:      r.fabric     || existing.fabric,
+            fabrication: r.fabric     || existing.fabrication,
+            notes:       r.notes !== undefined ? r.notes : existing.notes,
+            batchLabel:  r.batchLabel || existing.batchLabel,
+          });
+        }
+      }
+    }
+
+    // KEEP existing styles not touched by upload
+    h.stylesList.forEach(s => {
+      if (!seenExistingIds.has(s.id)) {
+        const inUpload = uploadById[s.id] || uploadByNum[(s.styleNumber || '').toUpperCase()];
+        if (!inUpload) diff.styles.kept++;
+      }
+    });
+  }
+
+  // ── Merge fabrics ─────────────────────────────────────────────
+  let newFabricsList;
+  if (!uploadFabrics.length) {
+    newFabricsList = h.fabricsList; // nothing uploaded — preserve existing
+  } else if (replaceAll) {
+    newFabricsList = uploadFabrics.map(f => ({
+      fabricCode: f.fabricCode || '', fabricName: f.fabricName || '',
+      supplier: f.supplier || '', color: f.color || '',
+      content: f.content || '', weight: f.weight || '', notes: f.notes || '',
+    }));
+    diff.fabrics.added = newFabricsList.length;
+  } else {
+    const existingByCode = {};
+    h.fabricsList.forEach(f => { if (f.fabricCode) existingByCode[f.fabricCode.toUpperCase()] = f; });
+    const uploadCodes = new Set(uploadFabrics.map(f => (f.fabricCode || '').toUpperCase()));
+    newFabricsList = [...h.fabricsList];
+
+    uploadFabrics.forEach(f => {
+      const code = (f.fabricCode || '').toUpperCase();
+      const existing = existingByCode[code];
+      const normalized = {
+        fabricCode: f.fabricCode || '', fabricName: f.fabricName || '',
+        supplier: f.supplier || '', color: f.color || '',
+        content: f.content || '', weight: f.weight || '', notes: f.notes || '',
+      };
+      if (!existing) {
+        diff.fabrics.added++;
+        newFabricsList.push(normalized);
+      } else {
+        if (existing.fabricName && f.fabricName && existing.fabricName.toLowerCase() !== f.fabricName.toLowerCase()) {
+          diff.fabrics.conflicts.push({ code: f.fabricCode, from: existing.fabricName, to: f.fabricName });
+        }
+        diff.fabrics.updated++;
+        const idx = newFabricsList.findIndex(x => (x.fabricCode || '').toUpperCase() === code);
+        if (idx >= 0) newFabricsList[idx] = normalized;
+      }
+    });
+    h.fabricsList.forEach(f => { if (!uploadCodes.has((f.fabricCode || '').toUpperCase())) diff.fabrics.kept++; });
+  }
+
+  // ── Merge trims (same pattern) ────────────────────────────────
+  let newTrimsList;
+  if (!uploadTrims.length) {
+    newTrimsList = h.trimsList;
+  } else if (replaceAll) {
+    newTrimsList = uploadTrims.map(t => ({
+      refNumber: t.refNumber || '', supplier: t.supplier || '', description: t.description || '',
+      color: t.color || '', unit: t.unit || '', notes: t.notes || '',
+    }));
+    diff.trims.added = newTrimsList.length;
+  } else {
+    const existingByRef = {};
+    h.trimsList.forEach(t => { if (t.refNumber) existingByRef[t.refNumber.toUpperCase()] = t; });
+    const uploadRefs = new Set(uploadTrims.map(t => (t.refNumber || '').toUpperCase()));
+    newTrimsList = [...h.trimsList];
+
+    uploadTrims.forEach(t => {
+      const ref = (t.refNumber || '').toUpperCase();
+      const existing = existingByRef[ref];
+      const normalized = {
+        refNumber: t.refNumber || '', supplier: t.supplier || '', description: t.description || '',
+        color: t.color || '', unit: t.unit || '', notes: t.notes || '',
+      };
+      if (!existing) {
+        diff.trims.added++;
+        newTrimsList.push(normalized);
+      } else {
+        diff.trims.updated++;
+        const idx = newTrimsList.findIndex(x => (x.refNumber || '').toUpperCase() === ref);
+        if (idx >= 0) newTrimsList[idx] = normalized;
+      }
+    });
+    h.trimsList.forEach(t => { if (!uploadRefs.has((t.refNumber || '').toUpperCase())) diff.trims.kept++; });
+  }
+
+  // ── Persist ───────────────────────────────────────────────────
+  db.prepare(`
+    UPDATE design_handoffs
+    SET styles_list    = ?,
+        fabrics_list   = ?,
+        trims_list     = ?,
+        styles_uploaded  = 1,
+        fabrics_uploaded = ?,
+        trims_uploaded   = ?
+    WHERE id = ?
+  `).run(
+    JSON.stringify(newStylesList),
+    JSON.stringify(newFabricsList),
+    JSON.stringify(newTrimsList),
+    newFabricsList.length > 0 ? 1 : 0,
+    newTrimsList.length   > 0 ? 1 : 0,
+    req.params.id
+  );
+
+  // Upsert updated fabrics into the fabric library
+  if (newFabricsList.length) _upsertFabricLibrary(newFabricsList, req.params.id);
+
+  const updated = handoffFromRow(db.prepare('SELECT * FROM design_handoffs WHERE id = ?').get(req.params.id));
+  res.json({ handoff: updated, diff });
+});
+
 // POST /api/design-handoffs/:id/release-batch
 // Body: { styleIds: string[], batchLabel: string }
 //

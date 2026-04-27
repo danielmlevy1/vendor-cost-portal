@@ -2910,7 +2910,7 @@ const AdminViews = (() => {
     return `
     <div class="page-header">
       <div><h1 class="page-title">Design Handoffs</h1>
-        <p class="page-subtitle">Style &amp; Fabric lists submitted by Design. Each handoff needs both a Style List and a Fabric List.</p></div>
+        <p class="page-subtitle">Design Handoff files submitted by Design — one Excel with Styles, Fabrics &amp; Trims tabs.</p></div>
       <div style="display:flex;gap:8px">
         <button class="btn btn-ghost btn-sm" onclick="App.downloadHandoffTemplate()">⬇ Template</button>
         <button class="btn btn-primary" onclick="App.openNewHandoffModal()">＋ New Handoff</button>
@@ -3238,9 +3238,9 @@ const AdminViews = (() => {
           </button>
           <span id="hd-selected-count" class="text-sm text-muted"></span>
           <div style="flex:1"></div>
-          <button class="btn btn-secondary btn-sm" onclick="App.downloadHandoffStylesSheet('${h.id}')" title="Download style list with current batch labels">⬇ Style List</button>
-          <label class="btn btn-secondary btn-sm" style="cursor:pointer;margin:0" title="Re-upload to update batch labels">
-            ⬆ Update Labels
+          <button class="btn btn-secondary btn-sm" onclick="App.downloadHandoffStylesSheet('${h.id}')" title="Download 3-tab handoff (Styles, Fabrics, Trims)">⬇ Download Handoff</button>
+          <label class="btn btn-secondary btn-sm" style="cursor:pointer;margin:0" title="Upload updated handoff file — smart merge with existing data">
+            ⬆ Update Handoff
             <input type="file" accept=".xlsx,.xls,.csv" style="display:none"
               onchange="App.importHandoffStyles('${h.id}', event)">
           </label>

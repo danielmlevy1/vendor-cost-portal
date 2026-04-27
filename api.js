@@ -1012,6 +1012,13 @@ const API = (() => {
       if (idx >= 0) cache.designHandoffs[idx] = h;
       return h;
     },
+    async mergeUpload(id, payload) {
+      const { handoff: h } = await POST(`/api/design-handoffs/${id}/merge-upload`, payload);
+      cache.handoffMap[id] = h;
+      const idx = cache.designHandoffs.findIndex(x => x.id === id);
+      if (idx >= 0) cache.designHandoffs[idx] = h; else cache.designHandoffs.push(h);
+      return h;
+    },
   };
 
   // ── Fabric Library ────────────────────────────────────────────
