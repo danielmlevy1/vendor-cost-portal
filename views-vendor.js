@@ -42,8 +42,13 @@ const VendorViews = (() => {
       return { prog, styles, totalRows, quoted, flagged, skipped, pct, daysSinceQuote };
     });
 
+    // Look up SR# for each program from linked handoff (best-effort — empty if handoffs not preloaded for TC)
+    const allHandoffsForVendor = (API.DesignHandoffs && API.DesignHandoffs.all) ? API.DesignHandoffs.all() : [];
+    const vendorFmtDate = d => d ? new Date(d+'T00:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : '—';
+    const vDash = `<span class="text-muted">—</span>`;
+
     const tableBody = progStats.length ? progStats.map(({ prog, styles, totalRows, quoted, flagged, skipped, pct, daysSinceQuote }) => {
-      const badgeHtml = flagged > 0
+      const quoteStatusHtml = flagged > 0
         ? `<span class="badge badge-flagged">🚩 ${flagged} Flagged</span>`
         : pct === 100 ? `<span class="badge badge-submitted">✓ Complete</span>`
         : `<span class="badge badge-pending">Open</span>`;
@@ -58,11 +63,33 @@ const VendorViews = (() => {
         const bg = daysSinceQuote <= 3 ? 'rgba(34,197,94,0.12)' : daysSinceQuote <= 7 ? 'rgba(245,158,11,0.12)' : 'rgba(239,68,68,0.12)';
         activityCell = `<span class="tag" title="Days since you last touched a quote on this program" style="background:${bg};color:${c};font-weight:600">⏱ ${daysSinceQuote}d</span>`;
       }
+      const linkedHandoff = allHandoffsForVendor.find(h => h.linkedProgramId === prog.id);
+      const srNum = linkedHandoff?.supplierRequestNumber
+        ? `<span class="tag" style="font-family:monospace;font-size:0.75rem">${linkedHandoff.supplierRequestNumber}</span>`
+        : vDash;
+      const stageLbl = prog.status === 'Placed' ? 'Placed' : prog.status === 'Costing' ? 'Costing' : prog.status || 'Costing';
+      const stageMap = { 'Costing': ['badge-costing','📋'], 'Placed': ['badge-placed','✅'], 'cancelled': ['badge-cancelled','✕'] };
+      const [sCls, sIcn] = stageMap[stageLbl] || ['badge-costing','📋'];
+      const stageBadgeHtml = `<span class="badge ${sCls}">${sIcn} ${stageLbl}</span>`;
+      // Vendor-scoped costed = styles where vendor submitted an FOB
+      const vendorCosted = styles.filter(s => subs.some(sub => sub.styleId === s.id && (sub.fob || sub.factoryCost))).length;
+      const costedCell = styles.length
+        ? `<span class="tag" style="font-size:0.75rem">${vendorCosted}/${styles.length}</span>`
+        : vDash;
+      const costsDue = vendorFmtDate(prog.crdDate);
       return `<tr style="cursor:pointer" onclick="App.navigateVendorProgram('${tcId}','${prog.id}')">
         <td class="font-bold">${prog.name}</td>
         <td class="text-sm">${(prog.season && prog.season !== 'N/A') ? prog.season : '—'}</td>
         <td class="text-sm">${prog.year || '—'}</td>
-        <td>${styles.length}</td>
+        <td class="text-sm">${prog.gender || '—'}</td>
+        <td class="text-sm">${prog.brand || '—'}</td>
+        <td class="text-sm">${prog.retailer || '—'}</td>
+        <td>${stageBadgeHtml}</td>
+        <td class="text-sm">${srNum}</td>
+        <td class="text-sm"><span class="tag" style="font-size:0.75rem;background:rgba(99,102,241,0.12);color:#818cf8">v${prog.version||1}</span></td>
+        <td style="text-align:center"><span class="tag">${styles.length}</span></td>
+        <td style="text-align:center">${costedCell}</td>
+        <td class="text-sm">${costsDue !== '—' ? costsDue : vDash}</td>
         <td>
           <div style="display:flex;align-items:center;gap:8px">
             <div style="flex:1;background:rgba(255,255,255,0.06);border-radius:99px;height:4px;min-width:60px">
@@ -72,10 +99,10 @@ const VendorViews = (() => {
           </div>
         </td>
         <td>${activityCell}</td>
-        <td>${badgeHtml}${skipped > 0 ? ` <span class="text-muted text-sm">(${skipped} skipped)</span>` : ''}</td>
+        <td>${quoteStatusHtml}${skipped > 0 ? ` <span class="text-muted text-sm">(${skipped} skipped)</span>` : ''}</td>
         <td><button class="btn btn-primary btn-sm" onclick="event.stopPropagation();App.navigateVendorProgram('${tcId}','${prog.id}')">View →</button></td>
       </tr>`;
-    }).join('') : `<tr><td colspan="8" class="text-center text-muted" style="padding:40px">No programs assigned yet.</td></tr>`;
+    }).join('') : `<tr><td colspan="16" class="text-center text-muted" style="padding:40px">No programs assigned yet.</td></tr>`;
 
     const cancelledSection = cancelledPrograms.length ? `
     <details style="margin-top:16px">
@@ -85,7 +112,7 @@ const VendorViews = (() => {
       </summary>
       <div class="card" style="padding:0;margin-top:8px"><div class="table-wrap"><table>
         <thead><tr>
-          <th>Program</th><th>Season</th><th>Year</th><th>Cancelled</th><th></th>
+          <th>Program</th><th>Season</th><th>Year</th><th>Gender</th><th>Brand</th><th>Tier</th><th>Cancelled</th><th></th>
         </tr></thead>
         <tbody>
           ${cancelledPrograms.map(prog => {
@@ -94,6 +121,9 @@ const VendorViews = (() => {
               <td class="font-bold" style="color:#94a3b8">${prog.name}</td>
               <td class="text-sm text-muted">${prog.season || '—'}</td>
               <td class="text-sm text-muted">${prog.year || '—'}</td>
+              <td class="text-sm text-muted">${prog.gender || '—'}</td>
+              <td class="text-sm text-muted">${prog.brand || '—'}</td>
+              <td class="text-sm text-muted">${prog.retailer || '—'}</td>
               <td><span class="badge" style="background:rgba(100,116,139,0.2);color:#94a3b8">🚫 ${cancelDate}</span></td>
               <td><button class="btn btn-ghost btn-sm" style="color:#94a3b8" onclick="App.navigateVendorProgram('${tcId}','${prog.id}')">View Quotes →</button></td>
             </tr>`;
@@ -127,7 +157,12 @@ const VendorViews = (() => {
         <table>
           <thead><tr>
             <th>Program</th><th>Season</th><th>Year</th>
-            <th>Styles</th><th>Quoted</th><th>Last activity</th><th>Status</th><th></th>
+            <th>Gender</th><th>Brand</th><th>Tier</th>
+            <th>Stage</th><th>SR #</th><th>Ver.</th>
+            <th style="text-align:center">Styles</th>
+            <th style="text-align:center">Costed</th>
+            <th>Costs Due Date</th>
+            <th>Quoted</th><th>Last activity</th><th>Quote Status</th><th></th>
           </tr></thead>
           <tbody>${tableBody}</tbody>
         </table>

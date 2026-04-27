@@ -746,6 +746,12 @@ const AdminViews = (() => {
       'Costing':          ['badge-costing',    '📋'],
       'Placed':           ['badge-placed',     '✅'],
       'Cancelled':        ['badge-cancelled',  '✕'],
+      'cancelled':        ['badge-cancelled',  '✕'],
+      'Batch Review':     ['badge-amber',      '📦'],
+      'In Progress':      ['badge-costing',    '▶'],
+      'Batching':         ['badge-costing',    '📦'],
+      'Released':         ['badge-placed',     '↗'],
+      'Complete':         ['badge-placed',     '🏁'],
     };
     const [cls, icon] = map[stage] || ['badge-pending', ''];
     return `<span class="badge ${cls}">${icon} ${stage}</span>`;
@@ -768,16 +774,19 @@ const AdminViews = (() => {
       <th>SR #</th><th>Ver.</th>
       <th style="text-align:center">Styles</th>
       <th style="text-align:center">Costed</th>
+      <th>Costs Due Date</th>
       <th style="text-align:center">Placed</th>
       <th style="text-align:center">TTL Proj Qty</th>
       <th style="text-align:center">TTL Actual Qty</th>
       <th style="text-align:center">TCs</th>
-      <th>Start Date</th><th>End Date</th><th>1st CRD</th>
+      <th>Start Date</th><th>End Date</th>
       <th>Actions</th>
     </tr></thead>`;
 
     // ── Design Handoff rows (not yet in a request) ────────────
-    // Column order must mirror the thead above (18 cells).
+    // Column order: Season(1) Year(2) Gender(3) Brand(4) Tier(5) Stage(6) SR#(7) Ver(8)
+    //   Styles(9) Costed(10) CostsDueDate(11) Placed(12) ProjQty(13) ActlQty(14)
+    //   TCs(15) StartDate(16) EndDate(17) Actions(18) = 18 cells.
     const handoffRows = openHandoffs.map(h => {
       const sc = (h.stylesList || []).length;
       const fabBadge = !h.fabricsUploaded
@@ -806,6 +815,7 @@ const AdminViews = (() => {
         <td>${dash}</td>
         <td style="text-align:center">${sc ? `<span class="tag">${sc}</span>` : dash}</td>
         <td style="text-align:center">${dash}</td>
+        <td class="text-sm">${fmtDate(h.firstCRD)}</td>
         <td style="text-align:center">${dash}</td>
         <td style="text-align:center">${dash}</td>
         <td style="text-align:center">${dash}</td>
@@ -817,7 +827,6 @@ const AdminViews = (() => {
         </td>
         <td class="text-sm">${fmtDate(h.startDate)}</td>
         <td class="text-sm">${fmtDate(h.endDate)}</td>
-        <td class="text-sm">${fmtDate(h.firstCRD)}</td>
         <td onclick="event.stopPropagation()" style="white-space:nowrap">
           <div style="display:flex;gap:6px;flex-wrap:wrap">
             <button class="btn btn-sm" style="background:rgba(16,185,129,0.15);color:#10b981;border:1px solid rgba(16,185,129,0.3)"
@@ -859,6 +868,7 @@ const AdminViews = (() => {
         <td>${dash}</td>
         <td style="text-align:center">${sc ? `<span class="tag">${sc}</span>` : dash}</td>
         <td style="text-align:center">${dash}</td>
+        <td class="text-sm">${fmtDate(r.costDueDate || r.firstCRD)}</td>
         <td style="text-align:center">${dash}</td>
         <td style="text-align:center">${projQty > 0 ? `<span class="tag">${projQty.toLocaleString()}</span>` : dash}</td>
         <td style="text-align:center">${dash}</td>
@@ -870,7 +880,6 @@ const AdminViews = (() => {
         </td>
         <td class="text-sm">${fmtDate(r.startDate)}</td>
         <td class="text-sm">${fmtDate(r.endDate)}</td>
-        <td class="text-sm">${fmtDate(r.firstCRD)}</td>
         <td onclick="event.stopPropagation()" style="white-space:nowrap">
           <div style="display:flex;gap:6px;flex-wrap:wrap">
             <button class="btn btn-sm" style="background:rgba(16,185,129,0.15);color:#10b981;border:1px solid rgba(16,185,129,0.3)"
@@ -909,13 +918,13 @@ const AdminViews = (() => {
         <td><span class="tag" style="font-size:0.75rem;background:rgba(99,102,241,0.12);color:#818cf8">v${p.version || 1}</span></td>
         <td style="text-align:center"><span class="tag">${styleCount}</span></td>
         <td style="text-align:center"><span class="tag">${costedCount}</span></td>
+        <td class="text-sm">${fmtDate(p.crdDate)}</td>
         <td style="text-align:center"><span class="tag ${placedCount > 0 ? 'tag-success' : ''}">${placedCount}</span></td>
         <td style="text-align:center"><span class="tag">${projQtyTotal > 0 ? projQtyTotal.toLocaleString() : '—'}</span></td>
         <td style="text-align:center"><span class="tag">${actlQtyTotal > 0 ? actlQtyTotal.toLocaleString() : '—'}</span></td>
         <td style="text-align:center"><span class="tag">${tcCount}</span></td>
         <td class="text-sm">${fmtDate(p.startDate)}</td>
         <td class="text-sm">${fmtDate(p.endDate)}</td>
-        <td class="text-sm">${fmtDate(p.crdDate)}</td>
         <td onclick="event.stopPropagation()" style="white-space:nowrap">
           <div style="display:flex;gap:6px">
             ${isDraft
@@ -2763,6 +2772,9 @@ const AdminViews = (() => {
       cancelled:  handoffs.filter(h => h.status === 'cancelled'),
     };
 
+    const fmtDate = d => d ? new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' }) : '—';
+    const dash = `<span class="text-muted">—</span>`;
+
     const buildRow = h => {
       const created = new Date(h.createdAt);
       const d = created.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
@@ -2799,20 +2811,43 @@ const AdminViews = (() => {
       const fabricsBadge = h.fabricsUploaded
         ? `<span class="status-dot dot-green"></span><span class="tag">${fabricCount} fabrics</span>`
         : `<span class="status-dot dot-amber"></span><button class="btn btn-ghost btn-xs" onclick="App.openAddFabricListModal('${h.id}')">+ Add Fabric List</button>`;
+
+      // Stage derived from handoff workflow state
+      const hStage = h.status === 'cancelled' ? 'cancelled'
+        : h.linkedProgramId ? 'Complete'
+        : h.submittedForCosting ? 'Complete'
+        : hasBatches && allStylesReleased(h) ? 'Released'
+        : hasBatches ? 'Batching'
+        : 'In Progress';
+
+      // Costs Due Date: from linked program's CRD if available
+      const linkedProg  = h.linkedProgramId ? API.Programs.get(h.linkedProgramId) : null;
+      const costsDueVal = linkedProg?.crdDate ? fmtDate(linkedProg.crdDate) : `<span class="text-muted">—</span>`;
+
+      // Costed: show X/Y from linked program if available
+      const costedVal = linkedProg
+        ? `<span class="tag" style="font-size:0.75rem">${linkedProg.costedCount||0}/${linkedProg.styleCount||0}</span>`
+        : dash;
+
       return `<tr
         data-flt-season="${(h.season || '').replace(/"/g, '&quot;')}"
         data-flt-year="${h.year || ''}"
         data-flt-brand="${(h.brand || '').replace(/"/g, '&quot;')}"
         data-flt-gender="${(h.gender || '').replace(/"/g, '&quot;')}"
         data-flt-tier="${(h.tier || '').replace(/"/g, '&quot;')}">
-        <td class="font-bold">${h.season || '—'} ${h.year || ''}</td>
-        <td class="text-sm">${h.brand || '—'}</td>
-        <td class="text-sm">${h.gender || '—'}</td>
-        <td class="text-sm">${h.tier || '—'}</td>
-        <td class="text-sm">${h.supplierRequestNumber ? `<span class="tag" style="font-family:monospace;font-size:0.78rem">${h.supplierRequestNumber}</span>` : '<span class="text-muted">—</span>'}</td>
+        <td>${h.season || dash}</td>
+        <td class="text-sm">${h.year || dash}</td>
+        <td class="text-sm">${h.gender || dash}</td>
+        <td class="text-sm font-bold">${h.brand || dash}</td>
+        <td class="text-sm">${h.tier || dash}</td>
+        <td>${stageBadge(hStage)}</td>
+        <td class="text-sm">${h.supplierRequestNumber ? `<span class="tag" style="font-family:monospace;font-size:0.78rem">${h.supplierRequestNumber}</span>` : dash}</td>
+        <td>${dash}</td>
+        <td><div style="display:flex;align-items:center;gap:6px">${stylesBadge}</div></td>
+        <td style="text-align:center">${costedVal}</td>
+        <td class="text-sm">${costsDueVal}</td>
         <td class="text-sm text-muted">${d}${ageBadge}</td>
         <td class="text-sm">${h.submittedByName || '—'}</td>
-        <td><div style="display:flex;align-items:center;gap:6px">${stylesBadge}</div></td>
         <td><div style="display:flex;align-items:center;gap:6px">${fabricsBadge}</div></td>
         <td>${linkedBadge}</td>
         <td>
@@ -2828,16 +2863,19 @@ const AdminViews = (() => {
       </tr>`;
     };  // end buildRow
 
-    // Season/Year is displayed as a combined cell; leaving it off the
-    // filter-col list and exposing Brand / Gender / Tier instead. Year
-    // can be filtered via the dashboard top bar anyway.
     const handoffThead = `<thead><tr>
-      <th>Season / Year</th>
-      <th data-filter-col="brand">Brand</th>
+      <th data-filter-col="season">Season</th>
+      <th data-filter-col="year">Year</th>
       <th data-filter-col="gender">Gender</th>
+      <th data-filter-col="brand">Brand</th>
       <th data-filter-col="tier">Tier</th>
-      <th>SR #</th><th>Date</th><th>Submitted By</th>
-      <th>Styles</th><th>Fabrics</th><th>Program</th><th>Actions</th>
+      <th>Stage</th>
+      <th>SR #</th><th>Ver.</th>
+      <th>Styles</th>
+      <th style="text-align:center">Costed</th>
+      <th>Costs Due Date</th>
+      <th>Date</th><th>Submitted By</th>
+      <th>Fabrics</th><th>Program</th><th>Actions</th>
     </tr></thead>`;
 
     const bucketSection = (label, list, key, { open = true, accent = 'var(--accent)' } = {}) => {
@@ -2934,6 +2972,8 @@ const AdminViews = (() => {
       cancelled:  requests.filter(r => r.status === 'cancelled'),
     };
 
+    const srFmtDate = d => d ? new Date(d+'T00:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : '—';
+    const srDash = `<span class="text-muted">—</span>`;
     const statusMap = { submitted: 'badge-costing', converted: 'badge-placed', draft: 'badge-pending', 'batch-review': 'badge-amber' };
     const buildRow = r => {
       const d = new Date(r.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
@@ -2951,21 +2991,43 @@ const AdminViews = (() => {
       const reconcileBadge = matchingHandoff
         ? `<button class="btn btn-ghost btn-xs ml-1" title="Reconcile with Design handoff" onclick="App.openReconcileModal('${r.id}','${matchingHandoff.id}')">⚡ Reconcile</button>`
         : '';
+
+      // Stage: derive from SR status + linked program
+      const srLinkedProg = r.linkedProgramId ? API.Programs.get(r.linkedProgramId) : null;
+      const srStage = r.status === 'cancelled' ? 'cancelled'
+        : srLinkedProg ? srLinkedProg.status
+        : r.status === 'batch-review' ? 'Batch Review'
+        : r.status === 'converted' ? 'Costing'
+        : r.status === 'submitted' ? 'Sales Request'
+        : 'Draft';
+
+      // Costed: from linked program if available
+      const srCosted = srLinkedProg
+        ? `<span class="tag" style="font-size:0.75rem">${srLinkedProg.costedCount||0}/${srLinkedProg.styleCount||0}</span>`
+        : srDash;
+
       return `<tr
+        data-flt-season="${(r.season || '').replace(/"/g, '&quot;')}"
+        data-flt-year="${r.year || ''}"
         data-flt-brand="${(r.brand || '').replace(/"/g, '&quot;')}"
         data-flt-tier="${(r.retailer || '').replace(/"/g, '&quot;')}"
         data-flt-gender="${(r.gender || '').replace(/"/g, '&quot;')}"
         data-flt-source="${r.sourceHandoffId ? 'Handoff' : 'Fresh'}"
         data-flt-status="${(r.status || 'submitted').replace(/"/g, '&quot;')}">
-        <td class="font-bold">${r.season || '—'} ${r.year || ''}</td>
+        <td>${r.season || srDash}</td>
+        <td class="text-sm">${r.year || srDash}</td>
+        <td class="text-sm">${r.gender || srDash}</td>
         <td><span class="badge">${r.brand || '—'}</span></td>
-        <td class="text-sm">${r.retailer || '—'}</td>
-        <td class="text-sm">${r.gender || '—'}</td>
-        <td class="text-sm">${r.inWhseDate ? new Date(r.inWhseDate+'T00:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : '<span class="text-muted">—</span>'}</td>
-        <td class="text-sm">${r.costDueDate ? new Date(r.costDueDate+'T00:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : '<span class="text-muted">—</span>'}</td>
+        <td class="text-sm">${r.retailer || srDash}</td>
+        <td>${stageBadge(srStage)}</td>
+        <td class="text-sm">${r.number ? `<span class="tag" style="font-family:monospace;font-size:0.78rem">${r.number}</span>` : srDash}</td>
+        <td>${srDash}</td>
+        <td><span class="tag">${(r.styles || []).length}</span></td>
+        <td style="text-align:center">${srCosted}</td>
+        <td class="text-sm">${srFmtDate(r.costDueDate)}</td>
+        <td class="text-sm">${srFmtDate(r.inWhseDate)}</td>
         <td class="text-sm text-muted">${d}</td>
         <td class="text-sm">${r.submittedByName || '—'}</td>
-        <td><span class="tag">${(r.styles || []).length}</span></td>
         <td>${r.sourceHandoffId ? '<span class="badge badge-costing" title="Built from Design Handoff">🎨 Handoff</span>' : `<span class="badge badge-pending">Fresh</span>${reconcileBadge}`}</td>
         <td><span class="badge ${statusMap[r.status] || 'badge-pending'}">${r.status || 'submitted'}</span></td>
         <td>${linkedBadge}</td>
@@ -2983,12 +3045,17 @@ const AdminViews = (() => {
     };  // end buildRow
 
     const srThead = `<thead><tr>
-      <th>Season / Year</th>
+      <th data-filter-col="season">Season</th>
+      <th data-filter-col="year">Year</th>
+      <th data-filter-col="gender">Gender</th>
       <th data-filter-col="brand">Brand</th>
       <th data-filter-col="tier">Tier / Retailer</th>
-      <th data-filter-col="gender">Gender</th>
-      <th>In-Whse</th><th>Cost Due</th><th>Date</th><th>Submitted By</th>
+      <th>Stage</th>
+      <th>SR #</th><th>Ver.</th>
       <th>Styles</th>
+      <th style="text-align:center">Costed</th>
+      <th>Costs Due Date</th>
+      <th>In-Whse</th><th>Date</th><th>Submitted By</th>
       <th data-filter-col="source">Source</th>
       <th data-filter-col="status">Status</th>
       <th>Program</th><th>Actions</th>
