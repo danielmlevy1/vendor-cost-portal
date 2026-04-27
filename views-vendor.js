@@ -17,7 +17,9 @@ const VendorViews = (() => {
     const allStyles = API.Assignments.stylesByTc(tcId);
     const subs = API.Submissions.all().filter(s => s.tcId === tcId);
     const flaggedCount = subs.filter(s => s.status === 'flagged').length;
-    const programs = assignments.map(a => API.Programs.get(a.programId)).filter(p => p && p.status !== 'Draft');
+    const allAssignedPrograms = assignments.map(a => API.Programs.get(a.programId)).filter(Boolean);
+    const programs          = allAssignedPrograms.filter(p => p.status !== 'Draft' && p.status !== 'cancelled');
+    const cancelledPrograms = allAssignedPrograms.filter(p => p.status === 'cancelled');
 
     const progStats = programs.map(prog => {
       const styles   = allStyles.filter(s => s.programId === prog.id);
@@ -75,11 +77,36 @@ const VendorViews = (() => {
       </tr>`;
     }).join('') : `<tr><td colspan="8" class="text-center text-muted" style="padding:40px">No programs assigned yet.</td></tr>`;
 
+    const cancelledSection = cancelledPrograms.length ? `
+    <details style="margin-top:16px">
+      <summary style="cursor:pointer;padding:8px 0;font-weight:700;font-size:0.95rem;list-style:none;display:flex;align-items:center;gap:8px;color:#64748b">
+        <span>▸</span><span>Historical — Cancelled Programs</span>
+        <span class="tag" style="font-size:0.72rem">${cancelledPrograms.length}</span>
+      </summary>
+      <div class="card" style="padding:0;margin-top:8px"><div class="table-wrap"><table>
+        <thead><tr>
+          <th>Program</th><th>Season</th><th>Year</th><th>Cancelled</th><th></th>
+        </tr></thead>
+        <tbody>
+          ${cancelledPrograms.map(prog => {
+            const cancelDate = prog.cancelledAt ? new Date(prog.cancelledAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
+            return `<tr style="opacity:0.7">
+              <td class="font-bold" style="color:#94a3b8">${prog.name}</td>
+              <td class="text-sm text-muted">${prog.season || '—'}</td>
+              <td class="text-sm text-muted">${prog.year || '—'}</td>
+              <td><span class="badge" style="background:rgba(100,116,139,0.2);color:#94a3b8">🚫 ${cancelDate}</span></td>
+              <td><button class="btn btn-ghost btn-sm" style="color:#94a3b8" onclick="App.navigateVendorProgram('${tcId}','${prog.id}')">View Quotes →</button></td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table></div></div>
+    </details>` : '';
+
     return `
     <div class="page-header">
       <div>
         <h1 class="page-title">My Programs — ${tc?.code}</h1>
-        <p class="page-subtitle">${programs.length} program${programs.length !== 1 ? 's' : ''} assigned · ${allStyles.length} total styles${flaggedCount ? ` · <span class="text-warning">⚠ ${flaggedCount} flagged</span>` : ''}</p>
+        <p class="page-subtitle">${programs.length} active program${programs.length !== 1 ? 's' : ''} · ${allStyles.length} total styles${flaggedCount ? ` · <span class="text-warning">⚠ ${flaggedCount} flagged</span>` : ''}</p>
         <div style="margin-top:6px"> ${(tc?.coos || []).map(c => `<span class="badge badge-pending" style="margin:2px">${c}</span>`).join('')} </div>
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
@@ -89,12 +116,12 @@ const VendorViews = (() => {
       </div>
     </div>
     ${flaggedCount ? `<div class="alert alert-warning">🚩 You have ${flaggedCount} cost(s) flagged for review. Please open the relevant program and revise your submissions.</div>` : ''}
-    ${programs.length === 0 ? `
+    ${programs.length === 0 && cancelledPrograms.length === 0 ? `
       <div class="empty-state" style="padding:60px">
         <div class="icon">📦</div>
         <h3>No Programs Yet</h3>
         <p class="text-muted">You haven't been assigned to any programs. Check back soon.</p>
-      </div>` : `
+      </div>` : programs.length === 0 ? cancelledSection : `
     <div class="card">
       <div class="table-wrap">
         <table>
@@ -105,7 +132,8 @@ const VendorViews = (() => {
           <tbody>${tableBody}</tbody>
         </table>
       </div>
-    </div>`}`;
+    </div>
+    ${cancelledSection}`}`;
   }
 
 
@@ -296,6 +324,7 @@ const VendorViews = (() => {
         <button class="btn btn-secondary" onclick="App.downloadVendorTemplate('${tcId}')">⬇ Template</button>
       </div>
     </div>
+    ${prog?.status === 'cancelled' ? `<div class="alert" style="background:rgba(100,116,139,0.12);border-color:#94a3b8;color:#94a3b8;margin-bottom:16px">🚫 This program has been cancelled${prog.cancelledAt ? ' on ' + new Date(prog.cancelledAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : ''}. Your quotes are preserved below for reference only.</div>` : ''}
     ${factoryPanel}
     ${flaggedSubs.length ? `<div class="alert alert-warning">🚩 ${flaggedSubs.length} cost(s) flagged for review. See the 🚩 notes below each style for details.</div>` : ''}
     <div class="card">

@@ -412,6 +412,18 @@ function runMigrations() {
   // batch label and the originating handoff id for TC grey-out and progress tracking
   addColumn('styles', 'released_batch',    'TEXT');
   addColumn('styles', 'source_handoff_id', 'TEXT');
+
+  // v13: program cancellation — timestamps + handoff/SR audit trail
+  addColumn('programs',         'cancelled_at',          'TEXT');
+  addColumn('design_handoffs',  'status',                "TEXT NOT NULL DEFAULT 'active'");
+  addColumn('design_handoffs',  'cancelled_at',          'TEXT');
+  addColumn('design_handoffs',  'previous_program_id',   'TEXT');
+  addColumn('design_handoffs',  'previous_program_name', 'TEXT');
+  addColumn('sales_requests',   'cancelled_at',          'TEXT');
+  addColumn('sales_requests',   'previous_program_id',   'TEXT');
+  addColumn('sales_requests',   'previous_program_name', 'TEXT');
+  // Normalise 'Cancelled' → 'cancelled' on programs (was capitalised inconsistently)
+  db.prepare("UPDATE programs SET status = 'cancelled' WHERE status = 'Cancelled'").run();
 }
 
 // One-shot-ish per-country lead-time fill. Only overwrites rows

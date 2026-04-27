@@ -269,7 +269,7 @@ App = (() => {
     const progsAll    = API.cache.programs || [];
     const nOpen       = progsAll.filter(p => p.status === 'Draft' || p.status === 'Costing').length;
     const nPlaced     = progsAll.filter(p => p.status === 'Placed').length;
-    const nCancelled  = progsAll.filter(p => p.status === 'Cancelled').length;
+    const nCancelled  = progsAll.filter(p => p.status === 'cancelled').length;
     const progRouteActive = state.route === 'programs';
     const progBucket  = progRouteActive ? (state.routeParam || 'open') : null;
     const progsOpenAttr = (progRouteActive || localStorage.getItem('vcp_nav_programs_open') === '1') ? 'open' : '';
@@ -774,7 +774,13 @@ App = (() => {
   }
 
   async function updateProgramStatus(id, status) { await API.Programs.update(id, { status }); navigate('programs'); }
-  async function deleteProgram(id) { if (confirm('Delete this program?')) { await API.Programs.delete(id); navigate('programs'); } }
+  async function cancelProgram(id) {
+    const prog = API.Programs.get(id);
+    const name = prog?.name ? `"${prog.name}"` : 'this program';
+    if (!confirm(`Cancel ${name}?\n\nThe program and any linked design handoff or sales request will be moved to Cancelled. Vendor quotes are preserved as historical record.`)) return;
+    await API.Programs.cancel(id);
+    navigate('programs', 'cancelled');
+  }
 
   // ── Styles ─────────────────────────────────────────────────
   function openStyleModal(programId, styleId) {
@@ -2811,7 +2817,7 @@ App = (() => {
       const gender   = (document.getElementById('pm-gender')?.value   || '').trim();
       nameEl.value = [brand, retailer, gender].filter(Boolean).join(' · ');
     },
-    openProgramModal, onInternalProgramChange, saveProgramModal, updateProgramStatus, deleteProgram,
+    openProgramModal, onInternalProgramChange, saveProgramModal, updateProgramStatus, cancelProgram,
     openStyleModal, previewTargetLDP, saveStyle, deleteStyle,
     openAssignTCs, saveAssignments,
     openAssignCustomers, saveCustomerAssignments,
@@ -7218,6 +7224,34 @@ App._saveAddTab = async function(handoffId, tabType) {
 // ── TC assignment modal helpers ──────────────────────────────────
 // Clicking anywhere in a TC row (other than on a control) toggles the
 // row's main checkbox and auto-selects/deselects its COOs to match.
+App.cancelHandoff = async function(id) {
+  const h = API.DesignHandoffs.get(id);
+  const label = [h?.season, h?.year, h?.brand].filter(Boolean).join(' ') || 'this handoff';
+  if (!confirm(`Cancel ${label}?\n\nThe handoff will be moved to the Cancelled bucket. It can be reactivated later.`)) return;
+  await API.DesignHandoffs.cancel(id);
+  App.navigate('design-handoff');
+};
+
+App.reactivateHandoff = async function(id) {
+  if (!confirm('Reactivate this handoff? Batch releases will be cleared so styles can be re-released to a new program.')) return;
+  await API.DesignHandoffs.reactivate(id);
+  App.navigate('design-handoff');
+};
+
+App.cancelSR = async function(id) {
+  const r = API.SalesRequests.get(id);
+  const label = [r?.season, r?.year, r?.brand].filter(Boolean).join(' ') || 'this request';
+  if (!confirm(`Cancel ${label}?\n\nThe sales request will be moved to the Cancelled bucket. It can be reactivated later.`)) return;
+  await API.SalesRequests.cancel(id);
+  App.navigate('sales-requests');
+};
+
+App.reactivateSR = async function(id) {
+  if (!confirm('Reactivate this sales request? It will return to In Progress so you can propose a new program.')) return;
+  await API.SalesRequests.reactivate(id);
+  App.navigate('sales-requests');
+};
+
 App._toggleTcRow = function(tr) {
   const chk = tr.querySelector('.assign-tc-chk');
   if (!chk) return;

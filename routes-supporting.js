@@ -612,6 +612,10 @@ function handoffFromRow(r) {
     submittedAt:          r.submitted_at,
     submittedForCosting:  !!r.submitted_for_costing,
     batchReleases:        JSON.parse(r.batch_releases || '[]'),
+    status:               r.status || 'active',
+    cancelledAt:          r.cancelled_at,
+    previousProgramId:    r.previous_program_id,
+    previousProgramName:  r.previous_program_name,
     createdAt:            r.created_at,
   };
 }
@@ -619,20 +623,24 @@ function handoffFromRow(r) {
 const HANDOFF_FIELDS = {
   season: 'season', year: 'year', brand: 'brand', tier: 'tier', gender: 'gender',
   supplierRequestNumber: 'supplier_request_number',
-  linkedProgramId:    'linked_program_id',
-  linkedRequestId:    'linked_request_id',
-  firstCRD:           'first_crd',
-  startDate:          'start_date',
-  endDate:            'end_date',
-  vendorsAssignedAt:  'vendors_assigned_at',
-  submitted:          'submitted',
-  submittedAt:        'submitted_at',
-  submittedForCosting:'submitted_for_costing',
-  fabricsUploadedAt:  'fabrics_uploaded_at',
-  trimsUploadedAt:    'trims_uploaded_at',
-  stylesUploaded:     'styles_uploaded',
-  fabricsUploaded:    'fabrics_uploaded',
-  trimsUploaded:      'trims_uploaded',
+  linkedProgramId:      'linked_program_id',
+  linkedRequestId:      'linked_request_id',
+  firstCRD:             'first_crd',
+  startDate:            'start_date',
+  endDate:              'end_date',
+  vendorsAssignedAt:    'vendors_assigned_at',
+  submitted:            'submitted',
+  submittedAt:          'submitted_at',
+  submittedForCosting:  'submitted_for_costing',
+  fabricsUploadedAt:    'fabrics_uploaded_at',
+  trimsUploadedAt:      'trims_uploaded_at',
+  stylesUploaded:       'styles_uploaded',
+  fabricsUploaded:      'fabrics_uploaded',
+  trimsUploaded:        'trims_uploaded',
+  status:               'status',
+  cancelledAt:          'cancelled_at',
+  previousProgramId:    'previous_program_id',
+  previousProgramName:  'previous_program_name',
 };
 
 router.get('/design-handoffs', requireAuth, (req, res) => {
@@ -700,6 +708,32 @@ router.patch('/design-handoffs/:id', requireAuth, requireRole('admin', 'pc', 'de
 router.delete('/design-handoffs/:id', requireAuth, requireRole('admin', 'pc'), (req, res) => {
   db.prepare('DELETE FROM design_handoffs WHERE id = ?').run(req.params.id);
   res.json({ ok: true });
+});
+
+// POST /api/design-handoffs/:id/cancel  — direct cancel (only for handoffs with no linked program)
+router.post('/design-handoffs/:id/cancel', requireAuth, requireRole('admin', 'pc', 'design'), (req, res) => {
+  const row = db.prepare('SELECT * FROM design_handoffs WHERE id = ?').get(req.params.id);
+  if (!row) return res.status(404).json({ error: 'Not found' });
+  if (row.linked_program_id) return res.status(400).json({ error: 'Cancel the program instead — handoff is linked to a program' });
+  const now = new Date().toISOString();
+  db.prepare(`UPDATE design_handoffs SET status = 'cancelled', cancelled_at = ? WHERE id = ?`).run(now, req.params.id);
+  res.json(handoffFromRow(db.prepare('SELECT * FROM design_handoffs WHERE id = ?').get(req.params.id)));
+});
+
+// POST /api/design-handoffs/:id/reactivate  — restores to active, clears batch releases + program link
+router.post('/design-handoffs/:id/reactivate', requireAuth, requireRole('admin', 'pc'), (req, res) => {
+  const row = db.prepare('SELECT * FROM design_handoffs WHERE id = ?').get(req.params.id);
+  if (!row) return res.status(404).json({ error: 'Not found' });
+  const prevProgramId   = row.linked_program_id   || row.previous_program_id;
+  const prevProgramName = row.previous_program_name || null;
+  db.prepare(`
+    UPDATE design_handoffs
+    SET status = 'active', cancelled_at = NULL, linked_program_id = NULL,
+        submitted_for_costing = 0, batch_releases = '[]',
+        previous_program_id = ?, previous_program_name = ?
+    WHERE id = ?
+  `).run(prevProgramId || null, prevProgramName || null, req.params.id);
+  res.json(handoffFromRow(db.prepare('SELECT * FROM design_handoffs WHERE id = ?').get(req.params.id)));
 });
 
 // POST /api/design-handoffs/:id/release-batch
@@ -858,8 +892,11 @@ function srFromRow(r) {
     firstCRD:           r.first_crd,
     startDate:          r.start_date,
     endDate:            r.end_date,
-    vendorsAssignedAt:  r.vendors_assigned_at,
-    createdAt:          r.created_at,
+    vendorsAssignedAt:    r.vendors_assigned_at,
+    cancelledAt:          r.cancelled_at,
+    previousProgramId:    r.previous_program_id,
+    previousProgramName:  r.previous_program_name,
+    createdAt:            r.created_at,
   };
 }
 
@@ -878,10 +915,13 @@ const SR_FIELDS = {
   requestedBy:        'requested_by',
   requestedByName:    'requested_by_name',
   salesSubmittedAt:   'sales_submitted_at',
-  firstCRD:           'first_crd',
-  startDate:          'start_date',
-  endDate:            'end_date',
-  vendorsAssignedAt:  'vendors_assigned_at',
+  firstCRD:             'first_crd',
+  startDate:            'start_date',
+  endDate:              'end_date',
+  vendorsAssignedAt:    'vendors_assigned_at',
+  cancelledAt:          'cancelled_at',
+  previousProgramId:    'previous_program_id',
+  previousProgramName:  'previous_program_name',
 };
 
 router.get('/sales-requests', requireAuth, (req, res) => {
@@ -935,6 +975,31 @@ router.patch('/sales-requests/:id', requireAuth, (req, res) => {
 router.delete('/sales-requests/:id', requireAuth, requireRole('admin', 'pc'), (req, res) => {
   db.prepare('DELETE FROM sales_requests WHERE id = ?').run(req.params.id);
   res.json({ ok: true });
+});
+
+// POST /api/sales-requests/:id/cancel  — direct cancel (only for SRs with no linked program)
+router.post('/sales-requests/:id/cancel', requireAuth, requireRole('admin', 'pc', 'planning', 'sales'), (req, res) => {
+  const row = db.prepare('SELECT * FROM sales_requests WHERE id = ?').get(req.params.id);
+  if (!row) return res.status(404).json({ error: 'Not found' });
+  if (row.linked_program_id) return res.status(400).json({ error: 'Cancel the program instead — SR is linked to a program' });
+  const now = new Date().toISOString();
+  db.prepare(`UPDATE sales_requests SET status = 'cancelled', cancelled_at = ? WHERE id = ?`).run(now, req.params.id);
+  res.json(srFromRow(db.prepare('SELECT * FROM sales_requests WHERE id = ?').get(req.params.id)));
+});
+
+// POST /api/sales-requests/:id/reactivate  — restores to submitted, clears cancellation state
+router.post('/sales-requests/:id/reactivate', requireAuth, requireRole('admin', 'pc'), (req, res) => {
+  const row = db.prepare('SELECT * FROM sales_requests WHERE id = ?').get(req.params.id);
+  if (!row) return res.status(404).json({ error: 'Not found' });
+  const prevProgramId   = row.linked_program_id   || row.previous_program_id;
+  const prevProgramName = row.previous_program_name || null;
+  db.prepare(`
+    UPDATE sales_requests
+    SET status = 'submitted', cancelled_at = NULL, linked_program_id = NULL,
+        previous_program_id = ?, previous_program_name = ?
+    WHERE id = ?
+  `).run(prevProgramId || null, prevProgramName || null, row.id);
+  res.json(srFromRow(db.prepare('SELECT * FROM sales_requests WHERE id = ?').get(row.id)));
 });
 
 // POST /api/sales-requests/:id/convert  — creates Program + bulk styles, marks SR converted

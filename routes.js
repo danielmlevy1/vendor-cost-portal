@@ -63,6 +63,7 @@ function programFromRow(r) {
     endDate:              r.end_date,
     crdDate:              r.crd_date,
     version:              r.version,
+    cancelledAt:          r.cancelled_at,
     createdAt:            r.created_at,
   };
 }
@@ -736,7 +737,46 @@ router.patch('/programs/:id', requireAuth, requireRole('admin', 'pc'), (req, res
   res.json(programWithCounts(stmt.programById.get(req.params.id)));
 });
 
-// DELETE /api/programs/:id  (admin only — destructive cascade)
+// POST /api/programs/:id/cancel  — moves to cancelled, cascades to linked handoff + SR
+router.post('/programs/:id/cancel', requireAuth, requireRole('admin', 'pc'), (req, res) => {
+  const row = stmt.programById.get(req.params.id);
+  if (!row) return res.status(404).json({ error: 'Not found' });
+
+  const now = new Date().toISOString();
+  const progName = row.name;
+
+  db.transaction(() => {
+    db.prepare(`UPDATE programs SET status = 'cancelled', cancelled_at = ? WHERE id = ?`)
+      .run(now, req.params.id);
+
+    // Cascade to the linked design handoff (if any)
+    const handoff = db.prepare('SELECT * FROM design_handoffs WHERE linked_program_id = ?')
+      .get(req.params.id);
+    if (handoff) {
+      db.prepare(`UPDATE design_handoffs SET status = 'cancelled', cancelled_at = ?, previous_program_id = ?, previous_program_name = ? WHERE id = ?`)
+        .run(now, req.params.id, progName, handoff.id);
+      // Cascade to SR linked via the handoff or directly to the program
+      const sr = db.prepare('SELECT * FROM sales_requests WHERE (source_handoff_id = ? OR linked_program_id = ?) AND status != ?')
+        .get(handoff.id, req.params.id, 'cancelled');
+      if (sr) {
+        db.prepare(`UPDATE sales_requests SET status = 'cancelled', cancelled_at = ?, previous_program_id = ?, previous_program_name = ? WHERE id = ?`)
+          .run(now, req.params.id, progName, sr.id);
+      }
+    } else {
+      // No handoff — cancel any SR linked directly to the program
+      const sr = db.prepare('SELECT * FROM sales_requests WHERE linked_program_id = ? AND status != ?')
+        .get(req.params.id, 'cancelled');
+      if (sr) {
+        db.prepare(`UPDATE sales_requests SET status = 'cancelled', cancelled_at = ?, previous_program_id = ?, previous_program_name = ? WHERE id = ?`)
+          .run(now, req.params.id, progName, sr.id);
+      }
+    }
+  })();
+
+  res.json(programWithCounts(stmt.programById.get(req.params.id)));
+});
+
+// DELETE /api/programs/:id  (admin only — destructive cascade, not exposed in UI)
 router.delete('/programs/:id', requireAuth, requireRole('admin'), (req, res) => {
   const row = stmt.programById.get(req.params.id);
   if (!row) return res.status(404).json({ error: 'Not found' });

@@ -105,7 +105,7 @@ CREATE TABLE IF NOT EXISTS programs (
   gender                TEXT,
   season                TEXT,
   year                  TEXT,
-  status                TEXT NOT NULL DEFAULT 'Draft',  -- Draft | Costing | Placed | Cancelled
+  status                TEXT NOT NULL DEFAULT 'Draft',  -- Draft | Costing | Placed | cancelled
   market                TEXT NOT NULL DEFAULT 'USA',
   target_margin         REAL,
   version               INTEGER NOT NULL DEFAULT 1,
@@ -114,6 +114,7 @@ CREATE TABLE IF NOT EXISTS programs (
   start_date            TEXT,
   end_date              TEXT,
   crd_date              TEXT,
+  cancelled_at          TEXT,
   created_at            TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
 
@@ -348,6 +349,10 @@ CREATE TABLE IF NOT EXISTS design_handoffs (
   submitted_at            TEXT,
   submitted_for_costing   INTEGER NOT NULL DEFAULT 0,
   batch_releases          TEXT NOT NULL DEFAULT '[]',  -- JSON: [{ batchLabel, releasedAt, styleIds[] }]
+  status                  TEXT NOT NULL DEFAULT 'active',  -- active | cancelled
+  cancelled_at            TEXT,
+  previous_program_id     TEXT,
+  previous_program_name   TEXT,
   created_at              TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
 
@@ -641,6 +646,9 @@ CREATE TABLE IF NOT EXISTS sales_requests (
   start_date            TEXT,
   end_date              TEXT,
   vendors_assigned_at   TEXT,
+  cancelled_at          TEXT,
+  previous_program_id   TEXT,
+  previous_program_name TEXT,
   created_at            TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
 

@@ -671,7 +671,7 @@ const AdminViews = (() => {
       shownHandoffs = [];
       shownRequests = [];
     } else if (bucket === 'cancelled') {
-      shownPrograms = allPrograms.filter(p => p.status === 'Cancelled');
+      shownPrograms = allPrograms.filter(p => p.status === 'cancelled');
       shownHandoffs = [];
       shownRequests = [];
     } else {
@@ -927,7 +927,7 @@ const AdminViews = (() => {
                   ? `<button class="btn btn-primary btn-sm" onclick="App.openProgram('${p.id}')">📋 Open</button>
                      <button class="btn btn-secondary btn-sm" onclick="App.navigate('styles','${p.id}')">Styles</button>
                      <button class="btn btn-secondary btn-sm" onclick="App.openProgramModal('${p.id}')">Edit</button>
-                     <button class="btn btn-danger btn-sm" onclick="App.deleteProgram('${p.id}')">🗑</button>`
+                     <button class="btn btn-secondary btn-sm" style="color:#ef4444;border-color:#ef4444" onclick="App.cancelProgram('${p.id}')">🚫 Cancel</button>`
                   : `<button class="btn btn-primary btn-sm" onclick="App.openProgram('${p.id}')">👁 Open</button>`)
             }
           </div>
@@ -964,9 +964,8 @@ const AdminViews = (() => {
         <select class="form-select" style="padding:5px 10px;font-size:0.78rem;flex:1" onchange="App.updateProgramStatus('${p.id}',this.value)">
           <option ${p.status === 'Costing' ? 'selected' : ''}>Costing</option>
           <option ${p.status === 'Placed' ? 'selected' : ''}>Placed</option>
-          <option ${p.status === 'Cancelled' ? 'selected' : ''}>Cancelled</option>
         </select>
-        <button class="btn btn-danger btn-sm" onclick="App.deleteProgram('${p.id}')">🗑</button>
+        <button class="btn btn-secondary btn-sm" style="color:#ef4444;border-color:#ef4444" onclick="App.cancelProgram('${p.id}')">🚫 Cancel</button>
       </div>
     </div>`;
   }
@@ -2708,7 +2707,7 @@ const AdminViews = (() => {
     // Handoffs that have a matching unlinked Sales Request (by season+year+brand) — ready to reconcile
     const norm = s => (s || '').trim().toLowerCase();
     const reconcilePairs = handoffs
-      .filter(h => !h.linkedProgramId && (h.stylesList||[]).length > 0)
+      .filter(h => h.status !== 'cancelled' && !h.linkedProgramId && (h.stylesList||[]).length > 0)
       .map(h => {
         const matchSR = allSRs.find(r =>
           !r.linkedProgramId &&
@@ -2747,9 +2746,7 @@ const AdminViews = (() => {
         </div>
       </div>` : '';
 
-    // Split handoffs into workflow buckets. No explicit "cancelled"
-    // status on handoffs in the current schema, so just In-Progress
-    // (no program link yet) vs. Complete (linked to a program).
+    // Split handoffs into workflow buckets.
     // Helper: how many of a handoff's styles have been released across all batches
     const releasedStyleIds = h => new Set((h.batchReleases || []).flatMap(b => b.styleIds || []));
     const allStylesReleased = h => {
@@ -2757,12 +2754,13 @@ const AdminViews = (() => {
       if (!total) return false;
       return releasedStyleIds(h).size >= total;
     };
+    const activeHandoffs = handoffs.filter(h => h.status !== 'cancelled');
     const handoffBuckets = {
-      inProgress: handoffs.filter(h => !h.linkedProgramId && !h.submittedForCosting && !(h.batchReleases || []).length),
-      batching:   handoffs.filter(h => (h.batchReleases || []).length > 0 && !allStylesReleased(h)),
-      released:   handoffs.filter(h => allStylesReleased(h) && !h.submittedForCosting),
-      complete:   handoffs.filter(h => h.submittedForCosting || (h.linkedProgramId && allStylesReleased(h))),
-      cancelled:  [],
+      inProgress: activeHandoffs.filter(h => !h.linkedProgramId && !h.submittedForCosting && !(h.batchReleases || []).length),
+      batching:   activeHandoffs.filter(h => (h.batchReleases || []).length > 0 && !allStylesReleased(h)),
+      released:   activeHandoffs.filter(h => allStylesReleased(h) && !h.submittedForCosting),
+      complete:   activeHandoffs.filter(h => h.submittedForCosting || (h.linkedProgramId && allStylesReleased(h))),
+      cancelled:  handoffs.filter(h => h.status === 'cancelled'),
     };
 
     const buildRow = h => {
@@ -2780,13 +2778,16 @@ const AdminViews = (() => {
       const ageBadge = stillOpen
         ? `<span class="tag" style="font-size:0.68rem;background:${ageBg};color:${ageColor};font-weight:600;margin-left:6px" title="Days since handoff was created">⏱ ${ageDays}d</span>`
         : '';
-      const linkedBadge = h.linkedProgramId
-        ? `<span class="badge badge-placed" style="cursor:pointer" onclick="App.navigate('cost-summary','${h.linkedProgramId}')">→ Program</span>`
-        : h.submittedForCosting
-          ? `<span class="badge badge-costing">⏳ Submitted to Sales</span>`
-          : hasBatches
-            ? `<span class="badge badge-costing" style="cursor:pointer" onclick="App.navigate('handoff-detail','${h.id}')" title="${releasedCount}/${totalStyles} styles released">↗ ${releasedCount}/${totalStyles} released</span>`
-            : `<button class="btn btn-secondary btn-sm" onclick="App.openConvertHandoffModal('${h.id}')">Convert →</button>`;
+      const cancelledDate = h.cancelledAt ? new Date(h.cancelledAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : null;
+      const linkedBadge = h.status === 'cancelled'
+        ? `<span class="badge badge-cancelled" style="background:rgba(100,116,139,0.2);color:#94a3b8">🚫 Cancelled${cancelledDate ? ' · ' + cancelledDate : ''}${h.previousProgramName ? '<br><span style="font-size:0.68rem;font-weight:400">Was: ' + h.previousProgramName + '</span>' : ''}</span>`
+        : h.linkedProgramId
+          ? `<span class="badge badge-placed" style="cursor:pointer" onclick="App.navigate('cost-summary','${h.linkedProgramId}')">→ Program</span>`
+          : h.submittedForCosting
+            ? `<span class="badge badge-costing">⏳ Submitted to Sales</span>`
+            : hasBatches
+              ? `<span class="badge badge-costing" style="cursor:pointer" onclick="App.navigate('handoff-detail','${h.id}')" title="${releasedCount}/${totalStyles} styles released">↗ ${releasedCount}/${totalStyles} released</span>`
+              : `<button class="btn btn-secondary btn-sm" onclick="App.openConvertHandoffModal('${h.id}')">Convert →</button>`;
       const styleCount  = (h.stylesList||[]).length;
       const fabricCount = (h.fabricsList||[]).length;
       const batchPill   = hasBatches
@@ -2816,9 +2817,12 @@ const AdminViews = (() => {
         <td>${linkedBadge}</td>
         <td>
           <div style="display:flex;gap:6px">
-            <button class="btn btn-secondary btn-sm" onclick="App.openEditHandoffModal('${h.id}')">✏ Edit</button>
-            <button class="btn btn-secondary btn-sm" onclick="App.openHandoffDetail('${h.id}')">👁 Open</button>
-            <button class="btn btn-danger btn-sm" onclick="App.deleteHandoff('${h.id}')">🗑</button>
+            ${h.status === 'cancelled'
+              ? `<button class="btn btn-secondary btn-sm" onclick="App.reactivateHandoff('${h.id}')">↩ Reactivate</button>`
+              : `<button class="btn btn-secondary btn-sm" onclick="App.openEditHandoffModal('${h.id}')">✏ Edit</button>
+                 <button class="btn btn-secondary btn-sm" onclick="App.openHandoffDetail('${h.id}')">👁 Open</button>
+                 ${!h.linkedProgramId ? `<button class="btn btn-secondary btn-sm" style="color:#ef4444;border-color:#ef4444" onclick="App.cancelHandoff('${h.id}')">🚫 Cancel</button>` : ''}`
+            }
           </div>
         </td>
       </tr>`;
@@ -2934,11 +2938,14 @@ const AdminViews = (() => {
     const buildRow = r => {
       const d = new Date(r.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
       const hasQtyPrice = (r.styles||[]).some(s => (s.projQty > 0) && (s.projSell > 0));
-      const linkedBadge = r.linkedProgramId
-        ? `<span class="badge badge-placed" style="cursor:pointer" onclick="App.navigate('cost-summary','${r.linkedProgramId}')">→ Program</span>`
-        : hasQtyPrice
-          ? `<button class="btn btn-primary btn-sm" onclick="App.proposeProgramFromRequest('${r.id}')">🚀 Propose Program</button>`
-          : `<span class="badge badge-pending" title="Add Proj Qty and Sell Price to all styles first">Needs Qty/Price</span>`;
+      const srCancelledDate = r.cancelledAt ? new Date(r.cancelledAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : null;
+      const linkedBadge = r.status === 'cancelled'
+        ? `<span class="badge badge-cancelled" style="background:rgba(100,116,139,0.2);color:#94a3b8">🚫 Cancelled${srCancelledDate ? ' · ' + srCancelledDate : ''}${r.previousProgramName ? '<br><span style="font-size:0.68rem;font-weight:400">Was: ' + r.previousProgramName + '</span>' : ''}</span>`
+        : r.linkedProgramId
+          ? `<span class="badge badge-placed" style="cursor:pointer" onclick="App.navigate('cost-summary','${r.linkedProgramId}')">→ Program</span>`
+          : hasQtyPrice
+            ? `<button class="btn btn-primary btn-sm" onclick="App.proposeProgramFromRequest('${r.id}')">🚀 Propose Program</button>`
+            : `<span class="badge badge-pending" title="Add Proj Qty and Sell Price to all styles first">Needs Qty/Price</span>`;
       // Check if there's a matching unlinked handoff for reconciliation
       const matchingHandoff = !r.sourceHandoffId ? allHandoffs.find(h => h.season === r.season && h.year === r.year && !h.linkedProgramId) : null;
       const reconcileBadge = matchingHandoff
@@ -2964,9 +2971,12 @@ const AdminViews = (() => {
         <td>${linkedBadge}</td>
         <td>
           <div style="display:flex;gap:6px">
-            <button class="btn btn-secondary btn-sm" onclick="App.openSalesRequestDetail('${r.id}')">👁 Open</button>
-            <button class="btn btn-ghost btn-sm" onclick="App.downloadSalesRequest('${r.id}')" title="Download as Excel">⬇</button>
-            ${!r.linkedProgramId ? `<button class="btn btn-danger btn-sm" onclick="App.deleteSalesRequest('${r.id}')">🗑</button>` : ''}
+            ${r.status === 'cancelled'
+              ? `<button class="btn btn-secondary btn-sm" onclick="App.reactivateSR('${r.id}')">↩ Reactivate</button>`
+              : `<button class="btn btn-secondary btn-sm" onclick="App.openSalesRequestDetail('${r.id}')">👁 Open</button>
+                 <button class="btn btn-ghost btn-sm" onclick="App.downloadSalesRequest('${r.id}')" title="Download as Excel">⬇</button>
+                 ${!r.linkedProgramId ? `<button class="btn btn-secondary btn-sm" style="color:#ef4444;border-color:#ef4444" onclick="App.cancelSR('${r.id}')">🚫 Cancel</button>` : ''}`
+            }
           </div>
         </td>
       </tr>`;

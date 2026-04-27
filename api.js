@@ -424,6 +424,13 @@ const API = (() => {
     async placeAll(id) {
       await POST(`/api/programs/${id}/place-all`);
     },
+    async cancel(id) {
+      const p = await POST(`/api/programs/${id}/cancel`);
+      cache.programMap[id] = p;
+      const idx = cache.programs.findIndex(x => x.id === id);
+      if (idx >= 0) cache.programs[idx] = p;
+      return p;
+    },
   };
 
   // ── Styles ────────────────────────────────────────────────────
@@ -991,6 +998,20 @@ const API = (() => {
       cache.designHandoffs = cache.designHandoffs.filter(h => h.id !== id);
       delete cache.handoffMap[id];
     },
+    async cancel(id) {
+      const h = await POST(`/api/design-handoffs/${id}/cancel`);
+      cache.handoffMap[id] = h;
+      const idx = cache.designHandoffs.findIndex(x => x.id === id);
+      if (idx >= 0) cache.designHandoffs[idx] = h;
+      return h;
+    },
+    async reactivate(id) {
+      const h = await POST(`/api/design-handoffs/${id}/reactivate`);
+      cache.handoffMap[id] = h;
+      const idx = cache.designHandoffs.findIndex(x => x.id === id);
+      if (idx >= 0) cache.designHandoffs[idx] = h;
+      return h;
+    },
   };
 
   // ── Fabric Library ────────────────────────────────────────────
@@ -1295,6 +1316,20 @@ const API = (() => {
       await DEL(`/api/sales-requests/${id}`);
       cache.salesRequests = cache.salesRequests.filter(r => r.id !== id);
       delete cache.srMap[id];
+    },
+    async cancel(id) {
+      const r = await POST(`/api/sales-requests/${id}/cancel`);
+      cache.srMap[id] = r;
+      const idx = cache.salesRequests.findIndex(x => x.id === id);
+      if (idx >= 0) cache.salesRequests[idx] = r;
+      return r;
+    },
+    async reactivate(id) {
+      const r = await POST(`/api/sales-requests/${id}/reactivate`);
+      cache.srMap[id] = r;
+      const idx = cache.salesRequests.findIndex(x => x.id === id);
+      if (idx >= 0) cache.salesRequests[idx] = r;
+      return r;
     },
     async convertToProgram(requestId, programData) {
       const result = await POST(`/api/sales-requests/${requestId}/convert`, programData);
