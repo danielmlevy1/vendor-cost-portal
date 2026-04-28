@@ -2444,9 +2444,62 @@ App = (() => {
         </div>
       </div>` : '';
 
-    // Build merged timeline
-    const rows = entries.length
-      ? entries.map((r, i) => {
+    // Merge design changes (style-level context) into the timeline
+    const styleId = sub?.styleId;
+    const dcs = styleId ? (API.DesignChanges.byStyle(styleId) || []) : [];
+    const priceRevs = entries.filter(e => !e.type);
+
+    const allEvents = [
+      ...entries.map(e  => ({ kind: 'rev', data: e,  ts: e.submittedAt  || '' })),
+      ...dcs.map(dc     => ({ kind: 'dc',  data: dc,
+                               recost: API.RecostRequests.getByDesignChange(dc.id),
+                               ts: dc.changedAt || '' })),
+    ].sort((a, b) => a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0);
+
+    const rows = allEvents.length
+      ? allEvents.map((evt, i) => {
+          // ── Design-change event ──────────────────────────────
+          if (evt.kind === 'dc') {
+            const dc     = evt.data;
+            const recost = evt.recost;
+            const dt     = new Date(dc.changedAt);
+            const dateStr = isNaN(dt)
+              ? (dc.changedAt || '—')
+              : dt.toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' })
+                + ' ' + dt.toLocaleTimeString('en-US', { hour:'numeric', minute:'2-digit' });
+
+            const isCancelled = dc.status === 'cancelled';
+            const isPending   = dc.status === 'pending';
+            const fieldLabel  = dc.field ? `Design Change · ${dc.field}` : 'Design Change';
+            const labelHtml   = isCancelled ? `<s>${fieldLabel}</s>` : fieldLabel;
+            const statusBadge = isPending
+              ? `<span class="tag" style="font-size:0.65rem;background:rgba(234,179,8,.15);color:#eab308;margin-left:6px">Pending</span>`
+              : '';
+            const recostBadge = (() => {
+              if (!recost) return `<div style="margin-top:2px;font-size:0.72rem;color:var(--text-secondary);opacity:0.65">No recost requested</div>`;
+              const relDate = recost.releasedAt
+                ? new Date(recost.releasedAt).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' })
+                : null;
+              return `<div style="margin-top:4px"><span class="tag tag-success" style="font-size:0.68rem">🔄 Recost${relDate ? ': Released ' + relDate : ''}</span></div>`;
+            })();
+
+            const rowOpacity = isCancelled ? 0.45 : (!recost ? 0.8 : 1);
+            return `<tr style="background:rgba(99,102,241,0.07);opacity:${rowOpacity}">
+              <td colspan="2">
+                <span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#818cf8;margin-right:6px;vertical-align:middle"></span>
+                <span style="font-size:0.8rem;font-weight:600;color:#818cf8">${labelHtml}${statusBadge}</span>
+                ${dc.previousValue != null || dc.newValue != null
+                  ? `<div style="font-size:0.78rem;color:var(--text-secondary);margin-top:2px">${dc.previousValue ?? '—'} → ${dc.newValue ?? '—'}</div>`
+                  : ''}
+                ${dc.description ? `<div style="font-size:0.78rem;color:var(--text-secondary);margin-top:2px">📝 ${dc.description}</div>` : ''}
+                ${recostBadge}
+              </td>
+              <td colspan="3" class="text-sm text-muted" style="vertical-align:top">${dc.changedByName || ''}<br>${dateStr}</td>
+            </tr>`;
+          }
+
+          // ── Revision / flag event ────────────────────────────
+          const r = evt.data;
           const dt = new Date(r.submittedAt);
           const dateStr = dt.toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' })
                         + ' ' + dt.toLocaleTimeString('en-US', { hour:'numeric', minute:'2-digit' });
@@ -2467,10 +2520,9 @@ App = (() => {
             </tr>`;
           }
           // Price revision
-          const priceRevs = entries.filter(e => !e.type);
           const priceIdx = priceRevs.indexOf(r);
-          const isLatest = i === entries.length - 1 || (entries.slice(i+1).every(e => e.type));
-          const verLabel = priceIdx === 0 ? 'Initial' : 'Rev ' + priceIdx;
+          const isLatest  = allEvents.slice(i + 1).every(e => e.kind === 'dc' || (e.kind === 'rev' && e.data.type !== null));
+          const verLabel  = priceIdx === 0 ? 'Initial' : 'Rev ' + priceIdx;
           return `<tr class="${isLatest ? 'revision-latest' : ''}">
             <td class="text-sm text-muted">${verLabel}${isLatest ? ' <span class="tag tag-success" style="font-size:0.65rem;padding:1px 5px">current</span>' : ''}</td>
             <td class="font-bold text-success">$${parseFloat(r.newValue).toFixed(2)}</td>
