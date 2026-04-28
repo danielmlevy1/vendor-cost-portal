@@ -1618,7 +1618,7 @@ const AdminViews = (() => {
         if (isCancelled) {
           rowHtml += `<td data-col="actions"><button class="btn-restore-style" onclick="App.uncancelStyle('${s.id}','${pid}')">↩ Restore</button></td>`;
         } else {
-          rowHtml += `<td data-col="actions" style="white-space:nowrap"><button class="btn-cancel-style" onclick="App.cancelStyle('${s.id}','${pid}')">🚫</button><button class="btn btn-ghost btn-sm" style="font-size:0.7rem;padding:2px 5px;margin-left:2px" title="Log design change" onclick="App.openDesignChangeModal('${s.id}')">📌</button></td>`;
+          rowHtml += `<td data-col="actions" style="white-space:nowrap"><button class="btn btn-ghost btn-sm" style="font-size:0.7rem;padding:2px 5px;margin-right:2px" title="Log design change" onclick="App.openDesignChangeModal('${s.id}')">📝</button><button class="btn-cancel-style" onclick="App.cancelStyle('${s.id}','${pid}')">🚫</button></td>`;
         }
 
         // Repeat Style column
@@ -1777,7 +1777,7 @@ const AdminViews = (() => {
           <td data-col="${k}_freight" class="col-vendor-sub tc-detail-col text-sm ${tcColorClass}" data-tckey="${k}"${hideStyle}>${freightCell}</td>
           <td data-col="${k}_ldp" class="col-vendor-sub col-ldp ${tcColorClass}">${ldpCell}</td>`;
       });
-      rowHtml += `<td data-col="actions" style="white-space:nowrap"><button class="btn-cancel-style" onclick="App.cancelStyle('${s.id}','${programId}')">🚫</button><button class="btn btn-ghost btn-sm" style="font-size:0.7rem;padding:2px 5px;margin-left:2px" title="Log design change" onclick="App.openDesignChangeModal('${s.id}')">📌</button></td>`;
+      rowHtml += `<td data-col="actions" style="white-space:nowrap"><button class="btn btn-ghost btn-sm" style="font-size:0.7rem;padding:2px 5px;margin-right:2px" title="Log design change" onclick="App.openDesignChangeModal('${s.id}')">📝</button><button class="btn-cancel-style" onclick="App.cancelStyle('${s.id}','${programId}')">🚫</button></td>`;
       const sn2 = (s.styleNumber||'').trim();
       const hist2 = sn2 ? (repeatHistory[sn2]||[]) : [];
       if (!hist2.length) {
@@ -3363,7 +3363,7 @@ const AdminViews = (() => {
             ? `<span class="tag" style="background:rgba(239,68,68,0.12);color:#ef4444;margin-left:6px">Cancelled</span>`
             : `<span class="tag" style="color:#22c55e;margin-left:6px">Released</span>`;
           const logBtn = (h.linkedProgramId && progStyle?.id)
-            ? `<button class="btn btn-ghost btn-sm" style="font-size:0.7rem;padding:2px 5px" title="Log design change" onclick="App.openDesignChangeModal('${progStyle.id}')">📌</button>`
+            ? `<button class="btn btn-ghost btn-sm" style="font-size:0.7rem;padding:2px 5px" title="Log design change" onclick="App.openDesignChangeModal('${progStyle.id}')">📝</button>`
             : '';
           return `<tr style="${isCancelled ? 'opacity:0.5' : ''}">
             <td class="primary font-bold" style="padding:8px 12px">${s.styleNumber || '—'}</td>
@@ -3384,7 +3384,7 @@ const AdminViews = (() => {
       <div class="font-bold" style="font-size:0.95rem;margin:${hasPending ? '0' : '20px'} 0 10px">✅ Released Styles <span class="tag" style="margin-left:6px">${releasedStyles.length}</span></div>
       <div class="card" style="padding:0;margin-bottom:16px">
         <div style="padding:10px 16px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border)">
-          <span class="text-sm text-muted">Grouped by fabrication · ${h.linkedProgramId ? 'Click 📌 to log a design change' : 'Legacy handoff — no program linked'}</span>
+          <span class="text-sm text-muted">Grouped by fabrication · ${h.linkedProgramId ? 'Click 📝 to log a design change' : 'Legacy handoff — no program linked'}</span>
           ${progLink}
         </div>
         <div class="table-wrap">

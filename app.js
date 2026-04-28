@@ -7104,7 +7104,7 @@ App.openDesignChangeModal = function(styleId) {
   App.showModal(
     `<div class="modal-header" style="display:block;margin-bottom:20px">` +
     `<div style="display:flex;justify-content:space-between;align-items:center">` +
-    `<h2>${isLocked ? '🔒' : '📌'} Design Change — ${style.styleNumber}</h2>` +
+    `<h2>${isLocked ? '🔒' : '📝'} Design Change — ${style.styleNumber}</h2>` +
     `<button class="btn btn-ghost btn-icon" onclick="App.closeModal()">✕</button></div>` +
     `<div class="text-sm text-muted mt-1">${style.styleName||''} ${isLocked ? '· <span style=\'color:#f59e0b\'>Locked Program</span>' : ''}</div></div>` +
     lockBanner +
@@ -7124,7 +7124,7 @@ App.openDesignChangeModal = function(styleId) {
     `<input type="checkbox" id="dc-request-recost" style="width:16px;height:16px;cursor:pointer"${isLocked ? ' checked' : ''}>` +
     `<label for="dc-request-recost" style="cursor:pointer;font-weight:600;font-size:0.875rem">Request re-cost — requires Sales approval then Production release</label></div>` +
     `<div class="modal-footer"><button type="button" class="btn btn-secondary" onclick="App.closeModal()">Cancel</button>` +
-    `<button type="submit" class="btn btn-primary">📌 Log Change</button></div></form>` +
+    `<button type="submit" class="btn btn-primary">📝 Log Change</button></div></form>` +
     (existing.length ? `<div class="font-bold mt-4 mb-2" style="color:var(--text-secondary)">History (${existing.length})</div>${AdminViews.designChangeHistoryPanel(styleId)}` : ''),
     'modal-xl');
 };
