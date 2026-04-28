@@ -774,32 +774,41 @@ const AdminViews = (() => {
   // record: { cancelledAt, cancelledBy, cancelledByName, previousProgramName? }
   // cascaded: true when this record was cancelled as a side-effect of its program being cancelled
   function cancellationBadge(record, { cascaded = false, inline = false } = {}) {
-    const fmtDate = iso => iso
-      ? new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-      : null;
+    const fallback = inline
+      ? `<span style="display:inline-block;padding:2px 10px;border-radius:10px;font-size:0.75rem;font-weight:600;background:rgba(239,68,68,0.12);color:#ef4444">🚫 Cancelled</span>`
+      : `<div style="display:inline-flex;align-items:flex-start;gap:6px;padding:10px 14px;border-radius:8px;background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.2);font-size:0.83rem;font-weight:500;color:#ef4444;margin-bottom:12px"><span>🚫 Cancelled</span></div>`;
+    try {
+      const fmtDate = iso => iso
+        ? new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+        : null;
 
-    const staff  = (typeof API !== 'undefined' && API.PCUsers?.allStaff?.()) || [];
-    const allTCs = (typeof API !== 'undefined' && API.TradingCompanies?.all?.()) || [];
-    const allUsers = [...staff, ...allTCs.map(tc => ({ id: tc.id, name: tc.name || tc.code, role: 'vendor' }))];
-    const actor  = record.cancelledBy ? allUsers.find(u => u.id === record.cancelledBy) : null;
-    const name   = record.cancelledByName || actor?.name || null;
-    const role   = actor?.role || null;
-    const date   = fmtDate(record.cancelledAt);
+      const staff  = (typeof API !== 'undefined' && API.PCUsers?.allStaff?.()) || [];
+      // TradingCompanies.all() is async — read the already-populated cache array instead
+      const tcList = (typeof API !== 'undefined' && Array.isArray(API.cache?.tradingCompanies))
+        ? API.cache.tradingCompanies : [];
+      const allUsers = [...staff, ...tcList.map(tc => ({ id: tc.id, name: tc.name || tc.code, role: 'vendor' }))];
+      const actor  = record.cancelledBy ? allUsers.find(u => u.id === record.cancelledBy) : null;
+      const name   = record.cancelledByName || actor?.name || null;
+      const role   = actor?.role || null;
+      const date   = fmtDate(record.cancelledAt);
 
-    const roleLabel = role ? ({ admin: 'Admin', pc: 'Production', planning: 'Sales', design: 'Design', tech_design: 'Tech Design', prod_dev: 'PD', vendor: 'Vendor' }[role] || role) : null;
-    const byPart  = roleLabel && name ? `by ${roleLabel} (${name})` : roleLabel ? `by ${roleLabel}` : name ? `by ${name}` : 'by System';
-    const onPart  = date ? ` on ${date}` : '';
-    const wasPart = cascaded && record.previousProgramName ? ` · Was: ${record.previousProgramName}` : '';
+      const roleLabel = role ? ({ admin: 'Admin', pc: 'Production', planning: 'Sales', design: 'Design', tech_design: 'Tech Design', prod_dev: 'PD', vendor: 'Vendor' }[role] || role) : null;
+      const byPart  = roleLabel && name ? `by ${roleLabel} (${name})` : roleLabel ? `by ${roleLabel}` : name ? `by ${name}` : 'by System';
+      const onPart  = date ? ` on ${date}` : '';
+      const wasPart = cascaded && record.previousProgramName ? ` · Was: ${record.previousProgramName}` : '';
 
-    const text = `🚫 Cancelled ${byPart}${onPart}${wasPart}`;
+      const text = `🚫 Cancelled ${byPart}${onPart}${wasPart}`;
 
-    if (inline) {
-      return `<span style="display:inline-block;padding:2px 10px;border-radius:10px;font-size:0.75rem;font-weight:600;background:rgba(239,68,68,0.12);color:#ef4444">${text}</span>`;
+      if (inline) {
+        return `<span style="display:inline-block;padding:2px 10px;border-radius:10px;font-size:0.75rem;font-weight:600;background:rgba(239,68,68,0.12);color:#ef4444">${text}</span>`;
+      }
+      return `<div style="display:inline-flex;align-items:flex-start;gap:6px;padding:10px 14px;border-radius:8px;background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.2);font-size:0.83rem;font-weight:500;color:#ef4444;margin-bottom:12px">
+        <span style="flex-shrink:0">🚫</span>
+        <span>Cancelled ${byPart}${onPart}${wasPart}</span>
+      </div>`;
+    } catch (_) {
+      return fallback;
     }
-    return `<div style="display:inline-flex;align-items:flex-start;gap:6px;padding:10px 14px;border-radius:8px;background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.2);font-size:0.83rem;font-weight:500;color:#ef4444;margin-bottom:12px">
-      <span style="flex-shrink:0">🚫</span>
-      <span>Cancelled ${byPart}${onPart}${wasPart}</span>
-    </div>`;
   }
 
   // ── Shared batch-state cell (used by all three pipeline tables) ──────────────
