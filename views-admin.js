@@ -1570,6 +1570,21 @@ const AdminViews = (() => {
       ...(linkedHandoff?.stylesList || []).map(s => s.batchLabel).filter(Boolean),
     ]).size >= 2;
 
+    // Margin compliance color helper — compares actual GM% against prog.targetMargin
+    // targetMargin is stored as a fraction (0.46 = 46% target gross margin).
+    // Returns { color, icon, margin, deviation } or null when data is unavailable.
+    function marginCompliance(ldp, style) {
+      const sell = parseFloat(style?.projSellPrice);
+      const tgt  = parseFloat(prog?.targetMargin);
+      if (!ldp || !sell || !tgt) return null;
+      const margin    = (sell - ldp) / sell;
+      const deviation = margin - tgt;
+      if (deviation >= -0.01) return { color: '#22c55e', icon: '🟢', margin, deviation };
+      if (deviation >= -0.05) return { color: '#f59e0b', icon: '🟡', margin, deviation };
+      if (deviation >= -0.10) return { color: '#f97316', icon: '🟠', margin, deviation };
+      return { color: '#ef4444', icon: '🔴', margin, deviation };
+    }
+
     // Build data rows
     function buildRows(styleList, isCancelled) {
       return styleList.map(s => {
@@ -1728,11 +1743,15 @@ const AdminViews = (() => {
           const freightCell = r
             ? (r.freight != null ? fmt(r.freight) : `<span class="text-muted text-sm" title="Set Proj Qty to calc">N/A</span>`)
             : '—';
+          const mc = r ? marginCompliance(r.ldp, s) : null;
           const ldpCell = r
-            ? `<span>${fmt(r.ldp)}</span>${r.noQty ? '<span class="text-muted text-sm" title="LDP excl. freight">*</span>' : ''}`
+            ? `<span${mc ? ` style="color:${mc.color}"` : ''}>${fmt(r.ldp)}</span>${mc ? `<span style="font-size:0.72em;margin-left:3px;vertical-align:middle">${mc.icon}</span>` : ''}${r.noQty ? '<span class="text-muted text-sm" title="LDP excl. freight">*</span>' : ''}`
             : '<span class="text-muted">—</span>';
+          const ldpTitle = mc
+            ? `Margin: ${(mc.margin * 100).toFixed(1)}% · Target: ${(parseFloat(prog.targetMargin) * 100).toFixed(1)}% · Deviation: ${(mc.deviation >= 0 ? '+' : '')}${(mc.deviation * 100).toFixed(1)}%`
+            : 'Right-click to mark as Considering or Placed';
 
-          // Considering state (stored in localStorage per sub+style) 
+          // Considering state (stored in localStorage per sub+style)
           const consideringKey = 'vcp_considering';
           const consideringList = JSON.parse(localStorage.getItem(consideringKey) || '[]');
           const isConsidering = sub?.id ? consideringList.includes(`${s.id}:${sub.id}`) : false;
@@ -1751,7 +1770,7 @@ const AdminViews = (() => {
           <td data-col="${k}_freight"   class="col-vendor-sub tc-detail-col text-sm ${tcColorClass}" data-tckey="${k}"${hideStyle}>${freightCell}</td>
           <td data-col="${k}_ldp"       class="col-vendor-sub col-ldp ${tcColorClass}${ldpCellClass}"
               oncontextmenu="App.openCellHighlightMenu(event,'${s.id}','${tc.id}','${coo}','${sub?.id||''}',${sub?.fob||0});return false;"
-              title="Right-click to mark as Considering or Placed">` + ldpCell + `</td>`;
+              title="${ldpTitle}">` + ldpCell + `</td>`;
         });
 
         // Actions column
@@ -1909,7 +1928,13 @@ const AdminViews = (() => {
         const dutyPct = r ? pct(r.dutyRate) : '—';
         const dutyAmt = r ? fmt(r.duty) : '—';
         const freightCell = r ? (r.freight!=null ? fmt(r.freight) : `<span class="text-muted text-sm">N/A</span>`) : '—';
-        const ldpCell = r ? `<span>${fmt(r.ldp)}</span>` : '<span class="text-muted">—</span>';
+        const mc2 = r ? marginCompliance(r.ldp, s) : null;
+        const ldpCell = r
+          ? `<span${mc2 ? ` style="color:${mc2.color}"` : ''}>${fmt(r.ldp)}</span>${mc2 ? `<span style="font-size:0.72em;margin-left:3px;vertical-align:middle">${mc2.icon}</span>` : ''}`
+          : '<span class="text-muted">—</span>';
+        const ldpTitle2 = mc2
+          ? `Margin: ${(mc2.margin * 100).toFixed(1)}% · Target: ${(parseFloat(prog.targetMargin) * 100).toFixed(1)}% · Deviation: ${(mc2.deviation >= 0 ? '+' : '')}${(mc2.deviation * 100).toFixed(1)}%`
+          : null;
         const collapsed = _collapsedTCs.has(k);
         const hideStyle = collapsed ? ' style="display:none"' : '';
         rowHtml += `
@@ -1918,7 +1943,7 @@ const AdminViews = (() => {
           <td data-col="${k}_duty_pct" class="col-vendor-sub tc-detail-col text-sm ${tcColorClass}" data-tckey="${k}"${hideStyle}>${dutyPct}</td>
           <td data-col="${k}_duty_amt" class="col-vendor-sub tc-detail-col ${tcColorClass}" data-tckey="${k}"${hideStyle}>${dutyAmt}</td>
           <td data-col="${k}_freight" class="col-vendor-sub tc-detail-col text-sm ${tcColorClass}" data-tckey="${k}"${hideStyle}>${freightCell}</td>
-          <td data-col="${k}_ldp" class="col-vendor-sub col-ldp ${tcColorClass}">${ldpCell}</td>`;
+          <td data-col="${k}_ldp" class="col-vendor-sub col-ldp ${tcColorClass}"${ldpTitle2 ? ` title="${ldpTitle2}"` : ''}>${ldpCell}</td>`;
       });
       const guestPlacement = API.Placements.get(s.id);
       const guestCancelBtn = guestPlacement
