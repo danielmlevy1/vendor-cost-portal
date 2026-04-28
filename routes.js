@@ -769,12 +769,22 @@ router.post('/programs/:id/cancel', requireAuth, requireRole('admin', 'pc'), (re
           .run(now, cancellerId, cancellerName, req.params.id, progName, sr.id);
       }
     } else {
-      // No handoff — cancel any SR linked directly to the program
+      // No handoff directly linked — cancel any SR linked directly to the program
       const sr = db.prepare('SELECT * FROM sales_requests WHERE linked_program_id = ? AND status != ?')
         .get(req.params.id, 'cancelled');
       if (sr) {
         db.prepare(`UPDATE sales_requests SET status = 'cancelled', cancelled_at = ?, cancelled_by = ?, cancelled_by_name = ?, previous_program_id = ?, previous_program_name = ? WHERE id = ?`)
           .run(now, cancellerId, cancellerName, req.params.id, progName, sr.id);
+        // Also cascade to the source handoff if it has no other active program owner
+        if (sr.source_handoff_id) {
+          const orphanHandoff = db.prepare(
+            `SELECT * FROM design_handoffs WHERE id = ? AND (linked_program_id IS NULL OR linked_program_id = '')`
+          ).get(sr.source_handoff_id);
+          if (orphanHandoff) {
+            db.prepare(`UPDATE design_handoffs SET status = 'cancelled', cancelled_at = ?, cancelled_by = ?, cancelled_by_name = ?, previous_program_id = ?, previous_program_name = ? WHERE id = ?`)
+              .run(now, cancellerId, cancellerName, req.params.id, progName, orphanHandoff.id);
+          }
+        }
       }
     }
   })();
