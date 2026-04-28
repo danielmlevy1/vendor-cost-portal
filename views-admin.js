@@ -5658,24 +5658,30 @@ const AdminViews = (() => {
       ? `<div style="margin-bottom:10px"><button class="btn btn-ghost btn-sm" onclick="App.navigateVendorProgram('${esc(user?.tcId || '')}','${esc(programId)}')">← Back to ${esc(prog.name)}</button></div>`
       : programTabBar(programId, 'capacity', prog);
 
-    // No plan yet — Production can initialize.
+    // No plan yet — TC (vendor) initiates; Production waits.
     if (!payload || !payload.plan) {
       const placements = API.Placements.byProgram ? (API.Placements.byProgram(programId) || []) : [];
       const placedCount = placements.length;
+      const subtitle = isVendor
+        ? `Initialize to pre-fill lines from the ${placedCount} placed ${placedCount === 1 ? 'style' : 'styles'} (one line per style × factory).`
+        : 'The TC will initialize the capacity plan once styles are placed.';
+      const initBtn = isVendor
+        ? `<button class="btn btn-primary" onclick="App.initCapacityPlan('${esc(programId)}')">＋ Initialize Capacity Plan</button>`
+        : '';
+      const emptyTitle = isVendor && placedCount === 0 ? 'No styles placed yet' : isVendor ? 'Ready to initialize' : 'Waiting on TC to initiate';
+      const emptyNote  = isVendor && placedCount === 0 ? 'Place at least one style on the Cost Summary tab before initializing.' : '';
       return `
       ${tabBar}
       <div class="page-header" style="margin-top:12px">
         <div><h1 class="page-title">🏭 Capacity Plan — ${[prog.season, prog.year, prog.name].filter(Boolean).map(v => esc(String(v))).join(' · ')}</h1>
-          <p class="page-subtitle">No plan yet. ${isProd
-            ? `Initialize to pre-fill lines from the ${placedCount} placed ${placedCount === 1 ? 'style' : 'styles'} (one line per style × factory).`
-            : 'Production will initialize the plan once styles are placed.'}</p></div>
-        ${isProd ? `<button class="btn btn-primary" onclick="App.initCapacityPlan('${esc(programId)}')">＋ Initialize Capacity Plan</button>` : ''}
+          <p class="page-subtitle">No plan yet. ${subtitle}</p></div>
+        ${initBtn}
       </div>
       <div class="card" style="padding:40px;text-align:center">
         <div class="empty-state">
           <div class="icon">📭</div>
-          <h3>${isProd && placedCount === 0 ? 'No styles placed yet' : 'Waiting for Production'}</h3>
-          <p class="text-muted">${isProd && placedCount === 0 ? 'Place at least one style on the Cost Summary tab before initializing.' : ''}</p>
+          <h3>${emptyTitle}</h3>
+          <p class="text-muted">${emptyNote}</p>
         </div>
       </div>`;
     }

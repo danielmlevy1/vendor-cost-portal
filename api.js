@@ -101,7 +101,7 @@ const API = (() => {
     availableFabrics:    [],   // vendor only: [{programId, fabrics[]}]
     factories:           [],
     deliveryPlans:       {},   // programId -> {plan, lines}  (null = 404 "no plan")
-    capacityPlans:       {},   // programId -> {plan, lines}  (null = 404 "no plan")
+    capacityPlans:       {},   // programId -> {plan, lines} | null (404 program-not-found)
     recostByProgram:     {},   // programId -> [rcrs]
     recostAll:           {},   // id -> rcr (full set, loaded by fetchAll)
     recostPendingSales:      [],

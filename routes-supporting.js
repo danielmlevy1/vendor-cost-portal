@@ -2580,7 +2580,7 @@ router.get('/programs/:id/capacity-plan', requireAuth, (req, res) => {
   }
 
   const plan = db.prepare('SELECT * FROM capacity_plans WHERE program_id = ?').get(req.params.id);
-  if (!plan) return res.status(404).json({ error: 'No capacity plan yet' });
+  if (!plan) return res.status(200).json({ plan: null, lines: [] });
 
   let lineRows = db.prepare('SELECT * FROM capacity_plan_lines WHERE plan_id = ? ORDER BY created_at').all(plan.id);
   if (role === 'vendor') lineRows = lineRows.filter(r => r.tc_id === req.user.tcId);
@@ -2589,12 +2589,17 @@ router.get('/programs/:id/capacity-plan', requireAuth, (req, res) => {
 });
 
 // POST /api/programs/:id/capacity-plan
-// Admin/PC initializes — pre-fills lines from placements so each
+// TC (vendor) initializes — pre-fills lines from placements so each
 // placed style appears with its TC + factory. TC fills in the
 // production math, submits, Production approves.
-router.post('/programs/:id/capacity-plan', requireAuth, requireRole('admin', 'pc'), (req, res) => {
+router.post('/programs/:id/capacity-plan', requireAuth, requireRole('admin', 'pc', 'vendor'), (req, res) => {
   const prog = db.prepare('SELECT * FROM programs WHERE id = ?').get(req.params.id);
   if (!prog) return res.status(404).json({ error: 'Program not found' });
+
+  if (req.user.role === 'vendor') {
+    const asg = db.prepare('SELECT 1 FROM assignments WHERE program_id = ? AND tc_id = ?').get(req.params.id, req.user.tcId);
+    if (!asg) return res.status(403).json({ error: 'Not assigned to this program' });
+  }
 
   const existing = db.prepare('SELECT id FROM capacity_plans WHERE program_id = ?').get(req.params.id);
   if (existing) return res.status(409).json({ error: 'Capacity plan already exists' });
