@@ -220,9 +220,12 @@ const VendorViews = (() => {
 
 
     // Unreleased batch styles from the linked handoff — visible to this TC but non-actionable
+    // Guard: use program-level assignment (asgn) rather than handoff.assignedTCIds, because
+    // assignedTCIds is set during pre-release design-team workflow and is often empty by the
+    // time a TC is assigned to the resulting program.
     const linkedHandoff = API.DesignHandoffs.all().find(h => h.linkedProgramId === programId);
     const unreleasedByFab = {};
-    if (linkedHandoff && (linkedHandoff.assignedTCIds || []).includes(tcId)) {
+    if (linkedHandoff && asgn) {
       const releasedIds = new Set((linkedHandoff.batchReleases || []).flatMap(b => b.styleIds || []));
       (linkedHandoff.stylesList || []).forEach(s => {
         if (!releasedIds.has(s.id)) {
@@ -320,10 +323,10 @@ const VendorViews = (() => {
           }
         });
 
-        // Unreleased batch styles for this fabric group — greyed out, non-actionable
+        // Unreleased batch styles for this fabric group — greyed out, hoverable, non-actionable
         (unreleasedByFab[fab] || []).forEach(s => {
           const batchLabel = s.batchLabel || 'Batch 1';
-          bodyRows += `<tr style="opacity:0.45;pointer-events:none" data-batch-label="${(s.batchLabel||'').replace(/"/g,'&quot;')}">
+          bodyRows += `<tr style="opacity:0.45;cursor:default" title="Coming in ${batchLabel} · Pending release" data-batch-label="${(s.batchLabel||'').replace(/"/g,'&quot;')}">
             <td class="primary font-bold" style="white-space:nowrap">${s.styleNumber || '—'}</td>
             <td style="min-width:120px">${s.styleName || '—'}</td>
             <td class="text-sm text-muted">${(s.fabrication || s.fabric || '').substring(0,25)}</td>
