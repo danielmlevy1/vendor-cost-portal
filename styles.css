@@ -3558,3 +3558,9 @@ th[data-filter-col] { position: relative; }
 .dc-desc { font-size: 0.875rem; font-weight: 600; color: var(--text-primary); }
 .dc-field { margin-top: 2px; }
 .dc-meta { margin-top: 4px; font-size: 0.75rem; }
+
+/* ── Program costing progress bar row ───────────────────────── */
+tr.prog-progress-row td { padding: 0 !important; border-top: none !important; }
+tr.prog-progress-row:hover td { background: transparent !important; }
+body[data-theme="light"] tr.prog-progress-row td { background: rgba(0,0,0,0.04) !important; }
+body[data-theme="light"] tr.prog-progress-row:hover td { background: rgba(0,0,0,0.04) !important; }

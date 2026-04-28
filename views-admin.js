@@ -827,6 +827,43 @@ const AdminViews = (() => {
     return `<span ${nav} style="${cursor}font-size:0.8rem;font-weight:500">${released}/${total} <span class="text-muted" style="font-size:0.72rem">batches</span></span>`;
   }
 
+  // Compute costing-completeness progress for a program from cached data.
+  // Returns { numerator, denominator, pct, fromCache } or null (hide bar).
+  // Decision: use cached assignments+submissions when available; fall back to
+  // costedCount/styleCount proxy (grey bar) when not yet loaded.
+  function computeCostingProgress(p) {
+    const assignments = API.Assignments.byProgram(p.id);
+    const styles = API.Styles.byProgram(p.id).filter(s => s.status !== 'cancelled');
+
+    if (assignments.length > 0 && styles.length > 0) {
+      // Full matrix computation
+      const pairs = [];
+      for (const asgn of assignments) {
+        const coos = asgn.coos || [];
+        for (const coo of coos) pairs.push({ tcId: asgn.tcId, coo });
+      }
+      const denominator = pairs.length * styles.length;
+      if (denominator === 0) return null;
+      let numerator = 0;
+      for (const s of styles) {
+        const subs = API.Submissions.byStyle(s.id);
+        for (const { tcId, coo } of pairs) {
+          const sub = subs.find(x => x.tcId === tcId && x.coo === coo);
+          if (sub && (sub.status === 'skipped' || (sub.fob && parseFloat(sub.fob) > 0))) numerator++;
+        }
+      }
+      const pct = Math.min(100, denominator > 0 ? Math.round(numerator / denominator * 100) : 0);
+      if (pct > 100) console.warn('[costingProgress] numerator > denominator for program', p.id);
+      return { numerator, denominator, pct, fromCache: true };
+    }
+
+    // Fallback: simple costed/style proxy (no assignment data yet)
+    const styleCount = p.styleCount || 0;
+    const costedCount = p.costedCount || 0;
+    if (styleCount === 0) return null;
+    return { numerator: costedCount, denominator: styleCount, pct: Math.round(costedCount / styleCount * 100), fromCache: false };
+  }
+
   function programsTable(openHandoffs, openRequests, allPrograms) {
     const fmtDate = d => d ? new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' }) : '—';
     const dash = `<span class="text-muted">—</span>`;
@@ -1013,7 +1050,28 @@ const AdminViews = (() => {
               }
             </div>`}
         </td>
-      </tr>`;
+      </tr>
+      ${(() => {
+        const prog = computeCostingProgress(p);
+        if (!prog) return '';
+        const barColor = prog.fromCache ? '#14b8a6' : '#64748b';
+        const tooltip  = prog.fromCache
+          ? `${prog.numerator} / ${prog.denominator} responses (${prog.pct}%)`
+          : `${prog.numerator} / ${prog.denominator} styles costed (${prog.pct}%) — open program for full detail`;
+        return `<tr class="prog-progress-row"
+          data-flt-season="${(p.season || '').replace(/"/g, '&quot;')}"
+          data-flt-year="${p.year || ''}"
+          data-flt-gender="${(p.gender || '').replace(/"/g, '&quot;')}"
+          data-flt-brand="${(p.brand || '').replace(/"/g, '&quot;')}"
+          data-flt-tier="${(p.retailer || '').replace(/"/g, '&quot;')}"
+          data-flt-stage="${(p.status || '').replace(/"/g, '&quot;')}"
+          onclick="${isDraft ? '' : `App.openProgram('${p.id}')`}"
+          style="cursor:${isDraft ? 'default' : 'pointer'}">
+          <td colspan="18" style="padding:0;height:5px;border-top:none;background:var(--bg-elevated)" title="${tooltip}">
+            <div style="height:5px;width:${prog.pct}%;background:${barColor};transition:width 0.4s ease;border-radius:0 2px 2px 0"></div>
+          </td>
+        </tr>`;
+      })()}`;
     }).join('');
 
     const allRows = handoffRows + requestRows + programRows;
