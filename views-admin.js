@@ -1935,6 +1935,8 @@ const AdminViews = (() => {
         const ldpTitle2 = mc2
           ? `Margin: ${(mc2.margin * 100).toFixed(1)}% · Target: ${(parseFloat(prog.targetMargin) * 100).toFixed(1)}% · Deviation: ${(mc2.deviation >= 0 ? '+' : '')}${(mc2.deviation * 100).toFixed(1)}%`
           : 'Right-click to mark as Considering or Placed';
+        const isPlacedTC2 = placement?.tcId === tc.id && placement?.coo === coo;
+        const ldpCellClass2 = isPlacedTC2 ? ' cell-placed-ldp' : '';
         const collapsed = _collapsedTCs.has(k);
         const hideStyle = collapsed ? ' style="display:none"' : '';
         rowHtml += `
@@ -1943,7 +1945,7 @@ const AdminViews = (() => {
           <td data-col="${k}_duty_pct" class="col-vendor-sub tc-detail-col text-sm ${tcColorClass}" data-tckey="${k}"${hideStyle}>${dutyPct}</td>
           <td data-col="${k}_duty_amt" class="col-vendor-sub tc-detail-col ${tcColorClass}" data-tckey="${k}"${hideStyle}>${dutyAmt}</td>
           <td data-col="${k}_freight" class="col-vendor-sub tc-detail-col text-sm ${tcColorClass}" data-tckey="${k}"${hideStyle}>${freightCell}</td>
-          <td data-col="${k}_ldp" class="col-vendor-sub col-ldp ${tcColorClass}"
+          <td data-col="${k}_ldp" class="col-vendor-sub col-ldp ${tcColorClass}${ldpCellClass2}"
               oncontextmenu="App.openCellHighlightMenu(event,'${s.id}','${tc.id}','${coo}','${sub?.id||''}',${sub?.fob||0});return false;"
               title="${ldpTitle2}">${ldpCell}</td>`;
       });

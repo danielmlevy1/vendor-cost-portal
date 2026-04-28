@@ -1451,7 +1451,12 @@ const API = (() => {
       await Promise.all([Users.all(), Departments.all(), PendingChanges.fetch()]);
     },
     async tradingCompanies() {
-      await Promise.all([TradingCompanies.all(), CooRates.all(), PendingChanges.fetch()]);
+      const isVendor = _userRole() === 'vendor';
+      await Promise.all([
+        TradingCompanies.all(),
+        CooRates.all(),
+        isVendor ? Promise.resolve() : PendingChanges.fetch().catch(() => {}),
+      ]);
     },
     async designHandoff() {
       await Promise.all([DesignHandoffs.fetchAll(), BrandTierMargins.all(), TradingCompanies.all(), SalesRequests.fetchAll(), FabricLibrary.fetchAll(), preload.nav()]);
