@@ -1691,7 +1691,10 @@ const AdminViews = (() => {
         if (isCancelled) {
           rowHtml += `<td data-col="actions"><button class="btn-restore-style" onclick="App.uncancelStyle('${s.id}','${pid}')">↩ Restore</button></td>`;
         } else {
-          rowHtml += `<td data-col="actions" style="white-space:nowrap"><button class="btn btn-ghost btn-sm" style="font-size:0.7rem;padding:2px 5px;margin-right:2px" title="Log style change" onclick="App.openDesignChangeModal('${s.id}')">📝</button><button class="btn-cancel-style" onclick="App.cancelStyle('${s.id}','${pid}')">🚫</button></td>`;
+          const cancelBtn = placement
+            ? `<button class="btn-cancel-style" disabled style="opacity:0.3;cursor:not-allowed" title="Cannot cancel a placed style. Contact Admin or PC to negotiate vendor cancellation.">🚫</button>`
+            : `<button class="btn-cancel-style" onclick="App.cancelStyle('${s.id}','${pid}')">🚫</button>`;
+          rowHtml += `<td data-col="actions" style="white-space:nowrap"><button class="btn btn-ghost btn-sm" style="font-size:0.7rem;padding:2px 5px;margin-right:2px" title="Log style change" onclick="App.openDesignChangeModal('${s.id}')">📝</button>${cancelBtn}</td>`;
         }
 
         // Repeat Style column
@@ -1850,7 +1853,11 @@ const AdminViews = (() => {
           <td data-col="${k}_freight" class="col-vendor-sub tc-detail-col text-sm ${tcColorClass}" data-tckey="${k}"${hideStyle}>${freightCell}</td>
           <td data-col="${k}_ldp" class="col-vendor-sub col-ldp ${tcColorClass}">${ldpCell}</td>`;
       });
-      rowHtml += `<td data-col="actions" style="white-space:nowrap"><button class="btn btn-ghost btn-sm" style="font-size:0.7rem;padding:2px 5px;margin-right:2px" title="Log style change" onclick="App.openDesignChangeModal('${s.id}')">📝</button><button class="btn-cancel-style" onclick="App.cancelStyle('${s.id}','${programId}')">🚫</button></td>`;
+      const guestPlacement = API.Placements.get(s.id);
+      const guestCancelBtn = guestPlacement
+        ? `<button class="btn-cancel-style" disabled style="opacity:0.3;cursor:not-allowed" title="Cannot cancel a placed style. Contact Admin or PC to negotiate vendor cancellation.">🚫</button>`
+        : `<button class="btn-cancel-style" onclick="App.cancelStyle('${s.id}','${programId}')">🚫</button>`;
+      rowHtml += `<td data-col="actions" style="white-space:nowrap"><button class="btn btn-ghost btn-sm" style="font-size:0.7rem;padding:2px 5px;margin-right:2px" title="Log style change" onclick="App.openDesignChangeModal('${s.id}')">📝</button>${guestCancelBtn}</td>`;
       const sn2 = (s.styleNumber||'').trim();
       const hist2 = sn2 ? (repeatHistory[sn2]||[]) : [];
       if (!hist2.length) {

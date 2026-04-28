@@ -1665,11 +1665,39 @@ App = (() => {
 
   // ── Cancel / Restore Style ─────────────────────────────────
   async function cancelStyle(styleId, programId) {
+    if (API.Placements.get(styleId)) return; // placed — button disabled, belt+suspenders
+    const style = API.Styles.get(styleId);
+    const styleLabel = [style?.styleNumber, style?.styleName].filter(Boolean).join(' — ');
+    const quotedCount = API.Submissions.byStyle(styleId).filter(s => s.fob && parseFloat(s.fob) > 0).length;
+    const subLine = quotedCount > 0
+      ? `<div class="text-sm text-muted" style="margin-top:8px">${quotedCount} vendor${quotedCount !== 1 ? 's' : ''} ha${quotedCount !== 1 ? 've' : 's'} already quoted this style. They will be notified.</div>`
+      : `<div class="text-sm text-muted" style="margin-top:8px">It can be restored from the Cancelled section.</div>`;
+    App.showModal(
+      `<div class="modal-header"><h2>⚠️ Cancel Style</h2><button class="btn btn-ghost btn-icon" onclick="App.closeModal()">✕</button></div>` +
+      `<div style="margin:20px 0"><div>Cancel style <strong>${styleLabel}</strong>?</div>${subLine}</div>` +
+      `<div class="modal-footer"><button class="btn btn-secondary" onclick="App.closeModal()">Keep Style</button>` +
+      `<button class="btn btn-danger" onclick="App.closeModal();App._doCancelStyle('${styleId}','${programId}')">🚫 Cancel Style</button></div>`
+    );
+  }
+
+  async function _doCancelStyle(styleId, programId) {
     await API.Styles.update(styleId, { status: 'cancelled' });
     navigate('cost-summary', programId);
   }
 
   async function uncancelStyle(styleId, programId) {
+    const style = API.Styles.get(styleId);
+    const styleLabel = style?.styleNumber || styleId;
+    App.showModal(
+      `<div class="modal-header"><h2>↩ Restore Style</h2><button class="btn btn-ghost btn-icon" onclick="App.closeModal()">✕</button></div>` +
+      `<div style="margin:20px 0"><div>Restore <strong>${styleLabel}</strong> to active costing?</div>` +
+      `<div class="text-sm text-muted" style="margin-top:8px">Existing vendor quotes will be preserved.</div></div>` +
+      `<div class="modal-footer"><button class="btn btn-secondary" onclick="App.closeModal()">Cancel</button>` +
+      `<button class="btn btn-primary" onclick="App.closeModal();App._doUncancelStyle('${styleId}','${programId}')">↩ Restore</button></div>`
+    );
+  }
+
+  async function _doUncancelStyle(styleId, programId) {
     await API.Styles.update(styleId, { status: 'open' });
     navigate('cost-summary', programId);
   }
@@ -2899,7 +2927,7 @@ App = (() => {
     openSubmitQuote, openVendorBulkUpload, downloadVendorTemplate, handleVendorDrop, handleVendorFileUpload, confirmVendorUpload,
     navigateVendorHome, navigateVendorProgram, navigateVendorAllStyles,
     saveVendorCellInline, openSkipVendorCoo, confirmSkipVendorCoo, unskipVendorCoo,
-    placeStyle, placeAllStyles, cancelStyle, uncancelStyle,
+    placeStyle, placeAllStyles, cancelStyle, _doCancelStyle, uncancelStyle, _doUncancelStyle,
     filterCrossProgram, toggleCancelledRows,
     setProgramsView, filterPrograms,
     toggleConsidering, saveStyleNote,
