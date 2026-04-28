@@ -769,6 +769,31 @@ const AdminViews = (() => {
     return `<span class="badge ${cls}">${icon} ${stage}</span>`;
   }
 
+  // ── Shared batch-state cell (used by all three pipeline tables) ──────────────
+  // Returns HTML for the "Batches" column. Three visual states:
+  //   zero batches  → dash (new handoff, nothing released yet)
+  //   single batch  → "1/1 (single)" muted (non-batched workflow)
+  //   multi pending → "X/Y batches" normal (some unreleased)
+  //   multi done    → "Y/Y ✓" green (all released)
+  // All states (except zero) are clickable → handoff detail.
+  function batchStateCell(handoff) {
+    if (!handoff) return `<span class="text-muted">—</span>`;
+    const allLabels = [...new Set([
+      ...(handoff.stylesList  || []).map(s => s.batchLabel).filter(Boolean),
+      ...(handoff.batchReleases || []).map(b => b.batchLabel),
+    ])];
+    const total    = allLabels.length;
+    const released = (handoff.batchReleases || []).length;
+    if (total === 0) return `<span class="text-muted">—</span>`;
+    const nav    = handoff.id ? `onclick="App.navigate('handoff-detail','${handoff.id}')" title="View batch detail"` : '';
+    const cursor = handoff.id ? 'cursor:pointer;' : '';
+    if (total === 1)
+      return `<span class="text-muted" ${nav} style="${cursor}font-size:0.8rem">1/1 <span style="opacity:0.6;font-size:0.72rem">(single)</span></span>`;
+    if (released >= total)
+      return `<span ${nav} style="${cursor}font-size:0.8rem;font-weight:600;color:#22c55e">${released}/${total} ✓</span>`;
+    return `<span ${nav} style="${cursor}font-size:0.8rem;font-weight:500">${released}/${total} <span class="text-muted" style="font-size:0.72rem">batches</span></span>`;
+  }
+
   function programsTable(openHandoffs, openRequests, allPrograms) {
     const fmtDate = d => d ? new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' }) : '—';
     const dash = `<span class="text-muted">—</span>`;
@@ -783,7 +808,7 @@ const AdminViews = (() => {
       <th data-filter-col="brand">Brand</th>
       <th data-filter-col="tier">Tier</th>
       <th data-filter-col="stage">Stage</th>
-      <th>SR #</th><th>Ver.</th>
+      <th>SR #</th><th>Batches</th>
       <th style="text-align:center">Styles</th>
       <th style="text-align:center">Costed</th>
       <th>Costs Due Date</th>
@@ -824,7 +849,7 @@ const AdminViews = (() => {
         <td>${dash}</td>
         <td>${stageBadge('Design Submitted')}</td>
         <td>${dash}</td>
-        <td>${dash}</td>
+        <td>${batchStateCell(h)}</td>
         <td style="text-align:center">${sc ? `<span class="tag">${sc}</span>` : dash}</td>
         <td style="text-align:center">${dash}</td>
         <td class="text-sm">${fmtDate(h.firstCRD)}</td>
@@ -877,7 +902,7 @@ const AdminViews = (() => {
         <td>${dash}</td>
         <td>${stageBadge('Sales Request')}</td>
         <td>${r.number ? `<span class="tag" style="font-family:monospace;font-size:0.78rem">${r.number}</span>` : dash}</td>
-        <td>${dash}</td>
+        <td>${batchStateCell(r.sourceHandoffId ? API.DesignHandoffs.all().find(h => h.id === r.sourceHandoffId) : null)}</td>
         <td style="text-align:center">${sc ? `<span class="tag">${sc}</span>` : dash}</td>
         <td style="text-align:center">${dash}</td>
         <td class="text-sm">${fmtDate(r.costDueDate || r.firstCRD)}</td>
@@ -927,7 +952,7 @@ const AdminViews = (() => {
         <td>${p.retailer ? `<span class="tag" style="font-size:0.75rem">${p.retailer}</span>` : '<span class="text-muted">—</span>'}</td>
         <td>${stageBadge(p.status)}</td>
         <td>${srNum ? `<span class="tag" style="font-family:monospace;font-size:0.78rem">${srNum}</span>` : '<span class="text-muted text-sm">—</span>'}</td>
-        <td><span class="tag" style="font-size:0.75rem;background:rgba(99,102,241,0.12);color:#818cf8">v${p.version || 1}</span></td>
+        <td>${batchStateCell(handoff)}</td>
         <td style="text-align:center"><span class="tag">${styleCount}</span></td>
         <td style="text-align:center"><span class="tag">${costedCount}</span></td>
         <td class="text-sm">${fmtDate(p.crdDate)}</td>
@@ -2914,7 +2939,7 @@ const AdminViews = (() => {
         <td class="text-sm">${h.tier || dash}</td>
         <td>${stageBadge(hStage)}</td>
         <td class="text-sm">${h.supplierRequestNumber ? `<span class="tag" style="font-family:monospace;font-size:0.78rem">${h.supplierRequestNumber}</span>` : dash}</td>
-        <td>${dash}</td>
+        <td>${batchStateCell(h)}</td>
         <td><div style="display:flex;align-items:center;gap:6px">${stylesBadge}</div></td>
         <td style="text-align:center">${costedVal}</td>
         <td class="text-sm">${costsDueVal}</td>
@@ -2942,7 +2967,7 @@ const AdminViews = (() => {
       <th data-filter-col="brand">Brand</th>
       <th data-filter-col="tier">Tier</th>
       <th>Stage</th>
-      <th>SR #</th><th>Ver.</th>
+      <th>SR #</th><th>Batches</th>
       <th>Styles</th>
       <th style="text-align:center">Costed</th>
       <th>Costs Due Date</th>
@@ -3093,7 +3118,7 @@ const AdminViews = (() => {
         <td class="text-sm">${r.retailer || srDash}</td>
         <td>${stageBadge(srStage)}</td>
         <td class="text-sm">${r.number ? `<span class="tag" style="font-family:monospace;font-size:0.78rem">${r.number}</span>` : srDash}</td>
-        <td>${srDash}</td>
+        <td>${batchStateCell(r.sourceHandoffId ? allHandoffs.find(h => h.id === r.sourceHandoffId) : null)}</td>
         <td><span class="tag">${(r.styles || []).length}</span></td>
         <td style="text-align:center">${srCosted}</td>
         <td style="text-align:center">${srLinkedProg ? `<span class="tag ${(srLinkedProg.placedCount||0)>0?'tag-success':''}">${srLinkedProg.placedCount||0}</span>` : srDash}</td>
@@ -3127,7 +3152,7 @@ const AdminViews = (() => {
       <th data-filter-col="brand">Brand</th>
       <th data-filter-col="tier">Tier / Retailer</th>
       <th>Stage</th>
-      <th>SR #</th><th>Ver.</th>
+      <th>SR #</th><th>Batches</th>
       <th>Styles</th>
       <th style="text-align:center">Costed</th>
       <th style="text-align:center">Placed</th>
