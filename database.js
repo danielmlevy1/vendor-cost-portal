@@ -424,6 +424,9 @@ function runMigrations() {
   addColumn('sales_requests',   'previous_program_name', 'TEXT');
   // Normalise 'Cancelled' → 'cancelled' on programs (was capitalised inconsistently)
   db.prepare("UPDATE programs SET status = 'cancelled' WHERE status = 'Cancelled'").run();
+
+  // v14: program updated_at for audit trail
+  addColumn('programs', 'updated_at', 'TEXT');
 }
 
 // One-shot-ish per-country lead-time fill. Only overwrites rows

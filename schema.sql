@@ -115,6 +115,7 @@ CREATE TABLE IF NOT EXISTS programs (
   end_date              TEXT,
   crd_date              TEXT,
   cancelled_at          TEXT,
+  updated_at            TEXT,
   created_at            TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
 

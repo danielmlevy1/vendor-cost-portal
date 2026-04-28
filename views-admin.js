@@ -908,11 +908,11 @@ const AdminViews = (() => {
         data-flt-brand="${(p.brand || '').replace(/"/g, '&quot;')}"
         data-flt-tier="${(p.retailer || '').replace(/"/g, '&quot;')}"
         data-flt-stage="${(p.status || '').replace(/"/g, '&quot;')}">
-        <td onclick="App._inlineEdit(event,'${p.id}','season')" style="cursor:pointer;user-select:none" title="Click to edit season">${p.season || '<span class="text-muted">—</span>'}</td>
-        <td onclick="App._inlineEdit(event,'${p.id}','year')" style="cursor:pointer;user-select:none" title="Click to edit year">${p.year || '<span class="text-muted">—</span>'}</td>
-        <td onclick="App._inlineEdit(event,'${p.id}','gender')" style="cursor:pointer;user-select:none" title="Click to edit gender">${p.gender ? `<span class="tag">${p.gender}</span>` : '<span class="text-muted">—</span>'}</td>
-        <td onclick="App._inlineEdit(event,'${p.id}','brand')" style="cursor:pointer;user-select:none" title="Click to edit brand">${p.brand || '<span class="text-muted">—</span>'}</td>
-        <td onclick="App._inlineEdit(event,'${p.id}','retailer')" style="cursor:pointer;user-select:none" title="Click to edit tier">${p.retailer ? `<span class="tag" style="font-size:0.75rem">${p.retailer}</span>` : '<span class="text-muted">—</span>'}</td>
+        <td>${p.season || '<span class="text-muted">—</span>'}</td>
+        <td>${p.year || '<span class="text-muted">—</span>'}</td>
+        <td>${p.gender ? `<span class="tag">${p.gender}</span>` : '<span class="text-muted">—</span>'}</td>
+        <td>${p.brand || '<span class="text-muted">—</span>'}</td>
+        <td>${p.retailer ? `<span class="tag" style="font-size:0.75rem">${p.retailer}</span>` : '<span class="text-muted">—</span>'}</td>
         <td>${stageBadge(p.status)}</td>
         <td>${srNum ? `<span class="tag" style="font-family:monospace;font-size:0.78rem">${srNum}</span>` : '<span class="text-muted text-sm">—</span>'}</td>
         <td><span class="tag" style="font-size:0.75rem;background:rgba(99,102,241,0.12);color:#818cf8">v${p.version || 1}</span></td>

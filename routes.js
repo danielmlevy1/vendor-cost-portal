@@ -64,6 +64,7 @@ function programFromRow(r) {
     crdDate:              r.crd_date,
     version:              r.version,
     cancelledAt:          r.cancelled_at,
+    updatedAt:            r.updated_at,
     createdAt:            r.created_at,
   };
 }
@@ -734,6 +735,7 @@ router.patch('/programs/:id', requireAuth, requireRole('admin', 'pc'), (req, res
   const row = stmt.programById.get(req.params.id);
   if (!row) return res.status(404).json({ error: 'Not found' });
   applyPatch('programs', req.params.id, req.body, PROGRAM_FIELDS);
+  db.prepare("UPDATE programs SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?").run(req.params.id);
   res.json(programWithCounts(stmt.programById.get(req.params.id)));
 });
 

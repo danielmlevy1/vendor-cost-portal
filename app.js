@@ -656,10 +656,17 @@ App = (() => {
     const brands  = (() => { const b = [...new Set(API.cache.brandTierMargins.map(m => m.brand).filter(Boolean))].sort(); return b.length ? b : ['Reebok','Champion','And1','Gaiam','Head']; })();
     const TIERS  = ['Mass','Mid Tier','Off Price','Clubs','Specialty'];
     const GENDERS = ['Mens','Ladies','Boys','Girls','Infant/Toddler'];
+    const linkedSR = id ? (API.SalesRequests.all().find(r => r.linkedProgramId === id) || null) : null;
+    const srDisplay = linkedSR
+      ? `<a href="#" style="font-family:monospace;font-size:0.88rem;color:var(--accent)" onclick="event.preventDefault();App.closeModal();App.viewSalesRequest('${linkedSR.id}')">${linkedSR.number || linkedSR.id}</a>`
+      : `<span class="text-muted">— No linked SR</span>`;
     showModal(`
     <div class="modal-header"><h2>${p ? 'Edit' : 'New'} Program</h2><button class="btn btn-ghost btn-icon" onclick="App.closeModal()">✕</button></div>
     <form onsubmit="App.saveProgramModal(event,'${id || ''}')">
-      
+      ${id ? `<div class="form-group" style="margin-bottom:12px">
+        <label class="form-label" style="font-size:0.75rem;color:var(--text-secondary)">Linked Sales Request</label>
+        <div style="padding:6px 0">${srDisplay}</div>
+      </div>` : ''}
       <div class="form-row form-row-2">
         <div class="form-group">
           <label class="form-label">Brand</label>
