@@ -1730,6 +1730,24 @@ App = (() => {
     if (toggleRow) toggleRow.classList.toggle('open', isHidden);
   }
 
+  // Shared helper: build the HTML for an LDP cell, applying margin compliance
+  // coloring when prog.targetMargin and style.projSellPrice are available.
+  function _ldpCellHtml(ldp, style, prog) {
+    const fmt = v => (v != null && !isNaN(v)) ? '$' + parseFloat(v).toFixed(2) : '—';
+    const sell = parseFloat(style?.projSellPrice);
+    const tgt  = parseFloat(prog?.targetMargin);
+    if (ldp && sell && tgt) {
+      const margin    = (sell - ldp) / sell;
+      const deviation = margin - tgt;
+      const cfg = deviation >= -0.01 ? ['#22c55e','🟢']
+                : deviation >= -0.05 ? ['#f59e0b','🟡']
+                : deviation >= -0.10 ? ['#f97316','🟠']
+                :                      ['#ef4444','🔴'];
+      return `<span style="color:${cfg[0]}">${fmt(ldp)}</span><span style="font-size:0.72em;margin-left:3px;vertical-align:middle">${cfg[1]}</span>`;
+    }
+    return `<span>${fmt(ldp)}</span>`;
+  }
+
   // ── Inline Style Field Save (non-formula cells) ────────────
   const _STYLE_HISTORY_FIELDS = {
     styleName: 'Style Name', fabrication: 'Fabrication',
@@ -1787,7 +1805,7 @@ App = (() => {
         const ldpCell      = row.querySelector(`td[data-col="${colKey}_ldp"]`);
         if (dutyAmtCell) dutyAmtCell.textContent = fmt(r.duty);
         if (freightCell) freightCell.textContent = r.freight != null ? fmt(r.freight) : 'N/A';
-        if (ldpCell) ldpCell.innerHTML = `<span>${fmt(r.ldp)}</span>`;
+        if (ldpCell) ldpCell.innerHTML = _ldpCellHtml(r.ldp, style, prog);
       });
     }
 
@@ -1866,7 +1884,7 @@ App = (() => {
     if (dutyPctCell) dutyPctCell.textContent = pct(r.dutyRate);
     if (dutyAmtCell) dutyAmtCell.textContent = fmt(r.duty);
     if (freightCell) freightCell.textContent = r.freight != null ? fmt(r.freight) : 'N/A';
-    if (ldpCell) ldpCell.innerHTML = `<span>${fmt(r.ldp)}</span>`;
+    if (ldpCell) ldpCell.innerHTML = _ldpCellHtml(r.ldp, style, prog);
 
     // Also update Target LDP cell to reflect any qty change
     const tldpCell = row.querySelector('td[data-col="tldp"]');
@@ -1898,6 +1916,7 @@ App = (() => {
         if (!fobInput) return;
         const styleId = fobInput.dataset.sid;
         const style = API.Styles.get(styleId);
+        const prog = API.Programs.get(state.routeParam);
         const sub = API.Submissions.all().find(s => s.tcId === tcId && s.styleId === styleId && s.coo === coo);
         if (!sub || !sub.fob) return;
         const r = API.calcLDP(parseFloat(sub.fob), style, coo, style.market || 'USA', 'NY', terms, sub.factoryCost);
@@ -1911,7 +1930,7 @@ App = (() => {
         if (dutyPctCell) dutyPctCell.textContent = pct(r.dutyRate);
         if (dutyAmtCell) dutyAmtCell.textContent = fmt(r.duty);
         if (freightCell) freightCell.textContent = r.freight != null ? fmt(r.freight) : (r.noQty ? 'N/A' : '$0.00');
-        if (ldpCell)     ldpCell.innerHTML = `<span>${fmt(r.ldp)}</span>`;
+        if (ldpCell)     ldpCell.innerHTML = _ldpCellHtml(r.ldp, style, prog);
       });
     });
   }
@@ -2064,7 +2083,7 @@ App = (() => {
       const ldpCell     = row.querySelector(`td[data-col="${colKey}_ldp"]`);
       if (dutyAmtCell) dutyAmtCell.textContent = fmtD(r.duty);
       if (freightCell) freightCell.textContent = r.freight != null ? fmtD(r.freight) : 'N/A';
-      if (ldpCell) ldpCell.innerHTML = `<span>${fmtD(r.ldp)}</span>`;
+      if (ldpCell) ldpCell.innerHTML = _ldpCellHtml(r.ldp, style, prog);
     });
   }
 
