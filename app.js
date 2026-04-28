@@ -8580,3 +8580,62 @@ App._saveFactoryHlTerms = async function(id) {
   App.closeModal();
   App.navigate('factories');
 };
+
+// ── Toast notification system ─────────────────────────────────
+(function () {
+  let _timer      = null;
+  let _lastTime   = 0;
+  let _queue      = [];
+  let _active     = false;
+
+  function _container() {
+    let c = document.getElementById('toast-container');
+    if (!c) { c = document.createElement('div'); c.id = 'toast-container'; document.body.appendChild(c); }
+    return c;
+  }
+
+  function _dismiss(container, toastEl) {
+    if (_timer) { clearTimeout(_timer); _timer = null; }
+    toastEl.style.transition = 'opacity 0.25s ease, transform 0.25s ease';
+    toastEl.style.opacity    = '0';
+    toastEl.style.transform  = 'scale(0.9) translateY(-6px)';
+    setTimeout(() => { if (container.contains(toastEl)) container.removeChild(toastEl); _showNext(); }, 260);
+  }
+
+  function _showNext() {
+    if (!_queue.length) { _active = false; return; }
+    _active = true;
+    const { message, type, duration } = _queue.shift();
+    const container = _container();
+
+    // Clear any existing toast instantly before animating in the new one
+    container.innerHTML = '';
+    if (_timer) { clearTimeout(_timer); _timer = null; }
+
+    const toast = document.createElement('div');
+    toast.className = 'toast toast-' + type;
+    toast.innerHTML = '<span class="toast-msg">' + message + '</span>' +
+      (type === 'error'
+        ? '<button class="toast-close" onclick="(function(b){var t=b.closest(\'.toast\'),c=document.getElementById(\'toast-container\');if(c&&t)c.removeChild(t);})(this)">✕</button>'
+        : '');
+    container.appendChild(toast);
+    _lastTime = Date.now();
+
+    if (type !== 'error') {
+      _timer = setTimeout(() => _dismiss(container, toast), duration || 2000);
+    }
+  }
+
+  App.showToast = function (message, type, duration) {
+    type = type || 'success';
+    const replace = (Date.now() - _lastTime) < 1000;
+    if (replace) {
+      // Replace whatever is currently showing
+      _queue.unshift({ message, type, duration });
+      _showNext();
+    } else {
+      _queue.push({ message, type, duration });
+      if (!_active) _showNext();
+    }
+  };
+})();

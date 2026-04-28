@@ -2150,6 +2150,52 @@ const AdminViews = (() => {
     ${tcCooBlocks.length === 0
         ? `<div class="empty-state"><div class="icon">🏭</div><h3>No trading companies assigned</h3><button class="btn btn-primary mt-3" onclick="App.openAssignTCs('${style.programId}')">Assign Trading Companies</button></div>`
         : `<div class="grid-auto">${tcCooBlocks.map(b => tcBlock(b.tc, b.coo, b.sub, style, bestLDP < Infinity ? bestLDP : null, placement, targetLDP)).join('')}</div>`}
+    ${(() => {
+      const changes = API.DesignChanges.byStyle(styleId).slice().reverse();
+      const dcPanelId = `dc-compare-${styleId}`;
+      const fmtD = d => new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+      const rcrBadge = c => {
+        const rcr = API.RecostRequests.getByDesignChange(c.id);
+        if (!rcr) return `<span style="font-size:0.68rem;padding:2px 6px;border-radius:8px;background:#33415588;color:#94a3b8;font-weight:600">Log only</span>`;
+        const cfg = {
+          pending_sales:      ['#d97706','Recost · Pending Sales'],
+          pending:            ['#d97706','Recost · Pending Sales'],
+          pending_production: ['#818cf8','Recost · Pending Prod.'],
+          released:           ['#16a34a','Recost · Released'],
+          rejected:           ['#dc2626','Recost · Rejected'],
+        }[rcr.status] || ['#64748b', rcr.status];
+        return `<span style="font-size:0.68rem;padding:2px 6px;border-radius:8px;background:${cfg[0]}22;color:${cfg[0]};border:1px solid ${cfg[0]}55;font-weight:600">${cfg[1]}</span>`;
+      };
+      const entryHtml = changes.map(c => {
+        const isPending = c.status === 'pending';
+        return `<div class="dc-entry${isPending ? ' dc-entry-pending' : ''}">
+          <div class="dc-dot${isPending ? ' dc-dot-pending' : ''}"></div>
+          <div class="dc-body">
+            <div class="dc-desc">
+              ${c.field ? `<span class="badge badge-costing" style="font-size:0.72rem">${c.field}</span> ` : ''}${c.description || ''}${isPending ? ` <span class="badge badge-pending" style="font-size:0.68rem">Pending</span>` : ''}
+            </div>
+            ${(c.previousValue || c.newValue) ? `<div class="dc-field text-sm">${c.previousValue ? `<span style="color:#ef4444">${c.previousValue}</span> → ` : ''}${c.newValue ? `<strong>${c.newValue}</strong>` : ''}</div>` : ''}
+            <div class="dc-meta">${fmtD(c.changedAt)} · ${c.changedByName || c.changedBy || '—'} · ${rcrBadge(c)}</div>
+          </div>
+        </div>`;
+      }).join('');
+      const startOpen = changes.length > 0;
+      return `<div class="card mt-4" style="padding:0;overflow:hidden">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 20px;cursor:pointer;user-select:none"
+             onclick="(function(el){var b=document.getElementById('${dcPanelId}');if(!b)return;var open=b.style.display!=='none';b.style.display=open?'none':'';el.querySelector('.cmp-chev').textContent=open?'▶':'▼'})(this)">
+          <div style="display:flex;align-items:center;gap:8px">
+            <span style="font-size:0.82rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-secondary)">📝 Style Changes</span>
+            <span class="tag" style="font-size:0.7rem">${changes.length}</span>
+          </div>
+          <span class="cmp-chev" style="font-size:0.72rem;color:var(--text-tertiary)">${startOpen ? '▼' : '▶'}</span>
+        </div>
+        <div id="${dcPanelId}" style="border-top:1px solid var(--border);padding:16px 20px;${startOpen ? '' : 'display:none'}">
+          ${changes.length
+            ? `<div style="display:flex;flex-direction:column">${entryHtml}</div>`
+            : `<div class="text-muted text-sm" style="text-align:center;padding:12px 0">No style changes logged for this style yet. Use 📝 on Cost Summary to log a change.</div>`}
+        </div>
+      </div>`;
+    })()}
     <div class="card mt-4" style="padding:20px">
       <div class="text-sm font-bold mb-2" style="color:var(--text-secondary);text-transform:uppercase;letter-spacing:.06em">📝 Style Notes</div>
       <textarea id="style-note-${styleId}" class="form-input" rows="4" style="width:100%;resize:vertical;font-size:0.9rem" placeholder="Add internal notes for this style…" onblur="App.saveStyleNote('${styleId}',this.value)" onkeydown="if(event.ctrlKey&&event.key==='Enter')this.blur()">${styleNote}</textarea>
