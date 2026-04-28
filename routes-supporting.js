@@ -614,6 +614,8 @@ function handoffFromRow(r) {
     batchReleases:        JSON.parse(r.batch_releases || '[]'),
     status:               r.status || 'active',
     cancelledAt:          r.cancelled_at,
+    cancelledBy:          r.cancelled_by,
+    cancelledByName:      r.cancelled_by_name,
     previousProgramId:    r.previous_program_id,
     previousProgramName:  r.previous_program_name,
     createdAt:            r.created_at,
@@ -716,7 +718,8 @@ router.post('/design-handoffs/:id/cancel', requireAuth, requireRole('admin', 'pc
   if (!row) return res.status(404).json({ error: 'Not found' });
   if (row.linked_program_id) return res.status(400).json({ error: 'Cancel the program instead — handoff is linked to a program' });
   const now = new Date().toISOString();
-  db.prepare(`UPDATE design_handoffs SET status = 'cancelled', cancelled_at = ? WHERE id = ?`).run(now, req.params.id);
+  db.prepare(`UPDATE design_handoffs SET status = 'cancelled', cancelled_at = ?, cancelled_by = ?, cancelled_by_name = ? WHERE id = ?`)
+    .run(now, req.user?.id || null, req.user?.name || null, req.params.id);
   res.json(handoffFromRow(db.prepare('SELECT * FROM design_handoffs WHERE id = ?').get(req.params.id)));
 });
 
@@ -1113,6 +1116,8 @@ function srFromRow(r) {
     endDate:            r.end_date,
     vendorsAssignedAt:    r.vendors_assigned_at,
     cancelledAt:          r.cancelled_at,
+    cancelledBy:          r.cancelled_by,
+    cancelledByName:      r.cancelled_by_name,
     previousProgramId:    r.previous_program_id,
     previousProgramName:  r.previous_program_name,
     createdAt:            r.created_at,
@@ -1202,7 +1207,8 @@ router.post('/sales-requests/:id/cancel', requireAuth, requireRole('admin', 'pc'
   if (!row) return res.status(404).json({ error: 'Not found' });
   if (row.linked_program_id) return res.status(400).json({ error: 'Cancel the program instead — SR is linked to a program' });
   const now = new Date().toISOString();
-  db.prepare(`UPDATE sales_requests SET status = 'cancelled', cancelled_at = ? WHERE id = ?`).run(now, req.params.id);
+  db.prepare(`UPDATE sales_requests SET status = 'cancelled', cancelled_at = ?, cancelled_by = ?, cancelled_by_name = ? WHERE id = ?`)
+    .run(now, req.user?.id || null, req.user?.name || null, req.params.id);
   res.json(srFromRow(db.prepare('SELECT * FROM sales_requests WHERE id = ?').get(req.params.id)));
 });
 

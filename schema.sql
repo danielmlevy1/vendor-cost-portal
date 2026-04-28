@@ -115,6 +115,8 @@ CREATE TABLE IF NOT EXISTS programs (
   end_date              TEXT,
   crd_date              TEXT,
   cancelled_at          TEXT,
+  cancelled_by          TEXT,
+  cancelled_by_name     TEXT,
   updated_at            TEXT,
   created_at            TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
@@ -352,6 +354,8 @@ CREATE TABLE IF NOT EXISTS design_handoffs (
   batch_releases          TEXT NOT NULL DEFAULT '[]',  -- JSON: [{ batchLabel, releasedAt, styleIds[] }]
   status                  TEXT NOT NULL DEFAULT 'active',  -- active | cancelled
   cancelled_at            TEXT,
+  cancelled_by            TEXT,
+  cancelled_by_name       TEXT,
   previous_program_id     TEXT,
   previous_program_name   TEXT,
   created_at              TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
@@ -648,6 +652,8 @@ CREATE TABLE IF NOT EXISTS sales_requests (
   end_date              TEXT,
   vendors_assigned_at   TEXT,
   cancelled_at          TEXT,
+  cancelled_by          TEXT,
+  cancelled_by_name     TEXT,
   previous_program_id   TEXT,
   previous_program_name TEXT,
   created_at            TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))

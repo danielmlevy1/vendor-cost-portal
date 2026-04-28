@@ -427,6 +427,14 @@ function runMigrations() {
 
   // v14: program updated_at for audit trail
   addColumn('programs', 'updated_at', 'TEXT');
+
+  // v15: cancellation accountability — who cancelled each record
+  addColumn('programs',        'cancelled_by',      'TEXT');
+  addColumn('programs',        'cancelled_by_name', 'TEXT');
+  addColumn('design_handoffs', 'cancelled_by',      'TEXT');
+  addColumn('design_handoffs', 'cancelled_by_name', 'TEXT');
+  addColumn('sales_requests',  'cancelled_by',      'TEXT');
+  addColumn('sales_requests',  'cancelled_by_name', 'TEXT');
 }
 
 // One-shot-ish per-country lead-time fill. Only overwrites rows

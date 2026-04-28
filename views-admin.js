@@ -374,7 +374,7 @@ const AdminViews = (() => {
       ${sec('⚠️ Action Items')}
       <div class="kpi-alerts">
         ${alertKpi('↩', 'Re-cost Requests — Awaiting Your Approval', recostForSales, '#f59e0b', 'recost-queue')}
-        ${alertKpi('📌', 'Design Changes — Pending Confirmation', API.DesignChanges.pendingAll().length, '#f59e0b', 'design-changes')}
+        ${alertKpi('📌', 'Style Changes — Pending Confirmation', API.DesignChanges.pendingAll().length, '#f59e0b', 'design-changes')}
         ${alertKpi('📋', 'Open Requests (not yet proposed)', openRequests.length, '#6366f1', 'sales-requests')}
         ${alertKpi('❓', 'Requests missing Qty / Price', reqMissingData.length, '#a855f7', 'sales-requests')}
         ${alertKpi('📅', 'Programs with CRD ≤ 30 days', upcomingCRDs, '#ef4444', 'programs')}
@@ -769,6 +769,39 @@ const AdminViews = (() => {
     return `<span class="badge ${cls}">${icon} ${stage}</span>`;
   }
 
+  // ── Cancellation badge helper ─────────────────────────────────────────────────
+  // Shared across Programs, Handoffs, and Sales Requests.
+  // record: { cancelledAt, cancelledBy, cancelledByName, previousProgramName? }
+  // cascaded: true when this record was cancelled as a side-effect of its program being cancelled
+  function cancellationBadge(record, { cascaded = false, inline = false } = {}) {
+    const fmtDate = iso => iso
+      ? new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+      : null;
+
+    const staff  = (typeof API !== 'undefined' && API.PCUsers?.allStaff?.()) || [];
+    const allTCs = (typeof API !== 'undefined' && API.TradingCompanies?.all?.()) || [];
+    const allUsers = [...staff, ...allTCs.map(tc => ({ id: tc.id, name: tc.name || tc.code, role: 'vendor' }))];
+    const actor  = record.cancelledBy ? allUsers.find(u => u.id === record.cancelledBy) : null;
+    const name   = record.cancelledByName || actor?.name || null;
+    const role   = actor?.role || null;
+    const date   = fmtDate(record.cancelledAt);
+
+    const roleLabel = role ? ({ admin: 'Admin', pc: 'Production', planning: 'Sales', design: 'Design', tech_design: 'Tech Design', prod_dev: 'PD', vendor: 'Vendor' }[role] || role) : null;
+    const byPart  = roleLabel && name ? `by ${roleLabel} (${name})` : roleLabel ? `by ${roleLabel}` : name ? `by ${name}` : 'by System';
+    const onPart  = date ? ` on ${date}` : '';
+    const wasPart = cascaded && record.previousProgramName ? ` · Was: ${record.previousProgramName}` : '';
+
+    const text = `🚫 Cancelled ${byPart}${onPart}${wasPart}`;
+
+    if (inline) {
+      return `<span style="display:inline-block;padding:2px 10px;border-radius:10px;font-size:0.75rem;font-weight:600;background:rgba(239,68,68,0.12);color:#ef4444">${text}</span>`;
+    }
+    return `<div style="display:inline-flex;align-items:flex-start;gap:6px;padding:10px 14px;border-radius:8px;background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.2);font-size:0.83rem;font-weight:500;color:#ef4444;margin-bottom:12px">
+      <span style="flex-shrink:0">🚫</span>
+      <span>Cancelled ${byPart}${onPart}${wasPart}</span>
+    </div>`;
+  }
+
   // ── Shared batch-state cell (used by all three pipeline tables) ──────────────
   // Returns HTML for the "Batches" column. Three visual states:
   //   zero batches  → dash (new handoff, nothing released yet)
@@ -963,20 +996,22 @@ const AdminViews = (() => {
         <td class="text-sm">${fmtDate(p.startDate)}</td>
         <td class="text-sm">${fmtDate(p.endDate)}</td>
         <td onclick="event.stopPropagation()" style="white-space:nowrap">
-          <div style="display:flex;gap:6px">
-            ${isDraft
-              ? (isAdminOrPC
-                  ? `<button class="btn btn-secondary btn-sm" onclick="App.openProgram('${p.id}')">👁 Preview</button>
-                     <button class="btn btn-primary btn-sm" onclick="App.acknowledgeProgram('${p.id}')">✅ Release</button>`
-                  : `<button class="btn btn-secondary btn-sm" onclick="App.openProgram('${p.id}')">👁 Preview</button>`)
-              : (isAdminOrPC
-                  ? `<button class="btn btn-primary btn-sm" onclick="App.openProgram('${p.id}')">📋 Open</button>
-                     <button class="btn btn-secondary btn-sm" onclick="App.navigate('styles','${p.id}')">Styles</button>
-                     <button class="btn btn-secondary btn-sm" onclick="App.openProgramModal('${p.id}')">Edit</button>
-                     <button class="btn btn-secondary btn-sm" style="color:#ef4444;border-color:#ef4444" onclick="App.cancelProgram('${p.id}')">🚫 Cancel</button>`
-                  : `<button class="btn btn-primary btn-sm" onclick="App.openProgram('${p.id}')">👁 Open</button>`)
-            }
-          </div>
+          ${p.status === 'cancelled'
+            ? cancellationBadge(p, { inline: true })
+            : `<div style="display:flex;gap:6px">
+              ${isDraft
+                ? (isAdminOrPC
+                    ? `<button class="btn btn-secondary btn-sm" onclick="App.openProgram('${p.id}')">👁 Preview</button>
+                       <button class="btn btn-primary btn-sm" onclick="App.acknowledgeProgram('${p.id}')">✅ Release</button>`
+                    : `<button class="btn btn-secondary btn-sm" onclick="App.openProgram('${p.id}')">👁 Preview</button>`)
+                : (isAdminOrPC
+                    ? `<button class="btn btn-primary btn-sm" onclick="App.openProgram('${p.id}')">📋 Open</button>
+                       <button class="btn btn-secondary btn-sm" onclick="App.navigate('styles','${p.id}')">Styles</button>
+                       <button class="btn btn-secondary btn-sm" onclick="App.openProgramModal('${p.id}')">Edit</button>
+                       <button class="btn btn-secondary btn-sm" style="color:#ef4444;border-color:#ef4444" onclick="App.cancelProgram('${p.id}')">🚫 Cancel</button>`
+                    : `<button class="btn btn-primary btn-sm" onclick="App.openProgram('${p.id}')">👁 Open</button>`)
+              }
+            </div>`}
         </td>
       </tr>`;
     }).join('');
@@ -1296,6 +1331,7 @@ const AdminViews = (() => {
 
     return `
     ${programTabBar(programId, 'cost', prog)}
+    ${prog.status === 'cancelled' ? cancellationBadge(prog) : ''}
     <div class="page-header" style="margin-top:12px">
       <div>
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
@@ -1655,7 +1691,7 @@ const AdminViews = (() => {
         if (isCancelled) {
           rowHtml += `<td data-col="actions"><button class="btn-restore-style" onclick="App.uncancelStyle('${s.id}','${pid}')">↩ Restore</button></td>`;
         } else {
-          rowHtml += `<td data-col="actions" style="white-space:nowrap"><button class="btn btn-ghost btn-sm" style="font-size:0.7rem;padding:2px 5px;margin-right:2px" title="Log design change" onclick="App.openDesignChangeModal('${s.id}')">📝</button><button class="btn-cancel-style" onclick="App.cancelStyle('${s.id}','${pid}')">🚫</button></td>`;
+          rowHtml += `<td data-col="actions" style="white-space:nowrap"><button class="btn btn-ghost btn-sm" style="font-size:0.7rem;padding:2px 5px;margin-right:2px" title="Log style change" onclick="App.openDesignChangeModal('${s.id}')">📝</button><button class="btn-cancel-style" onclick="App.cancelStyle('${s.id}','${pid}')">🚫</button></td>`;
         }
 
         // Repeat Style column
@@ -1814,7 +1850,7 @@ const AdminViews = (() => {
           <td data-col="${k}_freight" class="col-vendor-sub tc-detail-col text-sm ${tcColorClass}" data-tckey="${k}"${hideStyle}>${freightCell}</td>
           <td data-col="${k}_ldp" class="col-vendor-sub col-ldp ${tcColorClass}">${ldpCell}</td>`;
       });
-      rowHtml += `<td data-col="actions" style="white-space:nowrap"><button class="btn btn-ghost btn-sm" style="font-size:0.7rem;padding:2px 5px;margin-right:2px" title="Log design change" onclick="App.openDesignChangeModal('${s.id}')">📝</button><button class="btn-cancel-style" onclick="App.cancelStyle('${s.id}','${programId}')">🚫</button></td>`;
+      rowHtml += `<td data-col="actions" style="white-space:nowrap"><button class="btn btn-ghost btn-sm" style="font-size:0.7rem;padding:2px 5px;margin-right:2px" title="Log style change" onclick="App.openDesignChangeModal('${s.id}')">📝</button><button class="btn-cancel-style" onclick="App.cancelStyle('${s.id}','${programId}')">🚫</button></td>`;
       const sn2 = (s.styleNumber||'').trim();
       const hist2 = sn2 ? (repeatHistory[sn2]||[]) : [];
       if (!hist2.length) {
@@ -2245,6 +2281,7 @@ const AdminViews = (() => {
       <button class="program-tab ${activeTab === 'overview' ? 'active' : ''}" onclick="App.navigate('overview','${programId}')">📈 Overview</button>
       <button class="program-tab ${activeTab === 'cost' ? 'active' : ''}" onclick="App.navigate('cost-summary','${programId}')">📊 Cost Summary</button>
       <button class="program-tab ${activeTab === 'buys' ? 'active' : ''}" onclick="App.navigate('buy-summary','${programId}')">🛒 Buy Summary</button>
+      <button class="program-tab ${activeTab === 'changes' ? 'active' : ''}" onclick="App.navigate('program-changes','${programId}')">📝 Changes</button>
       <button class="program-tab ${activeTab === 'capacity' ? 'active' : ''}" onclick="App.navigate('capacity-plan','${programId}')">🏭 Capacity Plan</button>
       <button class="program-tab ${activeTab === 'delivery' ? 'active' : ''}" onclick="App.navigate('delivery-plan','${programId}')">🚢 Delivery Plan</button>
     </div>`;
@@ -2887,9 +2924,8 @@ const AdminViews = (() => {
       const ageBadge = stillOpen
         ? `<span class="tag" style="font-size:0.68rem;background:${ageBg};color:${ageColor};font-weight:600;margin-left:6px" title="Days since handoff was created">⏱ ${ageDays}d</span>`
         : '';
-      const cancelledDate = h.cancelledAt ? new Date(h.cancelledAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : null;
       const linkedBadge = h.status === 'cancelled'
-        ? `<span class="badge badge-cancelled" style="background:rgba(100,116,139,0.2);color:#94a3b8">🚫 Cancelled${cancelledDate ? ' · ' + cancelledDate : ''}${h.previousProgramName ? '<br><span style="font-size:0.68rem;font-weight:400">Was: ' + h.previousProgramName + '</span>' : ''}</span>`
+        ? cancellationBadge(h, { cascaded: !!h.previousProgramName, inline: true })
         : h.linkedProgramId
           ? `<span class="badge badge-placed" style="cursor:pointer" onclick="App.navigate('cost-summary','${h.linkedProgramId}')">→ Program</span>`
           : h.submittedForCosting
@@ -3075,9 +3111,8 @@ const AdminViews = (() => {
     const buildRow = r => {
       const d = new Date(r.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
       const hasQtyPrice = (r.styles||[]).some(s => (s.projQty > 0) && (s.projSell > 0));
-      const srCancelledDate = r.cancelledAt ? new Date(r.cancelledAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : null;
       const linkedBadge = r.status === 'cancelled'
-        ? `<span class="badge badge-cancelled" style="background:rgba(100,116,139,0.2);color:#94a3b8">🚫 Cancelled${srCancelledDate ? ' · ' + srCancelledDate : ''}${r.previousProgramName ? '<br><span style="font-size:0.68rem;font-weight:400">Was: ' + r.previousProgramName + '</span>' : ''}</span>`
+        ? cancellationBadge(r, { cascaded: !!r.previousProgramName, inline: true })
         : r.linkedProgramId
           ? `<span class="badge badge-placed" style="cursor:pointer" onclick="App.navigate('cost-summary','${r.linkedProgramId}')">→ Program</span>`
           : hasQtyPrice
@@ -3400,7 +3435,7 @@ const AdminViews = (() => {
             ? `<span class="tag" style="background:rgba(239,68,68,0.12);color:#ef4444;margin-left:6px">Cancelled</span>`
             : `<span class="tag" style="color:#22c55e;margin-left:6px">Released</span>`;
           const logBtn = (h.linkedProgramId && progStyle?.id)
-            ? `<button class="btn btn-ghost btn-sm" style="font-size:0.7rem;padding:2px 5px" title="Log design change" onclick="App.openDesignChangeModal('${progStyle.id}')">📝</button>`
+            ? `<button class="btn btn-ghost btn-sm" style="font-size:0.7rem;padding:2px 5px" title="Log style change" onclick="App.openDesignChangeModal('${progStyle.id}')">📝</button>`
             : '';
           return `<tr style="${isCancelled ? 'opacity:0.5' : ''}">
             <td class="primary font-bold" style="padding:8px 12px">${s.styleNumber || '—'}</td>
@@ -3421,7 +3456,7 @@ const AdminViews = (() => {
       <div class="font-bold" style="font-size:0.95rem;margin:${hasPending ? '0' : '20px'} 0 10px">✅ Released Styles <span class="tag" style="margin-left:6px">${releasedStyles.length}</span></div>
       <div class="card" style="padding:0;margin-bottom:16px">
         <div style="padding:10px 16px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border)">
-          <span class="text-sm text-muted">Grouped by fabrication · ${h.linkedProgramId ? 'Click 📝 to log a design change' : 'Legacy handoff — no program linked'}</span>
+          <span class="text-sm text-muted">Grouped by fabrication · ${h.linkedProgramId ? 'Click 📝 to log a style change' : 'Legacy handoff — no program linked'}</span>
           ${progLink}
         </div>
         <div class="table-wrap">
@@ -3457,6 +3492,9 @@ const AdminViews = (() => {
           ? `<button class="btn btn-secondary btn-sm" onclick="App.navigate('cost-summary','${h.linkedProgramId}')">→ View Program</button>`
           : ''}
       </div>
+
+      <!-- CANCELLED BANNER -->
+      ${h.status === 'cancelled' ? cancellationBadge(h, { cascaded: !!h.previousProgramName }) : ''}
 
       <!-- PROGRESS + HISTORY -->
       ${totalCount > 0 ? `<div class="card mb-4">${progressBar}${historyChips}</div>` : ''}
@@ -4304,7 +4342,7 @@ const AdminViews = (() => {
   // ── Design Change Log modal trigger & history panel ────────
   function designChangeHistoryPanel(styleId) {
     const changes = API.DesignChanges.byStyle(styleId);
-    if (!changes.length) return `<div class="text-muted text-sm" style="padding:12px">No design changes logged for this style.</div>`;
+    if (!changes.length) return `<div class="text-muted text-sm" style="padding:12px">No style changes logged for this style.</div>`;
     const fmtDate = d => new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' });
     return `<div class="design-change-timeline">${changes.map(c => {
       const isPending = c.status === 'pending';
@@ -4516,8 +4554,8 @@ const AdminViews = (() => {
 
     return `
     <div class="page-header">
-      <div><h1 class="page-title">Design Changes</h1>
-        <p class="page-subtitle">Design change log and re-cost requests across all programs</p></div>
+      <div><h1 class="page-title">Style Changes</h1>
+        <p class="page-subtitle">Style change log and re-cost requests across all programs</p></div>
     </div>
     <div class="kpi-grid" style="margin-bottom:20px">
       ${kpiTile('all',              '📌', 'Total Changes',     totalRecent,       '#6366f1', `${all.length} all-time · last 30 days shown`)}
@@ -4538,6 +4576,144 @@ const AdminViews = (() => {
       </tr></thead>
       <tbody>${rows}</tbody>
     </table></div></div>`;
+  }
+
+  // ── Per-program Changes tab ─────────────────────────────────────────
+  function renderProgramChangesTab(programId, userRole) {
+    const prog = API.Programs.get(programId);
+    if (!prog) return `<div class="empty-state"><h3>Program not found</h3></div>`;
+
+    const perms    = (typeof App !== 'undefined' && App.getPerms) ? App.getPerms() : {};
+    const role     = userRole || ((typeof App !== 'undefined' && App._getState) ? App._getState()?.user?.role : '');
+    const isAdmin  = role === 'admin';
+    const isPC     = role === 'pc';
+    const isPlanning = role === 'planning' || role === 'sales';
+
+    const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+    const fmtDate = d => new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+
+    // Filter all changes to this program
+    const all = API.DesignChanges.all().filter(c => c.programId === programId).slice().reverse();
+    const styles = API.Styles.byProgram(programId);
+    const styleMap = Object.fromEntries(styles.map(s => [s.id, s]));
+
+    const classify = c => {
+      const rcr = API.RecostRequests.getByDesignChange(c.id);
+      if (!rcr) return 'log-only';
+      if (rcr.status === 'released' || rcr.status === 'rejected') return 'recost-released';
+      return 'recost-pending';
+    };
+
+    const pendingDCCount  = all.filter(c => c.status === 'pending').length;
+    const recostPendCount = all.filter(c => classify(c) === 'recost-pending').length;
+    const recostRelCount  = all.filter(c => classify(c) === 'recost-released').length;
+    const logOnlyCount    = all.filter(c => classify(c) === 'log-only').length;
+
+    const pendingColor = pendingDCCount > 0 ? '#ef4444' : '#64748b';
+    const pendingTileCount = (isAdmin || isPC)
+      ? all.filter(c => { const r = API.RecostRequests.getByDesignChange(c.id); return r?.status === 'pending_production'; }).length
+      : isPlanning
+      ? all.filter(c => { const r = API.RecostRequests.getByDesignChange(c.id); return r?.status === 'pending_sales' || r?.status === 'pending'; }).length
+      : recostPendCount;
+    const pendingSub = (isAdmin || isPC) ? 'Awaiting your release' : isPlanning ? 'Awaiting your approval' : 'In progress';
+
+    const kpiTile = (icon, label, count, color, sub) => `
+      <div class="kpi-card">
+        <div class="kpi-icon" style="background:${color}22;color:${count===0?'#64748b':color}">${icon}</div>
+        <div class="kpi-body">
+          <div class="kpi-value" style="${count===0?'color:var(--text-muted)':''}">${count}</div>
+          <div class="kpi-label">${label}</div>
+          ${sub ? `<div class="kpi-sub">${sub}</div>` : ''}
+        </div>
+      </div>`;
+
+    const rcrStatusBadge = rcr => {
+      if (!rcr) return `<span class="badge" style="background:#334155;color:#94a3b8;font-size:0.7rem">Log only</span>`;
+      const map = {
+        pending_sales:      { label: 'Recost: Pending Sales',      bg: '#f59e0b22', color: '#d97706', border: '#f59e0b55' },
+        pending:            { label: 'Recost: Pending Sales',      bg: '#f59e0b22', color: '#d97706', border: '#f59e0b55' },
+        pending_production: { label: 'Recost: Pending Production', bg: '#6366f122', color: '#818cf8', border: '#6366f155' },
+        released:           { label: 'Recost: Released',           bg: '#22c55e22', color: '#16a34a', border: '#22c55e55' },
+        rejected:           { label: 'Recost: Rejected',           bg: '#ef444422', color: '#dc2626', border: '#ef444455' },
+      };
+      const cfg = map[rcr.status] || { label: rcr.status, bg: '#33415522', color: '#94a3b8', border: '#33415555' };
+      return `<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:0.7rem;font-weight:600;background:${cfg.bg};color:${cfg.color};border:1px solid ${cfg.border}">${cfg.label}</span>`;
+    };
+
+    const rcrActions = (rcr, c) => {
+      if (!rcr) return '';
+      if (rcr.status === 'pending_sales' || rcr.status === 'pending') {
+        if (isAdmin || isPC || isPlanning)
+          return `<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px">` +
+            `<button class="btn btn-primary btn-sm" onclick="App.salesApproveRecost('${rcr.id}','${rcr.programId}')">✅ Approve</button>` +
+            `<button class="btn btn-danger btn-sm" onclick="App.rejectRecostRequest('${rcr.id}','${rcr.programId}','sales')">✕ Reject</button></div>`;
+      }
+      if (rcr.status === 'pending_production') {
+        if (isAdmin || isPC)
+          return `<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px">` +
+            `<button class="btn btn-warning btn-sm" onclick="App.releaseRecosting('${rcr.id}','${rcr.programId}')">🔄 Release to TC</button>` +
+            `<button class="btn btn-danger btn-sm" onclick="App.rejectRecostRequest('${rcr.id}','${rcr.programId}','production')">✕ Reject</button></div>`;
+      }
+      return '';
+    };
+
+    const rows = all.length ? all.map(c => {
+      const style = styleMap[c.styleId];
+      const isPending = c.status === 'pending';
+      const rcr = API.RecostRequests.getByDesignChange(c.id);
+      return `<tr
+        data-flt-style="${esc(c.styleNumber || c.styleId || '')}"
+        data-flt-field="${esc(c.field || '')}"
+        data-flt-by="${esc(c.changedByName || c.changedBy || '')}">
+        <td class="text-sm text-muted">${fmtDate(c.changedAt)}</td>
+        <td class="primary font-bold">${c.styleNumber || c.styleId}</td>
+        <td>${c.field ? `<span class="badge badge-costing">${c.field}</span>` : '—'}</td>
+        <td>${c.description || '—'}</td>
+        <td class="text-sm">${c.previousValue ? `<span style="color:#ef4444">${c.previousValue}</span>` : '—'}</td>
+        <td class="text-sm">${c.newValue ? `<strong>${c.newValue}</strong>` : '—'}</td>
+        <td class="text-sm text-muted">${c.changedByName || c.changedBy || '—'}</td>
+        <td>${isPending
+          ? `<button class="btn btn-secondary btn-sm" onclick="App.confirmDesignChange('${c.id}','${c.styleId}',true)">✓ Confirm</button>`
+          : `<span class="text-muted text-sm">${c.confirmedByName || '—'}</span>`}
+        </td>
+        <td style="min-width:170px">${rcrStatusBadge(rcr)}${rcrActions(rcr, c)}</td>
+      </tr>`;
+    }).join('') : '';
+
+    const emptyState = !all.length ? `
+      <div class="empty-state" style="padding:60px 40px">
+        <div class="icon">📝</div>
+        <h3>No changes logged for this program yet</h3>
+        <p class="text-muted" style="margin-bottom:16px">Log a style change from the Cost Summary or Design view.</p>
+        <button class="btn btn-primary" onclick="App.navigate('cost-summary','${esc(programId)}')">← Back to Cost Summary</button>
+      </div>` : '';
+
+    return `
+    ${programTabBar(programId, 'changes', prog)}
+    <div class="page-header" style="margin-top:12px">
+      <div>
+        <h1 class="page-title">📝 Style Changes — ${esc(prog.name)}</h1>
+        <p class="page-subtitle">Style changes and re-cost requests for this program</p>
+      </div>
+    </div>
+    ${all.length ? `<div class="kpi-grid" style="margin-bottom:20px">
+      ${kpiTile('📌', 'Total Changes',   all.length,       '#6366f1', '')}
+      ${kpiTile('🔄', 'Pending Recosts', pendingTileCount, pendingTileCount > 0 ? '#ef4444' : '#64748b', pendingSub)}
+      ${kpiTile('✅', 'Released Recosts',recostRelCount,   '#22c55e', '')}
+      ${kpiTile('📝', 'Log-Only',        logOnlyCount,     '#64748b', '')}
+    </div>
+    <div class="card" style="padding:0"><div class="table-wrap"><table data-column-filter>
+      <thead><tr>
+        <th>Date</th>
+        <th data-filter-col="style">Style #</th>
+        <th data-filter-col="field">Field</th>
+        <th>Description</th><th>Previous</th><th>New Value</th>
+        <th data-filter-col="by">Logged By</th>
+        <th>DC Status</th>
+        <th>Recost Status</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div></div>` : emptyState}`;
   }
 
   // ====================================================================
@@ -5972,7 +6148,7 @@ const AdminViews = (() => {
     crossProgramTable, statusBadge, toggleTCCols, expandAllTCs, collapseAllTCs,
     // Pre-costing workflow (v11 + v12 batch release)
     renderDesignHandoff, renderHandoffDetail, renderSalesRequests, renderBuildFromHandoff, renderFabricStandards, renderRecostQueue,
-    renderBottleneckTracker, designChangeHistoryPanel, renderAllDesignChanges, renderStyleTimeline,
+    renderBottleneckTracker, designChangeHistoryPanel, renderAllDesignChanges, renderProgramChangesTab, renderStyleTimeline,
     // Design/Sales costing view (v13)
     renderDesignCostingView, renderCostHistoryTimeline,
     // Factory matrix

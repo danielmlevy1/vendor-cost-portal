@@ -64,6 +64,8 @@ function programFromRow(r) {
     crdDate:              r.crd_date,
     version:              r.version,
     cancelledAt:          r.cancelled_at,
+    cancelledBy:          r.cancelled_by,
+    cancelledByName:      r.cancelled_by_name,
     updatedAt:            r.updated_at,
     createdAt:            r.created_at,
   };
@@ -746,31 +748,33 @@ router.post('/programs/:id/cancel', requireAuth, requireRole('admin', 'pc'), (re
 
   const now = new Date().toISOString();
   const progName = row.name;
+  const cancellerId   = req.user?.id   || null;
+  const cancellerName = req.user?.name || null;
 
   db.transaction(() => {
-    db.prepare(`UPDATE programs SET status = 'cancelled', cancelled_at = ? WHERE id = ?`)
-      .run(now, req.params.id);
+    db.prepare(`UPDATE programs SET status = 'cancelled', cancelled_at = ?, cancelled_by = ?, cancelled_by_name = ? WHERE id = ?`)
+      .run(now, cancellerId, cancellerName, req.params.id);
 
     // Cascade to the linked design handoff (if any)
     const handoff = db.prepare('SELECT * FROM design_handoffs WHERE linked_program_id = ?')
       .get(req.params.id);
     if (handoff) {
-      db.prepare(`UPDATE design_handoffs SET status = 'cancelled', cancelled_at = ?, previous_program_id = ?, previous_program_name = ? WHERE id = ?`)
-        .run(now, req.params.id, progName, handoff.id);
+      db.prepare(`UPDATE design_handoffs SET status = 'cancelled', cancelled_at = ?, cancelled_by = ?, cancelled_by_name = ?, previous_program_id = ?, previous_program_name = ? WHERE id = ?`)
+        .run(now, cancellerId, cancellerName, req.params.id, progName, handoff.id);
       // Cascade to SR linked via the handoff or directly to the program
       const sr = db.prepare('SELECT * FROM sales_requests WHERE (source_handoff_id = ? OR linked_program_id = ?) AND status != ?')
         .get(handoff.id, req.params.id, 'cancelled');
       if (sr) {
-        db.prepare(`UPDATE sales_requests SET status = 'cancelled', cancelled_at = ?, previous_program_id = ?, previous_program_name = ? WHERE id = ?`)
-          .run(now, req.params.id, progName, sr.id);
+        db.prepare(`UPDATE sales_requests SET status = 'cancelled', cancelled_at = ?, cancelled_by = ?, cancelled_by_name = ?, previous_program_id = ?, previous_program_name = ? WHERE id = ?`)
+          .run(now, cancellerId, cancellerName, req.params.id, progName, sr.id);
       }
     } else {
       // No handoff — cancel any SR linked directly to the program
       const sr = db.prepare('SELECT * FROM sales_requests WHERE linked_program_id = ? AND status != ?')
         .get(req.params.id, 'cancelled');
       if (sr) {
-        db.prepare(`UPDATE sales_requests SET status = 'cancelled', cancelled_at = ?, previous_program_id = ?, previous_program_name = ? WHERE id = ?`)
-          .run(now, req.params.id, progName, sr.id);
+        db.prepare(`UPDATE sales_requests SET status = 'cancelled', cancelled_at = ?, cancelled_by = ?, cancelled_by_name = ?, previous_program_id = ?, previous_program_name = ? WHERE id = ?`)
+          .run(now, cancellerId, cancellerName, req.params.id, progName, sr.id);
       }
     }
   })();

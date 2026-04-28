@@ -49,7 +49,7 @@ App = (() => {
     try {
       if (route === 'programs' || route === 'dashboard')
         await API.preload.programs();
-      else if (route === 'cost-summary' || route === 'styles' || route === 'buy-summary' || route === 'compare' || route === 'design-costing' || route === 'delivery-plan' || route === 'capacity-plan' || route === 'overview') {
+      else if (route === 'cost-summary' || route === 'styles' || route === 'buy-summary' || route === 'compare' || route === 'design-costing' || route === 'delivery-plan' || route === 'capacity-plan' || route === 'overview' || route === 'program-changes') {
         await API.preload.program(param);
         if (route === 'delivery-plan') await API.DeliveryPlans.fetch(param).catch(() => {});
         if (route === 'capacity-plan') await API.CapacityPlans.fetch(param).catch(() => {});
@@ -316,7 +316,7 @@ App = (() => {
     const buildDcGroup = badgeTot => `
       <details class="nav-group" ${dcOpenAttr}
         ontoggle="localStorage.setItem('vcp_nav_dc_open', this.open ? '1' : '')">
-        <summary class="nav-item ${dcRouteActive ? 'active' : ''}"><span class="icon">📌</span> Design Changes${badgeTot > 0 ? ` <span class="pending-badge">${badgeTot}</span>` : ''}</summary>
+        <summary class="nav-item ${dcRouteActive ? 'active' : ''}"><span class="icon">📌</span> Style Changes${badgeTot > 0 ? ` <span class="pending-badge">${badgeTot}</span>` : ''}</summary>
         <div style="padding-left:14px;display:flex;flex-direction:column;gap:2px;margin-top:2px">
           ${dcLeaf('all',             '📋', 'All',             dcNavCounts.all)}
           ${dcLeaf('recost-pending',  '🔄', 'Recost Pending',  dcNavCounts['recost-pending'])}
@@ -431,9 +431,10 @@ App = (() => {
       else if (route === 'programs')      mc.innerHTML = AdminViews.renderPrograms(routeParam);
       else if (route === 'styles')        mc.innerHTML = AdminViews.renderStyleManager(routeParam);
       else if (route === 'overview')      mc.innerHTML = AdminViews.renderOverview(routeParam, user.role);
-      else if (route === 'cost-summary')  mc.innerHTML = AdminViews.renderCostSummary(routeParam);
-      else if (route === 'buy-summary')   mc.innerHTML = AdminViews.renderBuySummary(routeParam, user.role);
-      else if (route === 'compare')       mc.innerHTML = AdminViews.renderCostComparison(routeParam);
+      else if (route === 'cost-summary')    mc.innerHTML = AdminViews.renderCostSummary(routeParam);
+      else if (route === 'buy-summary')    mc.innerHTML = AdminViews.renderBuySummary(routeParam, user.role);
+      else if (route === 'program-changes') mc.innerHTML = AdminViews.renderProgramChangesTab(routeParam, user.role);
+      else if (route === 'compare')        mc.innerHTML = AdminViews.renderCostComparison(routeParam);
       else if (route === 'cross-program') mc.innerHTML = AdminViews.renderCrossProgram();
       else if (route === 'performance')   mc.innerHTML = AdminViews.renderPerformance(routeParam);
       // Pre-costing workflow routes
@@ -465,8 +466,9 @@ App = (() => {
       else if (route === 'factories')      mc.innerHTML = AdminViews.renderFactories(user.role);
       else if (route === 'programs')       mc.innerHTML = AdminViews.renderPrograms(routeParam);
       else if (route === 'design-costing') mc.innerHTML = AdminViews.renderDesignCostingView(routeParam, user.role);
-      else if (route === 'buy-summary')    mc.innerHTML = AdminViews.renderBuySummary(routeParam, user.role);
-      else if (route === 'cost-summary')   mc.innerHTML = AdminViews.renderDesignCostingView(routeParam, user.role); // redirect to role view
+      else if (route === 'buy-summary')      mc.innerHTML = AdminViews.renderBuySummary(routeParam, user.role);
+      else if (route === 'program-changes')  mc.innerHTML = AdminViews.renderProgramChangesTab(routeParam, user.role);
+      else if (route === 'cost-summary')     mc.innerHTML = AdminViews.renderDesignCostingView(routeParam, user.role); // redirect to role view
       else mc.innerHTML = AdminViews.renderDashboard(user.role, user);
     } else if (isPlanning || isSales) {
       // Planning/Sales — programs, buy summaries, pre-costing
@@ -485,6 +487,7 @@ App = (() => {
       else if (route === 'delivery-plan')       mc.innerHTML = AdminViews.renderDeliveryPlan(routeParam, user.role, user);
       else if (route === 'capacity-plan')       mc.innerHTML = AdminViews.renderCapacityPlan(routeParam, user.role, user);
       else if (route === 'cost-summary')        mc.innerHTML = AdminViews.renderCostSummary(routeParam);
+      else if (route === 'program-changes')     mc.innerHTML = AdminViews.renderProgramChangesTab(routeParam, user.role);
       else if (route === 'styles')              mc.innerHTML = AdminViews.renderStyleManager(routeParam);
       else if (route === '' || route === 'vendor-home' || route === 'my-styles') mc.innerHTML = AdminViews.renderPrograms(routeParam);
       else mc.innerHTML = AdminViews.renderDashboard(user.role, user);
@@ -495,9 +498,10 @@ App = (() => {
       else if (route === 'design-changes') mc.innerHTML = AdminViews.renderAllDesignChanges(document._dcTab || 'all');
       else if (route === 'programs')       mc.innerHTML = AdminViews.renderPrograms(routeParam);
       else if (route === 'design-costing') mc.innerHTML = AdminViews.renderDesignCostingView(routeParam, user.role);
-      else if (route === 'cost-summary')   mc.innerHTML = AdminViews.renderDesignCostingView(routeParam, user.role);
-      else if (route === 'recost-queue')   mc.innerHTML = AdminViews.renderRecostQueue();
-      else if (route === 'factories')      mc.innerHTML = AdminViews.renderFactories(user.role);
+      else if (route === 'cost-summary')    mc.innerHTML = AdminViews.renderDesignCostingView(routeParam, user.role);
+      else if (route === 'program-changes') mc.innerHTML = AdminViews.renderProgramChangesTab(routeParam, user.role);
+      else if (route === 'recost-queue')    mc.innerHTML = AdminViews.renderRecostQueue();
+      else if (route === 'factories')       mc.innerHTML = AdminViews.renderFactories(user.role);
       else mc.innerHTML = AdminViews.renderDashboard(user.role, user);
     } else if (isProdDev) {
       if (route === 'dashboard')           mc.innerHTML = AdminViews.renderDashboard(user.role, user);
@@ -2470,7 +2474,7 @@ App = (() => {
 
             const isCancelled = dc.status === 'cancelled';
             const isPending   = dc.status === 'pending';
-            const fieldLabel  = dc.field ? `Design Change · ${dc.field}` : 'Design Change';
+            const fieldLabel  = dc.field ? `Style Change · ${dc.field}` : 'Style Change';
             const labelHtml   = isCancelled ? `<s>${fieldLabel}</s>` : fieldLabel;
             const statusBadge = isPending
               ? `<span class="tag" style="font-size:0.65rem;background:rgba(234,179,8,.15);color:#eab308;margin-left:6px">Pending</span>`
@@ -3093,7 +3097,7 @@ App.openRecostRequestModal = function(styleId, programId) {
       <div class="form-group">
         <label class="form-label">Change Category</label>
         <select id="rcr-cat" class="form-select">
-          <option value="Design Change">Design Change</option>
+          <option value="Style Change">Style Change</option>
           <option value="Fabric Change">Fabric Change</option>
           <option value="Quantity Change">Quantity Change</option>
           <option value="Spec Change">Spec / Tech Change</option>
@@ -3290,7 +3294,7 @@ App.bulkRequestRecost = function(programId) {
       <div class="form-group">
         <label class="form-label">Change Category</label>
         <select id="rcr-cat" class="form-select">
-          <option value="Design Change">Design Change</option>
+          <option value="Style Change">Style Change</option>
           <option value="Fabric Change">Fabric Change</option>
           <option value="Quantity Change">Quantity Change</option>
           <option value="Spec Change">Spec / Tech Change</option>
@@ -6008,12 +6012,29 @@ App.openSalesRequestDetail = function(requestId) {
     </tr>`;
   }).join('');
 
+  const srCancelBanner = r.status === 'cancelled'
+    ? (() => {
+        const staff = API.PCUsers?.allStaff?.() || [];
+        const allTCs = API.TradingCompanies?.all?.() || [];
+        const allUsers = [...staff, ...allTCs.map(tc => ({ id: tc.id, name: tc.name || tc.code, role: 'vendor' }))];
+        const actor = r.cancelledBy ? allUsers.find(u => u.id === r.cancelledBy) : null;
+        const name = r.cancelledByName || actor?.name || null;
+        const role = actor?.role || null;
+        const roleLabel = role ? ({ admin: 'Admin', pc: 'Production', planning: 'Sales', design: 'Design', tech_design: 'Tech Design', prod_dev: 'PD', vendor: 'Vendor' }[role] || role) : null;
+        const byPart  = roleLabel && name ? `by ${roleLabel} (${name})` : roleLabel ? `by ${roleLabel}` : name ? `by ${name}` : 'by System';
+        const date = r.cancelledAt ? new Date(r.cancelledAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : null;
+        const wasPart = r.previousProgramName ? ` · Was: ${r.previousProgramName}` : '';
+        return `<div style="padding:10px 14px;border-radius:8px;background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.2);font-size:0.83rem;font-weight:500;color:#ef4444;margin-bottom:12px">🚫 Cancelled ${byPart}${date ? ` on ${date}` : ''}${wasPart}</div>`;
+      })()
+    : '';
+
   App.showModal(
 
     `<div class="modal-header"><h2>${isBatchReview ? '📦' : '📝'} Sales Request — ${r.season||''} ${r.year||''}</h2><button class="btn btn-ghost btn-icon" onclick="App.closeModal()">✕</button></div>` +
     `<div class="text-sm text-muted mb-3">Retailer: <strong>${r.retailer||'—'}</strong>` +
     (r.linkedProgramId && !isBatchReview ? ' · <span class="badge badge-placed">→ Linked to Program</span>' : '') +
     (isBatchReview ? ' · <span class="badge badge-amber">📦 Batch Review — add Proj Qty &amp; Sell Price</span>' : '') + `</div>` +
+    srCancelBanner +
     srTimelineHtml +
     `<div class="table-wrap" style="max-height:360px;overflow-y:auto"><table>
       <thead><tr>
@@ -7163,7 +7184,7 @@ App.openDesignChangeModal = function(styleId) {
   App.showModal(
     `<div class="modal-header" style="display:block;margin-bottom:20px">` +
     `<div style="display:flex;justify-content:space-between;align-items:center">` +
-    `<h2>${isLocked ? '🔒' : '📝'} Design Change — ${style.styleNumber}</h2>` +
+    `<h2>${isLocked ? '🔒' : '📝'} Style Change — ${style.styleNumber}</h2>` +
     `<button class="btn btn-ghost btn-icon" onclick="App.closeModal()">✕</button></div>` +
     `<div class="text-sm text-muted mt-1">${style.styleName||''} ${isLocked ? '· <span style=\'color:#f59e0b\'>Locked Program</span>' : ''}</div></div>` +
     lockBanner +
@@ -7218,7 +7239,7 @@ App.saveDesignChange = async function(e, styleId, programId) {
       styleId,
       styleIds:    [styleId],
       status:      'pending_sales',
-      category:    field || 'Design Change',
+      category:    field || 'Style Change',
       note:        desc,
       previousValue: prev,
       newValue:    newVal,
