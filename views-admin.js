@@ -108,11 +108,22 @@ const AdminViews = (() => {
     const openRequests   = allSalesReqs.filter(r => !r.linkedProgramId);
     const reqMissingData = allSalesReqs.filter(r => !r.linkedProgramId && (r.styles||[]).some(s => !s.projQty || !s.projSell));
 
-    // Style conversion rate
+    // Style conversion rate (kept for designSection tile)
     const handoffStyleCount = allHandoffs.reduce((sum, h) => sum + (h.stylesList||[]).length, 0);
     const salesStyleSet     = new Set(allSalesReqs.flatMap(r => (r.styles||[]).map(s => s.styleNumber)));
     const salesStyleCount   = salesStyleSet.size;
     const conversionRate    = handoffStyleCount > 0 ? Math.round((salesStyleCount / handoffStyleCount) * 100) : 0;
+
+    // Split funnel KPIs for productionSection
+    // KPI 1 — Design → Sales: styles from non-cancelled SRs / all handoff styles
+    const d2sNum  = new Set(
+      allSalesReqs
+        .filter(r => r.status !== 'cancelled')
+        .flatMap(r => (r.styles || []).map(s => s.styleNumber).filter(Boolean))
+    ).size;
+    const d2sRate = handoffStyleCount > 0 ? Math.round((d2sNum / handoffStyleCount) * 100) : 0;
+    // KPI 2 — Sales → Placed: placed styles / active non-cancelled styles in costing programs
+    const s2pRate = totalStyles > 0 ? Math.round((placedStyles / totalStyles) * 100) : 0;
 
     // Action items
     const flagCount    = allFlags.length;
@@ -408,7 +419,8 @@ const AdminViews = (() => {
         ${kpi('🎨','Open Handoffs', openHandoffs.length, 'Awaiting sales request', '#6366f1', 'design-handoff')}
         ${kpi('📝','Open Sales Requests', openRequests.length, 'Not yet proposed', '#f59e0b', 'sales-requests')}
         ${kpi('⏳','Pending Proposals', progDraft, 'Awaiting PC acknowledge', '#a855f7', 'programs')}
-        ${kpi('📈','Style Conversion', `${conversionRate}%`, `${salesStyleCount} of ${handoffStyleCount} styles`, conversionRate >= 80 ? '#22c55e' : '#f59e0b')}
+        ${kpi('📊','Design → Sales', `${d2sRate}%`, `${d2sNum} of ${handoffStyleCount} styles`, d2sRate >= 80 ? '#22c55e' : d2sRate >= 50 ? '#f59e0b' : '#ef4444', 'design-handoff')}
+        ${kpi('🎯','Sales → Placed', `${s2pRate}%`, `${placedStyles} of ${totalStyles} styles`, s2pRate >= 80 ? '#22c55e' : s2pRate >= 50 ? '#f59e0b' : '#ef4444', 'programs')}
       </div>
 
       ${sec('🏭 TC Costing Progress')}
