@@ -3081,7 +3081,7 @@ const AdminViews = (() => {
             ? `<span class="badge badge-costing">⏳ Submitted to Sales</span>`
             : hasBatches
               ? `<span class="badge badge-costing" style="cursor:pointer" onclick="App.navigate('handoff-detail','${h.id}')" title="${releasedCount}/${totalStyles} styles released">↗ ${releasedCount}/${totalStyles} released</span>`
-              : `<button class="btn btn-secondary btn-sm" onclick="App.openConvertHandoffModal('${h.id}')">Convert →</button>`;
+              : `<button class="btn btn-secondary btn-sm" onclick="App.openConvertHandoffModal('${h.id}')">📤 Submit for Costing</button>`;
       const styleCount  = (h.stylesList||[]).length;
       const fabricCount = (h.fabricsList||[]).length;
       const batchPill   = hasBatches
@@ -3265,7 +3265,7 @@ const AdminViews = (() => {
         : r.linkedProgramId
           ? `<span class="badge badge-placed" style="cursor:pointer" onclick="App.navigate('cost-summary','${r.linkedProgramId}')">→ Program</span>`
           : hasQtyPrice
-            ? `<button class="btn btn-primary btn-sm" onclick="App.proposeProgramFromRequest('${r.id}')">🚀 Propose Program</button>`
+            ? `<button class="btn btn-primary btn-sm" onclick="App.proposeProgramFromRequest('${r.id}')">📤 Submit for Costing</button>`
             : `<span class="badge badge-pending" title="Add Proj Qty and Sell Price to all styles first">Needs Qty/Price</span>`;
       // Check if there's a matching unlinked handoff for reconciliation
       const matchingHandoff = !r.sourceHandoffId ? allHandoffs.find(h => h.season === r.season && h.year === r.year && !h.linkedProgramId) : null;

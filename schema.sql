@@ -358,6 +358,8 @@ CREATE TABLE IF NOT EXISTS design_handoffs (
   cancelled_by_name       TEXT,
   previous_program_id     TEXT,
   previous_program_name   TEXT,
+  created_by              TEXT,
+  created_by_name         TEXT,
   created_at              TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
 
@@ -630,7 +632,7 @@ CREATE INDEX IF NOT EXISTS idx_capacity_lines_factory ON capacity_plan_lines(fac
 
 CREATE TABLE IF NOT EXISTS sales_requests (
   id                    TEXT PRIMARY KEY,
-  status                TEXT NOT NULL DEFAULT 'submitted',  -- submitted | converted | cancelled
+  status                TEXT NOT NULL DEFAULT 'submitted',  -- draft | submitted | converted | cancelled | batch-review
   season                TEXT,
   year                  TEXT,
   brand                 TEXT,
@@ -651,12 +653,14 @@ CREATE TABLE IF NOT EXISTS sales_requests (
   start_date            TEXT,
   end_date              TEXT,
   vendors_assigned_at   TEXT,
-  cancelled_at          TEXT,
-  cancelled_by          TEXT,
-  cancelled_by_name     TEXT,
-  previous_program_id   TEXT,
-  previous_program_name TEXT,
-  created_at            TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+  cancelled_at              TEXT,
+  cancelled_by              TEXT,
+  cancelled_by_name         TEXT,
+  previous_program_id       TEXT,
+  previous_program_name     TEXT,
+  submitted_for_costing_at  TEXT,
+  submitted_for_costing_by  TEXT,
+  created_at                TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
 
 -- ── Design Changes ────────────────────────────────────────────

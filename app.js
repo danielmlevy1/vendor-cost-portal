@@ -5936,7 +5936,8 @@ App.openNewSalesRequestModal = function() {
     </div>
     <div class="modal-footer">
       <button type="button" class="btn btn-secondary" onclick="App.closeModal()">Cancel</button>
-      <button type="submit" class="btn btn-primary">Save Request</button>
+      <button type="button" class="btn btn-secondary" onclick="App.saveSalesRequest(event,'draft')">💾 Save Draft</button>
+      <button type="submit" class="btn btn-primary">📤 Submit for Costing</button>
     </div>
   </form>`, 'modal-lg');
 };
@@ -5957,9 +5958,9 @@ App.seedSalesFromHandoff = function() {
   ta.value = ['Style #,Style Name,Proj Qty,Proj Sell,Fabrication', ...h.stylesList.map(s => `${s.styleNumber},${s.styleName||''},,, ${s.fabrication||''}`)].join('\n');
 };
 
-App.saveSalesRequest = async function(e) {
+App.saveSalesRequest = async function(e, mode) {
   e.preventDefault();
-  const user       = App._getState()?.user || {};
+  const isDraft    = mode === 'draft';
   const season     = document.getElementById('sr-season')?.value    || '';
   const year       = document.getElementById('sr-year')?.value      || '';
   const brand      = document.getElementById('sr-brand')?.value     || '';
@@ -5987,12 +5988,20 @@ App.saveSalesRequest = async function(e) {
         fabrication: r['fabrication']||Object.values(r)[4]||'' };
     }).filter(s => s.styleNumber);
   }
-  await API.SalesRequests.create({ season, year, brand, retailer, gender, styles, sourceHandoffId: handoffId||null,
+  const created = await API.SalesRequests.create({
+    status: isDraft ? 'draft' : 'submitted',
+    season, year, brand, retailer, gender, styles,
+    sourceHandoffId: handoffId || null,
     inWhseDate, costDueDate,
-    salesSubmittedAt: new Date().toISOString(),
-    submittedByName: user?.name||user?.email||'', submittedById: user?.id||'' });
+    salesSubmittedAt: isDraft ? null : new Date().toISOString(),
+  });
   App.closeModal();
-  App.navigate('sales-request');
+  if (isDraft) {
+    App.navigate('sales-requests');
+  } else {
+    await App.navigate('sales-requests');
+    if (created?.id) App.openSalesRequestDetail(created.id);
+  }
 };
 
 App.openSalesRequestDetail = function(requestId) {
@@ -6100,9 +6109,9 @@ App.openSalesRequestDetail = function(requestId) {
       </div>
       <div style="display:flex;gap:8px">
         <button class="btn btn-secondary" onclick="App.closeModal()">Close</button>
-        ${canEdit && isBatchReview ? `<button class="btn btn-primary" onclick="App.saveSalesRequestEdits('${r.id}')">💾 Save &amp; Confirm Batch</button>` : ''}
-        ${canEdit && !isBatchReview ? `<button class="btn btn-primary" onclick="App.saveSalesRequestEdits('${r.id}')">💾 Save Changes</button>` : ''}
-        ${canEdit && !isBatchReview ? `<button class="btn btn-primary ml-2" onclick="App.closeModal();App.proposeProgramFromRequest('${r.id}')">✅ Create Program</button>` : ''}
+        ${canEdit && isBatchReview ? `<button class="btn btn-primary" onclick="App.saveSalesRequestEdits('${r.id}','batch')">💾 Save &amp; Confirm Batch</button>` : ''}
+        ${canEdit && !isBatchReview ? `<button class="btn btn-secondary" onclick="App.saveSalesRequestEdits('${r.id}','draft')">💾 Save Draft</button>` : ''}
+        ${canEdit && !isBatchReview ? `<button class="btn btn-primary ml-2" onclick="App.closeModal();App.proposeProgramFromRequest('${r.id}')">📤 Submit for Costing</button>` : ''}
       </div>
     </div>`, 'modal-xl');
 };
@@ -6485,7 +6494,7 @@ App.handleSRFile = function(event) {
 };
 
 // ── Save inline edits from the detail modal directly ─────────────────────────
-App.saveSalesRequestEdits = async function(requestId) {
+App.saveSalesRequestEdits = async function(requestId, mode) {
   const r = API.SalesRequests.get(requestId);
   if (!r) return;
 
@@ -6504,12 +6513,18 @@ App.saveSalesRequestEdits = async function(requestId) {
   });
 
   const patch = { styles: newActive, cancelledStyles: newCancelled };
-  // Transition batch-review → submitted once Sales has entered quantities
-  if (r.status === 'batch-review') patch.status = 'submitted';
+  // batch mode: transition batch-review → submitted; draft mode: keep current status
+  if (mode === 'batch') patch.status = 'submitted';
 
   await API.SalesRequests.update(requestId, patch);
-  App.closeModal();
-  App.navigate('sales-requests');
+
+  if (mode === 'draft') {
+    // Keep modal open — just show a brief toast
+    App.showToast('Draft saved');
+  } else {
+    App.closeModal();
+    App.navigate('sales-requests');
+  }
 };
 
 App.deleteSalesRequest = async function(id) {
@@ -6764,7 +6779,7 @@ App.proposeProgramFromRequest = function(requestId) {
     API.cache.internalPrograms.find(ip => ip.brand === r.brand && ip.tier === r.retailer)?.targetMargin || 0;
   App.showModal(`
   <div class="modal-header">
-    <h2>✅ Create Costing Program</h2>
+    <h2>📤 Submit for Costing</h2>
     <button class="btn btn-ghost btn-icon" onclick="App.closeModal()">✕</button>
   </div>
   <p class="text-muted mb-3">All ${(r.styles||[]).length} styles transfer automatically. Pre-allocated vendors carry forward too.</p>
@@ -6778,7 +6793,7 @@ App.proposeProgramFromRequest = function(requestId) {
   <form onsubmit="App.saveProposeProgram(event,'${requestId}')">
     <div class="modal-footer">
       <button type="button" class="btn btn-secondary" onclick="App.closeModal()">Cancel</button>
-      <button type="submit" class="btn btn-primary">✅ Create Program</button>
+      <button type="submit" class="btn btn-primary">📤 Submit for Costing</button>
     </div>
   </form>`, 'modal-lg');
 };

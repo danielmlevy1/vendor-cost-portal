@@ -435,6 +435,12 @@ function runMigrations() {
   addColumn('design_handoffs', 'cancelled_by_name', 'TEXT');
   addColumn('sales_requests',  'cancelled_by',      'TEXT');
   addColumn('sales_requests',  'cancelled_by_name', 'TEXT');
+
+  // v16: draft workflow + visibility scoping
+  addColumn('sales_requests',  'submitted_for_costing_at', 'TEXT');
+  addColumn('sales_requests',  'submitted_for_costing_by', 'TEXT');
+  addColumn('design_handoffs', 'created_by',               'TEXT');
+  addColumn('design_handoffs', 'created_by_name',          'TEXT');
 }
 
 // One-shot-ish per-country lead-time fill. Only overwrites rows

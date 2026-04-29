@@ -618,6 +618,8 @@ function handoffFromRow(r) {
     cancelledByName:      r.cancelled_by_name,
     previousProgramId:    r.previous_program_id,
     previousProgramName:  r.previous_program_name,
+    createdBy:            r.created_by,
+    createdByName:        r.created_by_name,
     createdAt:            r.created_at,
   };
 }
@@ -643,10 +645,16 @@ const HANDOFF_FIELDS = {
   cancelledAt:          'cancelled_at',
   previousProgramId:    'previous_program_id',
   previousProgramName:  'previous_program_name',
+  createdBy:            'created_by',
+  createdByName:        'created_by_name',
 };
 
 router.get('/design-handoffs', requireAuth, (req, res) => {
-  res.json(db.prepare('SELECT * FROM design_handoffs ORDER BY created_at DESC').all().map(handoffFromRow));
+  const isDesign = req.user?.role === 'design';
+  const rows = isDesign
+    ? db.prepare('SELECT * FROM design_handoffs WHERE submitted_for_costing = 1 OR created_by = ? OR created_by IS NULL ORDER BY created_at DESC').all(req.user.id)
+    : db.prepare('SELECT * FROM design_handoffs ORDER BY created_at DESC').all();
+  res.json(rows.map(handoffFromRow));
 });
 
 router.get('/design-handoffs/:id', requireAuth, (req, res) => {
@@ -667,14 +675,17 @@ router.post('/design-handoffs', requireAuth, requireRole('admin', 'pc', 'design'
       (id, season, year, brand, tier, gender,
        styles_list, fabrics_list, trims_list,
        styles_uploaded, fabrics_uploaded, trims_uploaded,
-       supplier_request_number, created_at)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+       supplier_request_number, created_by, created_by_name, created_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
   `).run(id, b.season || null, b.year || null, b.brand || null, b.tier || null, b.gender || null,
          json(stylesList), json(fabricsList), json(trimsList),
          stylesList.length  > 0 ? 1 : 0,
          fabricsList.length > 0 ? 1 : 0,
          trimsList.length   > 0 ? 1 : 0,
-         b.supplierRequestNumber || null, now());
+         b.supplierRequestNumber || null,
+         req.user?.id   || null,
+         req.user?.name || null,
+         now());
 
   // Upsert any fabrics into the fabric library
   if (fabricsList.length) {
@@ -1115,12 +1126,14 @@ function srFromRow(r) {
     startDate:          r.start_date,
     endDate:            r.end_date,
     vendorsAssignedAt:    r.vendors_assigned_at,
-    cancelledAt:          r.cancelled_at,
-    cancelledBy:          r.cancelled_by,
-    cancelledByName:      r.cancelled_by_name,
-    previousProgramId:    r.previous_program_id,
-    previousProgramName:  r.previous_program_name,
-    createdAt:            r.created_at,
+    cancelledAt:              r.cancelled_at,
+    cancelledBy:              r.cancelled_by,
+    cancelledByName:          r.cancelled_by_name,
+    previousProgramId:        r.previous_program_id,
+    previousProgramName:      r.previous_program_name,
+    submittedForCostingAt:    r.submitted_for_costing_at,
+    submittedForCostingBy:    r.submitted_for_costing_by,
+    createdAt:                r.created_at,
   };
 }
 
@@ -1143,13 +1156,17 @@ const SR_FIELDS = {
   startDate:            'start_date',
   endDate:              'end_date',
   vendorsAssignedAt:    'vendors_assigned_at',
-  cancelledAt:          'cancelled_at',
-  previousProgramId:    'previous_program_id',
-  previousProgramName:  'previous_program_name',
+  cancelledAt:              'cancelled_at',
+  previousProgramId:        'previous_program_id',
+  previousProgramName:      'previous_program_name',
+  submittedForCostingAt:    'submitted_for_costing_at',
+  submittedForCostingBy:    'submitted_for_costing_by',
 };
 
 router.get('/sales-requests', requireAuth, (req, res) => {
-  const rows = db.prepare('SELECT * FROM sales_requests ORDER BY created_at DESC').all();
+  const rows = db.prepare(
+    "SELECT * FROM sales_requests WHERE status != 'draft' OR requested_by = ? ORDER BY created_at DESC"
+  ).all(req.user?.id || '');
   res.json(rows.map(srFromRow));
 });
 
@@ -1169,15 +1186,15 @@ router.post('/sales-requests', requireAuth, (req, res) => {
        styles, cancelled_styles, source_handoff_id,
        requested_by, requested_by_name, sales_submitted_at, created_at)
     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-  `).run(id, b.status || 'submitted',
+  `).run(id, b.status || 'draft',
          b.season || null, b.year || null, b.brand || null, b.gender || null, b.retailer || null,
          b.inWhseDate || b.inWarehouseDate || null,
          b.costDueDate || b.costRequestDueDate || null,
          json(b.styles || []),
          json(b.cancelledStyles || []),
          b.sourceHandoffId || null,
-         b.requestedBy || b.submittedById || null,
-         b.requestedByName || b.submittedByName || null,
+         req.user?.id   || null,
+         req.user?.name || null,
          b.salesSubmittedAt || null,
          now());
   res.status(201).json(srFromRow(db.prepare('SELECT * FROM sales_requests WHERE id = ?').get(id)));
@@ -1270,9 +1287,14 @@ router.post('/sales-requests/:id/convert', requireAuth, requireRole('admin', 'pc
         now());
     }
 
-    // Mark SR as converted
-    db.prepare('UPDATE sales_requests SET status = ?, linked_program_id = ? WHERE id = ?')
-      .run('converted', progId, req.params.id);
+    // Mark SR as converted and stamp the submission audit fields
+    const userLabel = req.user?.name || req.user?.email || req.user?.id || null;
+    db.prepare(`
+      UPDATE sales_requests
+      SET status = 'converted', linked_program_id = ?,
+          submitted_for_costing_at = ?, submitted_for_costing_by = ?
+      WHERE id = ?
+    `).run(progId, now(), userLabel, req.params.id);
   })();
 
   const updatedSR = srFromRow(db.prepare('SELECT * FROM sales_requests WHERE id = ?').get(req.params.id));
