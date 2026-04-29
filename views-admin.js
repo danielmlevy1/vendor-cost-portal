@@ -33,6 +33,7 @@ const AdminViews = (() => {
     const isAdmin    = role === 'admin';
     const isPC       = role === 'pc';
     const isPlanning = role === 'planning';
+    const isSales    = role === 'sales';
     const isDesign   = role === 'design';
     const isAdminOrPC = isAdmin || isPC;
 
@@ -610,7 +611,7 @@ const AdminViews = (() => {
       </div>` : ''}`;
 
     // ── Assemble page ─────────────────────────────────────────
-    const mainSection = isPlanning ? salesSection : isDesign ? designSection : productionSection;
+    const mainSection = (isPlanning || isSales) ? salesSection : isDesign ? designSection : productionSection;
     const teamLabel   = ip
       ? `<span class="badge badge-costing" style="font-size:0.8rem;padding:4px 10px;vertical-align:middle">${ip.name}</span>`
       : '';
@@ -2444,7 +2445,7 @@ const AdminViews = (() => {
     const allCusts = API.cache.customers;
     const custs    = custIds.map(id => allCusts.find(c => c.id === id)).filter(Boolean);
     const allBuys  = API.CustomerBuys.byProgram(programId);
-    const canEdit  = role === 'admin' || role === 'pc' || role === 'planning';
+    const canEdit  = role === 'admin' || role === 'pc' || role === 'planning' || role === 'sales';
 
     if (!prog) return `<div class="empty-state"><div class="icon">⚠️</div><h3>Program not found</h3></div>`;
 
@@ -3205,9 +3206,8 @@ const AdminViews = (() => {
   // ── Sales Request ──────────────────────────────────────────
   function renderSalesRequests() {
     const _srUser      = typeof App !== 'undefined' && App._getState ? App._getState()?.user || {} : {};
-    const _isSalesMgmt = _srUser.role === 'planning' && _srUser.departmentId === 'dept-sales-price';
-    const _isPlanning  = (_srUser.role === 'planning' && !_isSalesMgmt) || _srUser.role === 'sales';
-    const _canCreateSR = _isSalesMgmt || _srUser.role === 'admin' || _srUser.role === 'pc';
+    const _isPlanning  = _srUser.role === 'planning';
+    const _canCreateSR = _srUser.role === 'admin' || _srUser.role === 'pc' || _srUser.role === 'sales';
     const requests = API.SalesRequests.all().slice().reverse();
     const allHandoffs = API.DesignHandoffs.all();
     // Handoffs not yet linked to a Sales Request — available for Sales to build from
@@ -4883,7 +4883,7 @@ const AdminViews = (() => {
     const canEditSellStatus = perms.canEditSellStatus  !== false;
     const canEditTechNotes  = perms.canEditTechNotes  === true;  // only tech_design
     const isTechDesignRole  = userRole === 'tech_design';
-    const isDesignLike      = userRole === 'design' || userRole === 'tech_design' || userRole === 'planning';
+    const isDesignLike      = userRole === 'design' || userRole === 'tech_design';
 
     // Pull consideration data — count entries per style
     const consideringList = JSON.parse(localStorage.getItem('vcp_considering') || '[]');

@@ -109,12 +109,11 @@ App = (() => {
     // useful first look); still-costing programs land on the active
     // costing surface for the role.
     const prog = API.Programs.get(id);
-    if (prog && prog.status === 'Placed' && (u.role === 'admin' || u.role === 'pc' || u.role === 'planning')) {
+    if (prog && prog.status === 'Placed' && (u.role === 'admin' || u.role === 'pc' || u.role === 'planning' || u.role === 'sales')) {
       return navigate('overview', id);
     }
-    // Sales Management (planning role + dept-sales-price) gets the full cost-summary view
-    const isSalesMgmt = u.role === 'planning' && u.departmentId === 'dept-sales-price';
-    if (!isSalesMgmt && (u.role === 'design' || u.role === 'planning')) navigate('design-costing', id);
+    // planning → design-costing (no pricing); sales → cost-summary (full pricing)
+    if (u.role === 'design' || u.role === 'planning') navigate('design-costing', id);
     else navigate('cost-summary', id);
   }
 
@@ -189,8 +188,8 @@ App = (() => {
       const internalUsers = API.cache.users;
       const allTCs        = API.cache.tradingCompanies;
 
-      const roleLabelMap = { admin: 'Admin', pc: 'Production', planning: 'Planning & Sales', design: 'Design', tech_design: 'Tech Design', prod_dev: 'Product Development' };
-      const roleOrder    = ['admin', 'pc', 'planning', 'design', 'tech_design', 'prod_dev'];
+      const roleLabelMap = { admin: 'Admin', pc: 'Production', planning: 'Planning', sales: 'Sales', design: 'Design', tech_design: 'Tech Design', prod_dev: 'Product Development' };
+      const roleOrder    = ['admin', 'pc', 'planning', 'sales', 'design', 'tech_design', 'prod_dev'];
 
       // Group internal users by role for visual sections
       const grouped = roleOrder.map(role => ({
@@ -399,7 +398,7 @@ App = (() => {
     if (userEl) userEl.innerHTML = `
       <div class="user-info" onclick="App.logout()" title="Sign out">
         <div class="user-avatar">${state.user.name.charAt(0).toUpperCase()}</div>
-        <div><div class="user-name">${state.user.name}</div><div class="user-role">${isAdmin ? 'Admin' : isPC ? 'Production Coordinator' : isPlanning ? 'Planning & Sales' : isSales ? 'Sales' : isDesign ? 'Design' : isTechDesign ? 'Tech Design' : isProdDev ? 'Product Development' : 'Trading Co.'}</div></div>
+        <div><div class="user-name">${state.user.name}</div><div class="user-role">${isAdmin ? 'Admin' : isPC ? 'Production Coordinator' : isPlanning ? 'Planning' : isSales ? 'Sales' : isDesign ? 'Design' : isTechDesign ? 'Tech Design' : isProdDev ? 'Product Development' : 'Trading Co.'}</div></div>
       </div>`;
 
     renderRoute();
@@ -2146,6 +2145,18 @@ App = (() => {
         <input id="staff-email" class="input" placeholder="Email"       value="${u?.email || ''}">
         <input id="staff-pwd"   class="input" type="password" placeholder="${u ? 'New password (leave blank to keep)' : 'Password'}">
         <div>
+          <label class="form-label" style="margin-bottom:4px">Role</label>
+          <select id="staff-role" class="form-select">
+            <option value="admin"      ${u?.role==='admin'      ?'selected':''}>Admin</option>
+            <option value="pc"         ${(!u||u?.role==='pc')   ?'selected':''}>Production</option>
+            <option value="planning"   ${u?.role==='planning'   ?'selected':''}>Planning</option>
+            <option value="sales"      ${u?.role==='sales'      ?'selected':''}>Sales</option>
+            <option value="design"     ${u?.role==='design'     ?'selected':''}>Design</option>
+            <option value="tech_design"${u?.role==='tech_design'?'selected':''}>Tech Design</option>
+            <option value="prod_dev"   ${u?.role==='prod_dev'   ?'selected':''}>Product Development</option>
+          </select>
+        </div>
+        <div>
           <label class="form-label" style="margin-bottom:4px">Department</label>
           <select id="staff-dept" class="form-select">
             <option value="">— No Department —</option>
@@ -2163,15 +2174,16 @@ App = (() => {
     const name   = (document.getElementById('staff-name')?.value  || '').trim();
     const email  = (document.getElementById('staff-email')?.value || '').trim();
     const pwd    = (document.getElementById('staff-pwd')?.value   || '').trim();
+    const role   = (document.getElementById('staff-role')?.value  || 'pc');
     const deptId = (document.getElementById('staff-dept')?.value  || '') || null;
     if (!name || !email) return alert('Name and email are required.');
     if (userId) {
-      const upd = { name, email, departmentId: deptId };
+      const upd = { name, email, role, departmentId: deptId };
       if (pwd) upd.password = pwd;
       await API.PCUsers.update(userId, upd);
     } else {
       if (!pwd) return alert('Password is required for new accounts.');
-      await API.PCUsers.create({ name, email, password: pwd, role: 'pc', departmentId: deptId });
+      await API.PCUsers.create({ name, email, password: pwd, role, departmentId: deptId });
     }
     closeModal();
     navigate('staff');
@@ -2993,20 +3005,20 @@ App.getPerms = function() {
   if (user.role === 'vendor') return { canViewFOB: true, canViewSellPrice: false, canEdit: true, canEditTechPack: false, canEditSellStatus: false, isAdmin: false, brandFilter: [], tierFilter: [] };
   const dept = user.departmentId ? API.Departments.get(user.departmentId) : null;
   if (!dept) {
-    // Legacy role-based fallback — Sales/Planning NEVER see FOB/LDP
+    // Role-based fallback (no department assigned)
     if (user.role === 'design')      return { canViewFOB: false, canViewSellPrice: false, canEdit: false, canEditTechPack: true,  canEditSellStatus: false, canEditTechNotes: false, isAdmin: false, brandFilter: [], tierFilter: [] };
-  if (user.role === 'tech_design') return { canViewFOB: false, canViewSellPrice: false, canEdit: false, canEditTechPack: false, canEditSellStatus: false, canEditTechNotes: true,  isAdmin: false, brandFilter: [], tierFilter: [] };
-  if (user.role === 'prod_dev')    return { canViewFOB: false, canViewSellPrice: false, canEdit: false, canEditTechPack: false, canEditSellStatus: false, canEditTechNotes: false, isAdmin: false, brandFilter: [], tierFilter: [] };
-    if (user.role === 'planning') return { canViewFOB: false, canViewSellPrice: true,  canEdit: false, canEditTechPack: false, canEditSellStatus: true,  isAdmin: false, brandFilter: [], tierFilter: [] };
+    if (user.role === 'tech_design') return { canViewFOB: false, canViewSellPrice: false, canEdit: false, canEditTechPack: false, canEditSellStatus: false, canEditTechNotes: true,  isAdmin: false, brandFilter: [], tierFilter: [] };
+    if (user.role === 'prod_dev')    return { canViewFOB: false, canViewSellPrice: false, canEdit: false, canEditTechPack: false, canEditSellStatus: false, canEditTechNotes: false, isAdmin: false, brandFilter: [], tierFilter: [] };
+    if (user.role === 'planning')    return { canViewFOB: false, canViewSellPrice: false, canEdit: false, canEditTechPack: false, canEditSellStatus: true,  isAdmin: false, brandFilter: [], tierFilter: [] };
+    if (user.role === 'sales')       return { canViewFOB: true,  canViewSellPrice: true,  canEdit: false, canEditTechPack: false, canEditSellStatus: true,  isAdmin: false, brandFilter: [], tierFilter: [] };
     return FULL;
   }
-  // Design and regular Sales: FOB/LDP always hidden
-  // Sales Management (dept-sales-price) gets FOB from their dept setting (true)
-  const isSalesMgmt = user.role === 'planning' && user.departmentId === 'dept-sales-price';
-  const forcedFOBOff = !isSalesMgmt && (user.role === 'planning' || user.role === 'design');
+  // With a department: planning/design always have FOB forced off; planning also has sell price forced off
+  const forcedFOBOff      = user.role === 'planning' || user.role === 'design';
+  const forcedSellOff     = user.role === 'planning';
   return {
-    canViewFOB:        forcedFOBOff ? false : !!dept.canViewFOB,
-    canViewSellPrice:  user.role === 'design' ? false : !!dept.canViewSellPrice,
+    canViewFOB:        forcedFOBOff  ? false : !!dept.canViewFOB,
+    canViewSellPrice:  forcedSellOff || user.role === 'design' ? false : !!dept.canViewSellPrice,
     canEdit:           !!dept.canEdit,
     canEditTechPack:   !!dept.canEditTechPack,
     canEditSellStatus: !!dept.canEditSellStatus,
@@ -3527,8 +3539,7 @@ App._renderRecostBanner = function(programId) {
   if (!API.RecostRequests) return '';
   const user    = App._getState()?.user || App._stateRef?.user || {};
   const role    = user.role || '';
-  const dept    = (user.department || '').toLowerCase();
-  const isSales = dept.includes('sales');
+  const isSales = role === 'sales';
   const isPC    = role === 'admin' || role === 'pc';
 
   const all     = API.RecostRequests.byProgram(programId);
