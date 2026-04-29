@@ -933,7 +933,7 @@ router.patch('/styles/:id', requireAuth, (req, res) => {
       techPackStatus:  'tech_pack_status',
       techDesignNotes: 'tech_design_notes',
     };
-  } else if (role === 'planning') {
+  } else if (role === 'planning' || role === 'sales') {
     allowedFields = {
       sellStatus:    'sell_status',
       sellStatusNote:'sell_status_note',
@@ -1239,7 +1239,7 @@ router.get('/programs/:id/customer-assignments', requireAuth, (req, res) => {
 });
 
 // PUT /api/programs/:id/customer-assignments  — replace list
-router.put('/programs/:id/customer-assignments', requireAuth, requireRole('admin', 'pc', 'planning'), (req, res) => {
+router.put('/programs/:id/customer-assignments', requireAuth, requireRole('admin', 'pc', 'planning', 'sales'), (req, res) => {
   const customerIds = req.body.customerIds;
   if (!Array.isArray(customerIds)) return res.status(400).json({ error: 'customerIds array required' });
 
@@ -1267,7 +1267,7 @@ router.get('/programs/:id/customer-buys', requireAuth, (req, res) => {
 });
 
 // PUT /api/programs/:id/customer-buys/:styleId  — upsert all buys for one style
-router.put('/programs/:id/customer-buys/:styleId', requireAuth, requireRole('admin', 'pc', 'planning'), (req, res) => {
+router.put('/programs/:id/customer-buys/:styleId', requireAuth, requireRole('admin', 'pc', 'planning', 'sales'), (req, res) => {
   const buys = req.body.buys;
   if (!Array.isArray(buys)) return res.status(400).json({ error: 'buys array required' });
 

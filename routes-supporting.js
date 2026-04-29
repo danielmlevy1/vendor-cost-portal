@@ -1442,7 +1442,7 @@ router.post('/recost-requests', requireAuth, (req, res) => {
 });
 
 // POST /api/recost-requests/:id/sales-approve
-router.post('/recost-requests/:id/sales-approve', requireAuth, requireRole('admin', 'pc', 'planning'), (req, res) => {
+router.post('/recost-requests/:id/sales-approve', requireAuth, requireRole('admin', 'pc', 'planning', 'sales'), (req, res) => {
   const row = db.prepare('SELECT * FROM recost_requests WHERE id = ?').get(req.params.id);
   if (!row) return res.status(404).json({ error: 'Not found' });
   const ts = now();
@@ -1456,7 +1456,7 @@ router.post('/recost-requests/:id/sales-approve', requireAuth, requireRole('admi
 
 // POST /api/recost-requests/:id/reject
 // Body: { note?, stage? }  stage defaults to 'production'
-router.post('/recost-requests/:id/reject', requireAuth, requireRole('admin', 'pc', 'planning'), (req, res) => {
+router.post('/recost-requests/:id/reject', requireAuth, requireRole('admin', 'pc', 'planning', 'sales'), (req, res) => {
   const row = db.prepare('SELECT * FROM recost_requests WHERE id = ?').get(req.params.id);
   if (!row) return res.status(404).json({ error: 'Not found' });
   const stage = req.body.stage || 'production';
@@ -2024,7 +2024,7 @@ function validateSections(body) {
   return null;
 }
 
-const FACTORY_INTERNAL_ROLES_READ = ['admin', 'pc', 'planning', 'design', 'tech_design', 'prod_dev'];
+const FACTORY_INTERNAL_ROLES_READ = ['admin', 'pc', 'planning', 'sales', 'design', 'tech_design', 'prod_dev'];
 const FACTORY_ADMIN_ROLES         = ['admin', 'pc'];
 
 // GET /api/factories
@@ -2237,8 +2237,8 @@ router.delete('/factories/:id', requireAuth, requireRole('admin'), (req, res) =>
 // Waves and per-role comment fields follow the same role slice.
 
 const DP_ROLES_ADMIN = ['admin', 'pc'];
-const DP_ROLES_SALES = ['planning'];
-const DP_ROLES_ALL   = ['admin', 'pc', 'planning', 'vendor'];
+const DP_ROLES_SALES = ['planning', 'sales'];
+const DP_ROLES_ALL   = ['admin', 'pc', 'planning', 'sales', 'vendor'];
 
 function dpLineFromRow(r) {
   return {
@@ -2317,9 +2317,9 @@ function allowedDpLineFields(role) {
     vendorComments:'vendor_comments', productionComments:'production_comments', salesComments:'sales_comments',
     status:'status',
   };
-  if (role === 'planning') return {
+  if (role === 'planning' || role === 'sales') return {
     salesInWhseDate:'sales_in_whse_date',
-    productionCargoReadySales:'production_cargo_ready_sales',     // Sales can edit their own view of it
+    productionCargoReadySales:'production_cargo_ready_sales',
     salesWaves:'sales_waves', salesComments:'sales_comments',
   };
   if (role === 'vendor') return {
