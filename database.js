@@ -443,8 +443,10 @@ function runMigrations() {
   addColumn('design_handoffs', 'created_by_name',          'TEXT');
 
   // v17: promote 'sales' to a first-class role (was role='planning'+dept-sales-price workaround)
+  // Two criteria: users explicitly assigned dept-sales-price, OR the known seed user 'sales1'
+  // that predates dept assignment (has department_id=null).
   const migrated = db.prepare(
-    "UPDATE users SET role = 'sales' WHERE role = 'planning' AND department_id = 'dept-sales-price'"
+    "UPDATE users SET role = 'sales' WHERE role = 'planning' AND (department_id = 'dept-sales-price' OR id = 'sales1')"
   ).run();
   if (migrated.changes > 0) console.log(`[db] v17: migrated ${migrated.changes} user(s) planning→sales`);
 }
