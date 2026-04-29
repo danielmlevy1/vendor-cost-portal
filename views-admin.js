@@ -3204,8 +3204,10 @@ const AdminViews = (() => {
 
   // ── Sales Request ──────────────────────────────────────────
   function renderSalesRequests() {
-    const _srUser    = typeof App !== 'undefined' && App._getState ? App._getState()?.user || {} : {};
-    const _isPlanning = _srUser.role === 'planning' || _srUser.role === 'sales';
+    const _srUser      = typeof App !== 'undefined' && App._getState ? App._getState()?.user || {} : {};
+    const _isSalesMgmt = _srUser.role === 'planning' && _srUser.departmentId === 'dept-sales-price';
+    const _isPlanning  = (_srUser.role === 'planning' && !_isSalesMgmt) || _srUser.role === 'sales';
+    const _canCreateSR = _isSalesMgmt || _srUser.role === 'admin' || _srUser.role === 'pc';
     const requests = API.SalesRequests.all().slice().reverse();
     const allHandoffs = API.DesignHandoffs.all();
     // Handoffs not yet linked to a Sales Request — available for Sales to build from
@@ -3429,13 +3431,13 @@ const AdminViews = (() => {
           bucketSection('✅ Complete',    srBuckets.complete,   'complete',   { open: false, accent: '#6366f1' }),
           bucketSection('✕ Cancelled',    srBuckets.cancelled,  'cancelled',  { open: false, accent: '#94a3b8' }),
         ].join('')
-      : (!batchReviewRequests.length ? `<div class="card text-center text-muted" style="padding:40px">No sales requests yet. Build one from a Design Handoff above${_isPlanning ? '.' : ', or click "+ New Request" to create manually.'}</div>` : '');
+      : (!batchReviewRequests.length ? `<div class="card text-center text-muted" style="padding:40px">No sales requests yet. Build one from a Design Handoff above${_canCreateSR ? ', or click "+ New Request" to create manually.' : '.'}</div>` : '');
 
     return `
     <div class="page-header">
       <div><h1 class="page-title">Sales Costing Requests</h1>
         <p class="page-subtitle">Costing requests from Planning &amp; Sales — convert to a Program when ready</p></div>
-      ${_isPlanning ? '' : `<button class="btn btn-primary" onclick="App.openNewSalesRequestModal()">＋ New Request</button>`}
+      ${_canCreateSR ? `<button class="btn btn-primary" onclick="App.openNewSalesRequestModal()">＋ New Request</button>` : ''}
     </div>
     ${batchReviewPanel}
     ${availablePanel}
