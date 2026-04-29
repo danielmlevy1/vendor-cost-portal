@@ -671,6 +671,8 @@ const AdminViews = (() => {
     //   null / 'open' → Draft + Costing (+ handoffs + sales requests)
     //   'placed'      → Placed programs only (no handoffs/requests)
     //   'cancelled'   → Cancelled programs only
+    const _progRole    = typeof App !== 'undefined' && App._getState ? (App._getState()?.user?.role || '') : '';
+    const _canNewProg  = _progRole === 'admin' || _progRole === 'pc';
     const bucket = statusFilter || 'open';
     const allHandoffs = API.DesignHandoffs.all();
     const allRequests = API.SalesRequests.all();
@@ -738,7 +740,7 @@ const AdminViews = (() => {
     <div class="page-header">
       <div><h1 class="page-title">${bucketMeta.title}</h1><p class="page-subtitle">${bucketMeta.subtitle}</p></div>
       <div style="display:flex;gap:8px;align-items:center">
-        <button class="btn btn-primary" onclick="App.openProgramModal()">＋ New Program</button>
+        ${_canNewProg ? `<button class="btn btn-primary" onclick="App.openProgramModal()">＋ New Program</button>` : ''}
       </div>
     </div>
     <div class="filter-bar mb-3">
@@ -2994,6 +2996,9 @@ const AdminViews = (() => {
 
   // ── Design Handoff ─────────────────────────────────────────
   function renderDesignHandoff() {
+    const _hdRole       = typeof App !== 'undefined' && App._getState ? (App._getState()?.user?.role || '') : '';
+    const _canNewHandoff = _hdRole === 'admin' || _hdRole === 'pc' || _hdRole === 'design';
+    const _canSubmitHd   = _hdRole === 'admin' || _hdRole === 'pc' || _hdRole === 'design' || _hdRole === 'tech_design';
     const handoffs  = API.DesignHandoffs.all().slice().reverse();
     const allSRs    = API.SalesRequests.all();
 
@@ -3082,7 +3087,7 @@ const AdminViews = (() => {
             ? `<span class="badge badge-costing">⏳ Submitted to Sales</span>`
             : hasBatches
               ? `<span class="badge badge-costing" style="cursor:pointer" onclick="App.navigate('handoff-detail','${h.id}')" title="${releasedCount}/${totalStyles} styles released">↗ ${releasedCount}/${totalStyles} released</span>`
-              : `<button class="btn btn-secondary btn-sm" onclick="App.openConvertHandoffModal('${h.id}')">📤 Submit for Costing</button>`;
+              : (_canSubmitHd ? `<button class="btn btn-secondary btn-sm" onclick="App.openConvertHandoffModal('${h.id}')">📤 Submit for Costing</button>` : `<span class="badge badge-pending">Ready</span>`);
       const styleCount  = (h.stylesList||[]).length;
       const fabricCount = (h.fabricsList||[]).length;
       const batchPill   = hasBatches
@@ -3196,7 +3201,7 @@ const AdminViews = (() => {
         <p class="page-subtitle">Design Handoff files submitted by Design — one Excel with Styles, Fabrics &amp; Trims tabs.</p></div>
       <div style="display:flex;gap:8px">
         <button class="btn btn-ghost btn-sm" onclick="App.downloadHandoffTemplate()">⬇ Template</button>
-        <button class="btn btn-primary" onclick="App.openNewHandoffModal()">＋ New Handoff</button>
+        ${_canNewHandoff ? `<button class="btn btn-primary" onclick="App.openNewHandoffModal()">＋ New Handoff</button>` : ''}
       </div>
     </div>
     ${reconcilePanel}
