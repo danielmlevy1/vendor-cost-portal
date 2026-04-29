@@ -39,7 +39,7 @@ function seedUsers() {
     { id: 'admin',     name: 'Admin Team',       email: 'admin@company.com',      password: 'admin123',  role: 'admin'    },
     { id: 'pc1',       name: 'Production Team',  email: 'pc@company.com',         password: 'pc123',     role: 'pc'       },
     { id: 'planning1', name: 'Planning & Sales', email: 'planning@company.com',   password: 'plan123',   role: 'planning' },
-    { id: 'sales1',    name: 'Sales',            email: 'sales@company.com',      password: 'sales123',  role: 'planning' },
+    { id: 'sales1',    name: 'Sales',            email: 'sales@company.com',      password: 'sales123',  role: 'sales'    },
     { id: 'design1',   name: 'Design Team',      email: 'design@company.com',     password: 'design123', role: 'design'   },
     { id: 'techdes1',  name: 'Tech Design',      email: 'techdesign@company.com', password: 'tech123',   role: 'design'   },
   ];
@@ -441,6 +441,12 @@ function runMigrations() {
   addColumn('sales_requests',  'submitted_for_costing_by', 'TEXT');
   addColumn('design_handoffs', 'created_by',               'TEXT');
   addColumn('design_handoffs', 'created_by_name',          'TEXT');
+
+  // v17: promote 'sales' to a first-class role (was role='planning'+dept-sales-price workaround)
+  const migrated = db.prepare(
+    "UPDATE users SET role = 'sales' WHERE role = 'planning' AND department_id = 'dept-sales-price'"
+  ).run();
+  if (migrated.changes > 0) console.log(`[db] v17: migrated ${migrated.changes} user(s) planning→sales`);
 }
 
 // One-shot-ish per-country lead-time fill. Only overwrites rows

@@ -51,7 +51,7 @@ CREATE TABLE IF NOT EXISTS users (
   name                TEXT NOT NULL,
   email               TEXT NOT NULL UNIQUE,
   password_hash       TEXT NOT NULL,        -- bcrypt hash; never store plaintext
-  role                TEXT NOT NULL,        -- admin | pc | planning | design | vendor
+  role                TEXT NOT NULL,        -- admin | pc | planning | sales | design | tech_design | prod_dev | vendor
   department_id       TEXT,                 -- FK → departments.id
   internal_program_id TEXT,                 -- FK → internal_programs.id (legacy field)
   created_at          TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
