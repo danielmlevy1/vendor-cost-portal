@@ -1410,11 +1410,12 @@ const API = (() => {
     },
     async nav() {
       // Lightweight preload for sidebar badges
-      const isVendor = _userRole() === 'vendor';
+      const isVendor    = _userRole() === 'vendor';
+      const _canPendCh  = _userRole() === 'admin' || _userRole() === 'pc';
       await Promise.all([
         preload.global(),
         RecostRequests.fetchQueues().catch(() => {}),
-        isVendor ? Promise.resolve() : PendingChanges.fetch().catch(() => {}),
+        _canPendCh ? PendingChanges.fetch().catch(() => {}) : Promise.resolve(),
         isVendor ? Promise.resolve() : DesignChanges.fetchAll().catch(() => {}),
       ]);
     },
@@ -1451,11 +1452,11 @@ const API = (() => {
       await Promise.all([Users.all(), Departments.all(), PendingChanges.fetch()]);
     },
     async tradingCompanies() {
-      const isVendor = _userRole() === 'vendor';
+      const _canPendCh = _userRole() === 'admin' || _userRole() === 'pc';
       await Promise.all([
         TradingCompanies.all(),
         CooRates.all(),
-        isVendor ? Promise.resolve() : PendingChanges.fetch().catch(() => {}),
+        _canPendCh ? PendingChanges.fetch().catch(() => {}) : Promise.resolve(),
       ]);
     },
     async designHandoff() {

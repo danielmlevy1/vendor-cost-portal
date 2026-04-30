@@ -4011,7 +4011,7 @@ App.openNewHandoffModal = function() {
   App.showModal(`
   <div class="modal-header"><h2>🎨 New Design Handoff</h2><button class="btn btn-ghost btn-icon" onclick="App.closeModal()">✕</button></div>
   <p class="text-muted mb-3">Upload the Design Handoff file — one Excel with three tabs: <strong>Styles, Fabrics, Trims</strong>. Use the template below to get started.</p>
-  <form onsubmit="App.saveNewHandoff(event)">
+  <form onsubmit="return false">
     <div class="form-row form-row-2">
       <div class="form-group"><label class="form-label">Season</label>
         <select class="form-select" id="dh-season">${seasons.map(s => '<option>' + s + '</option>').join('')}</select>
@@ -4069,7 +4069,8 @@ App.openNewHandoffModal = function() {
     <div class="modal-footer">
       <button type="button" class="btn btn-secondary" onclick="App.closeModal()">Cancel</button>
       <button type="button" class="btn btn-ghost btn-sm" onclick="App.downloadHandoffTemplate()">⬇ Handoff Template</button>
-      <button type="submit" class="btn btn-primary" id="dh-submit-btn" disabled>Save Handoff</button>
+      <button type="button" class="btn btn-secondary" onclick="App.saveNewHandoff('draft')">💾 Save Draft</button>
+      <button type="button" class="btn btn-primary" id="dh-submit-btn" disabled onclick="App.saveNewHandoff('submit')">📤 Submit for Costing</button>
     </div>
   </form>`, 'modal-lg');
 };
@@ -5538,34 +5539,35 @@ App._applyHandoffMerge = async function(handoffId) {
   }
 };
 
-App.saveNewHandoff = async function(e) {
-  e.preventDefault();
+App.saveNewHandoff = async function(mode) {
+  // mode: 'draft' | 'submit'
   const user   = App._getState()?.user || {};
   const season = document.getElementById('dh-season')?.value || '';
   const year   = document.getElementById('dh-year')?.value   || '';
-  const brand  = document.getElementById('dh-brand')?.value || '';
+  const brand  = document.getElementById('dh-brand')?.value  || '';
   const gender = document.getElementById('dh-gender')?.value || '';
   const tier   = document.getElementById('dh-tier')?.value   || '';
   const supplierRequestNumber = (document.getElementById('dh-supplier-req')?.value || '').trim();
-  const rows   = App._handoffParsedRows;
 
   if (!brand)  { alert('Please select a Brand.'); return; }
   if (!gender) { alert('Please select a Gender.'); return; }
   if (!tier)   { alert('Please select a Tier of Distribution.'); return; }
-  if (!rows || !rows.length) { alert('Please upload a style list file first.'); return; }
 
-  const stylesList = rows.map(r => ({
+  const rows = App._handoffParsedRows;
+  if (mode === 'submit' && (!rows || !rows.length)) {
+    alert('Please upload a style list file before submitting for costing.');
+    return;
+  }
+
+  const stylesList = (rows || []).map(r => ({
     styleNumber: r.styleNumber,
     styleName:   r.styleName,
     fabric:      r.fabric,
     notes:       r.notes,
-    fabrication: r.fabric, // alias so Sales Request seeding still works
+    fabrication: r.fabric,
     batchLabel:  r.batchLabel || 'Batch 1',
   }));
 
-  // Include fabric and trim lists if parsed from the unified 3-tab file.
-  // _processHandoffFile stores fabrics as {refNumber, name, ...}, so normalise
-  // to the canonical {fabricCode, fabricName, ...} schema before saving.
   const trimsList   = (App._handoffParsedTrims || []).map(t => ({
     refNumber: t.refNumber||'', supplier: t.supplier||'', description: t.description||'', color: t.color||'', unit: t.unit||'', notes: t.notes||'',
   }));
@@ -5579,16 +5581,26 @@ App.saveNewHandoff = async function(e) {
     notes:      f.notes      || '',
   }));
 
-  await API.DesignHandoffs.create({ season, year, brand, gender, tier, supplierRequestNumber, stylesList, fabricsList, trimsList, trimsUploaded: trimsList.length > 0,
+  const newHandoff = await API.DesignHandoffs.create({
+    season, year, brand, gender, tier, supplierRequestNumber,
+    stylesList, fabricsList, trimsList,
+    trimsUploaded:   trimsList.length > 0,
     submittedByName: user?.name || user?.email || '',
-    submittedById:   user?.id  || '',
+    submittedById:   user?.id   || '',
   });
+
   App._handoffParsedRows    = null;
   App._handoffParsedFabrics = null;
   App._handoffParsedTrims   = null;
-  App._handoffParsedFabrics = null;
   App.closeModal();
-  App.navigate('design-handoff');
+
+  if (mode === 'submit') {
+    await App.submitHandoffForCosting(newHandoff.id);
+    // submitHandoffForCosting handles navigate + toast
+  } else {
+    App.navigate('design-handoff');
+    App.showToast('Draft saved ✓');
+  }
 };
 
 // ── Edit existing Design Handoff header ─────────────────────────────────────
@@ -5604,6 +5616,20 @@ App.openEditHandoffModal = function(handoffId) {
 
   const selOpts = (arr, cur) => arr.map(v => `<option${v === cur ? ' selected' : ''}>${v}</option>`).join('');
 
+  const currentUser = App._getState()?.user || {};
+  const isCreator   = h.createdBy === currentUser.id || !h.createdBy;
+  const isDraft     = !h.submittedForCosting;
+  const isCancelled = h.status === 'cancelled';
+
+  const footer = isCancelled
+    ? `<button type="button" class="btn btn-secondary" onclick="App.closeModal()">Cancel</button>`
+    : isDraft && isCreator
+      ? `<button type="button" class="btn btn-secondary" onclick="App.closeModal()">Cancel</button>
+         <button type="button" class="btn btn-secondary" onclick="App.saveEditHandoff('${h.id}','draft')">💾 Save Draft</button>
+         <button type="button" class="btn btn-primary"   onclick="App.saveEditHandoff('${h.id}','submit')">📤 Submit for Costing</button>`
+      : `<button type="button" class="btn btn-secondary" onclick="App.closeModal()">Cancel</button>
+         <button type="button" class="btn btn-primary"   onclick="App.saveEditHandoff('${h.id}','changes')">💾 Save Changes</button>`;
+
   App.showModal(`
   <div class="modal-header">
     <div>
@@ -5612,7 +5638,7 @@ App.openEditHandoffModal = function(handoffId) {
     </div>
     <button class="btn btn-ghost btn-icon" onclick="App.closeModal()">✕</button>
   </div>
-  <form onsubmit="App.saveEditHandoff(event,'${h.id}')">
+  <form onsubmit="return false">
     <div class="form-row form-row-2">
       <div class="form-group">
         <label class="form-label">Season</label>
@@ -5650,15 +5676,12 @@ App.openEditHandoffModal = function(handoffId) {
       <label class="form-label">Supplier Request #</label>
       <input class="form-input" id="eh-supplier-req" value="${h.supplierRequestNumber||''}" placeholder="e.g. SR-2026-014">
     </div>
-    <div class="modal-footer">
-      <button type="button" class="btn btn-secondary" onclick="App.closeModal()">Cancel</button>
-      <button type="submit" class="btn btn-primary">Save Changes</button>
-    </div>
+    <div class="modal-footer">${footer}</div>
   </form>`);
 };
 
-App.saveEditHandoff = async function(e, handoffId) {
-  e.preventDefault();
+App.saveEditHandoff = async function(handoffId, mode) {
+  // mode: 'draft' | 'submit' | 'changes'
   const season = document.getElementById('eh-season')?.value || '';
   const year   = document.getElementById('eh-year')?.value   || '';
   const brand  = document.getElementById('eh-brand')?.value.trim() || '';
@@ -5670,9 +5693,25 @@ App.saveEditHandoff = async function(e, handoffId) {
   if (!gender) { alert('Please select a Gender.'); return; }
   if (!tier)   { alert('Please select a Tier of Distribution.'); return; }
 
+  if (mode === 'submit') {
+    const h = API.DesignHandoffs.get(handoffId);
+    if (!h?.stylesList?.length) {
+      // TODO(polish): allow file upload directly in the edit modal to avoid this redirect
+      alert('Please upload styles before submitting for costing. Open the handoff detail page to upload the style list.');
+      return;
+    }
+  }
+
   await API.DesignHandoffs.update(handoffId, { season, year, brand, gender, tier, supplierRequestNumber });
   App.closeModal();
-  App.navigate('design-handoff');
+
+  if (mode === 'submit') {
+    await App.submitHandoffForCosting(handoffId);
+    // submitHandoffForCosting handles navigate + toast
+  } else {
+    App.navigate('design-handoff');
+    App.showToast(mode === 'draft' ? 'Draft saved ✓' : 'Changes saved ✓');
+  }
 };
 
 App.openHandoffDetail = function(handoffId) {
@@ -5744,29 +5783,39 @@ App.submitHandoffForCosting = async function(handoffId) {
   const h    = API.DesignHandoffs.get(handoffId);
   if (!h) return;
   const user = App._getState()?.user || App._stateRef?.user || {};
-  // Build pre-populated Sales Request from handoff data
   const styles = (h.stylesList || []).map(s => ({
     styleNumber:  s.styleNumber || '',
     styleName:    s.styleName   || '',
     fabrication:  s.fabrication || s.fabric || '',
-    projQty:      0,   // Sales fills in
-    projSell:     0,   // Sales fills in
+    projQty:      0,
+    projSell:     0,
   }));
-  await API.SalesRequests.create({
-    season:          h.season  || '',
-    year:            h.year    || '',
-    brand:           h.brand   || '',
-    retailer:        h.tier    || '',
-    gender:          h.gender  || '',
-    styles,
-    sourceHandoffId: handoffId,
-    submittedByName: user.name || user.email || 'Design',
-    submittedById:   user.id   || '',
-    status:          'submitted',
-    note:            'Auto-created from Design Handoff',
-  });
-  await API.DesignHandoffs.update(handoffId, { submittedForCosting: true });
+  let alreadySubmitted = false;
+  try {
+    await API.SalesRequests.create({
+      season:          h.season  || '',
+      year:            h.year    || '',
+      brand:           h.brand   || '',
+      retailer:        h.tier    || '',
+      gender:          h.gender  || '',
+      styles,
+      sourceHandoffId: handoffId,
+      submittedByName: user.name || user.email || 'Design',
+      submittedById:   user.id   || '',
+      status:          'submitted',
+      note:            'Auto-created from Design Handoff',
+    });
+  } catch (err) {
+    if (err.status === 409) {
+      alreadySubmitted = true;
+    } else {
+      App.showToast('Submission failed: ' + (err.message || 'Unknown error'));
+      return;
+    }
+  }
+  // Server atomically sets submitted_for_costing=1 — navigate re-fetches fresh state
   App.navigate('design-handoff');
+  App.showToast(alreadySubmitted ? 'Already submitted for costing' : 'Handoff submitted for costing ✓');
 };
 
 // Legacy: keep saveConvertHandoff for any existing references but redirect
@@ -6007,17 +6056,15 @@ App.saveSalesRequest = async function(e, mode) {
     salesSubmittedAt: isDraft ? null : new Date().toISOString(),
   });
   App.closeModal();
-  if (isDraft) {
-    App.navigate('sales-requests');
-  } else {
-    await App.navigate('sales-requests');
-    if (created?.id) App.openSalesRequestDetail(created.id);
-  }
+  App.navigate('sales-requests');
+  if (!isDraft) App.showToast('SR submitted for costing ✓');
 };
 
 App.openSalesRequestDetail = function(requestId) {
   const r = API.SalesRequests.get(requestId);
   if (!r) return;
+  const _srDetailRole    = typeof App !== 'undefined' && App._getState ? (App._getState()?.user?.role || '') : '';
+  const _canConvertSR    = _srDetailRole === 'admin' || _srDetailRole === 'pc';
   const d   = new Date(r.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   const fmtDate  = iso => iso ? new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : null;
   const fmtShort = iso => iso ? new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
@@ -6050,6 +6097,8 @@ App.openSalesRequestDetail = function(requestId) {
 
   // Batch-review SRs are already linked to a program but still need qty/sell edits
   const isBatchReview = r.status === 'batch-review';
+  const isDraftSR     = r.status === 'draft';
+  const isCancelledSR = r.status === 'cancelled';
   const canEdit = !r.linkedProgramId || isBatchReview;
 
   const allStyles = [...(r.styles||[]), ...(r.cancelledStyles||[])];
@@ -6103,28 +6152,62 @@ App.openSalesRequestDetail = function(requestId) {
     (isBatchReview ? ' · <span class="badge badge-amber">📦 Batch Review — add Proj Qty &amp; Sell Price</span>' : '') + `</div>` +
     srCancelBanner +
     srTimelineHtml +
-    `<div class="table-wrap" style="max-height:360px;overflow-y:auto"><table>
+    `<div class="table-wrap" style="max-height:340px;overflow-y:auto"><table id="sr-detail-table">
       <thead><tr>
         <th>Style #</th><th>Style Name</th><th>Fabric</th>
         <th>Proj Qty</th><th>Proj Sell</th><th>Notes</th><th>Status</th>
       </tr></thead>
       <tbody>${rows || '<tr><td colspan="7" class="text-muted text-center">No styles</td></tr>'}</tbody>
     </table></div>` +
+    (canEdit && !isBatchReview && !isCancelledSR
+      ? `<div style="padding:4px 0 2px;text-align:right">
+           <button type="button" class="btn btn-ghost btn-xs" onclick="App._srAddStyleRow()">＋ Add Style Row</button>
+         </div>`
+      : '') +
     `<div class="modal-footer" style="display:flex;gap:8px;flex-wrap:wrap;justify-content:space-between;align-items:center">
       <div style="display:flex;gap:8px;align-items:center">
         <button class="btn btn-ghost btn-sm" onclick="App.downloadSalesRequest('${r.id}')">⬇ Download Excel</button>
-        ${canEdit ? `<label class="btn btn-ghost btn-sm" style="cursor:pointer;margin:0">
-          ⬆ Import Excel
+        ${canEdit ? `<label style="display:inline-flex;align-items:center;gap:5px;padding:5px 12px;border:1.5px dashed var(--border);border-radius:var(--radius-sm);cursor:pointer;font-size:0.82rem;font-weight:500;background:var(--bg-elevated);transition:border-color .15s"
+          onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'"
+          ondragover="event.preventDefault();this.style.borderColor='var(--accent)'"
+          ondragleave="this.style.borderColor='var(--border)'"
+          ondrop="event.preventDefault();this.style.borderColor='var(--border)';App._srDropImport(event,'${r.id}')">
+          📎 Import / Append
           <input type="file" accept=".xlsx,.xls,.csv" style="display:none" onchange="App.importSalesRequestXlsx(event,'${r.id}')">
         </label>` : ''}
       </div>
       <div style="display:flex;gap:8px">
-        <button class="btn btn-secondary" onclick="App.closeModal()">Close</button>
+        ${!isCancelledSR ? `<button class="btn btn-secondary" onclick="App.closeModal()">Close</button>` : ''}
         ${canEdit && isBatchReview ? `<button class="btn btn-primary" onclick="App.saveSalesRequestEdits('${r.id}','batch')">💾 Save &amp; Confirm Batch</button>` : ''}
-        ${canEdit && !isBatchReview ? `<button class="btn btn-secondary" onclick="App.saveSalesRequestEdits('${r.id}','draft')">💾 Save Draft</button>` : ''}
-        ${canEdit && !isBatchReview ? `<button class="btn btn-primary ml-2" onclick="App.closeModal();App.proposeProgramFromRequest('${r.id}')">📤 Submit for Costing</button>` : ''}
+        ${canEdit && !isBatchReview && !isCancelledSR && isDraftSR  ? `<button class="btn btn-secondary" onclick="App.saveSalesRequestEdits('${r.id}','draft')">💾 Save Draft</button>` : ''}
+        ${canEdit && !isBatchReview && !isCancelledSR && !isDraftSR ? `<button class="btn btn-secondary" onclick="App.saveSalesRequestEdits('${r.id}','changes')">💾 Save Changes</button>` : ''}
+        ${canEdit && !isBatchReview && !isCancelledSR && isDraftSR  ? `<button class="btn btn-primary" onclick="App.saveSalesRequestEdits('${r.id}','submit')">📤 Submit for Costing</button>` : ''}
+        ${canEdit && !isBatchReview && !isCancelledSR && !isDraftSR && _canConvertSR ? `<button class="btn btn-primary ml-2" onclick="App.closeModal();App.proposeProgramFromRequest('${r.id}')">📤 Submit for Costing</button>` : ''}
       </div>
     </div>`, 'modal-xl');
+};
+
+App._srDropImport = function(event, requestId) {
+  const file = event.dataTransfer?.files?.[0];
+  if (!file) return;
+  App.importSalesRequestXlsx({ target: { files: [file], value: '' } }, requestId);
+};
+
+App._srAddStyleRow = function() {
+  const tbody = document.querySelector('#sr-detail-table tbody');
+  if (!tbody) return;
+  const tr = document.createElement('tr');
+  tr.className = 'sr-new-row';
+  tr.innerHTML =
+    `<td style="padding:4px 6px"><input class="form-input sr-new-sn-input" type="text" placeholder="Style #" style="width:110px;padding:4px 6px"></td>` +
+    `<td style="padding:4px 6px"><input class="form-input sr-new-nm-input" type="text" placeholder="Style Name" style="width:150px;padding:4px 6px"></td>` +
+    `<td class="text-muted text-sm">—</td>` +
+    `<td style="padding:4px 6px"><input class="form-input sr-new-qty-input" type="number" min="0" placeholder="Qty" style="width:80px;padding:4px 6px"></td>` +
+    `<td style="padding:4px 6px"><input class="form-input sr-new-sell-input" type="number" min="0" step="0.01" placeholder="$0.00" style="width:90px;padding:4px 6px"></td>` +
+    `<td style="padding:4px 6px"><input class="form-input sr-new-note-input" type="text" placeholder="Notes…" style="width:130px;padding:4px 6px"></td>` +
+    `<td><button type="button" style="background:none;border:none;cursor:pointer;color:#ef4444;font-size:0.85rem;padding:4px" onclick="this.closest('tr').remove()">✕</button></td>`;
+  tbody.appendChild(tr);
+  tr.querySelector('.sr-new-sn-input')?.focus();
 };
 
 App.convertSalesRequest = function(requestId) {
@@ -6323,9 +6406,11 @@ App.importSalesRequestXlsx = async function(event, requestId) {
 
       const hdr  = r => (r||'').toString().toLowerCase().replace(/[\s#_]/g,'');
       const cols = rows[0].map(hdr);
-      const snCol   = cols.findIndex(h => h.includes('style') && (h.includes('num') || h.includes('#') || h === 'stylenumber'));
+      const snCol   = cols.findIndex(h => h.includes('style') && (h.includes('num') || h.includes('#') || h === 'stylenumber' || h === 'style'));
+      const nmCol   = cols.findIndex(h => h.includes('name') || h.includes('desc') || h.includes('title'));
       const qtyCol  = cols.findIndex(h => h.includes('qty')  || h.includes('quantity'));
       const sellCol = cols.findIndex(h => h.includes('sell') || h.includes('price'));
+      const fabCol  = cols.findIndex(h => h.includes('fabric') || h.includes('material'));
       const noteCol = cols.findIndex(h => h.includes('note'));
       const stCol   = cols.findIndex(h => h.includes('status'));
 
@@ -6334,17 +6419,18 @@ App.importSalesRequestXlsx = async function(event, requestId) {
       const r = API.SalesRequests.get(requestId);
       if (!r) return;
 
-      // Build lookup from file
+      // Build lookup from file keyed by uppercased style number
       const lookup = {};
       rows.slice(1).forEach(row => {
         const sn = (row[snCol]||'').toString().toUpperCase().trim();
         if (sn) lookup[sn] = row;
       });
 
+      // Update existing styles from file
       const applyMatch = (s) => {
         const key   = (s.styleNumber||'').toUpperCase().trim();
         const match = lookup[key];
-        if (!match) return s; // no change
+        if (!match) return s;
         return {
           ...s,
           projQty:   qtyCol  >= 0 && match[qtyCol]  !== '' ? parseFloat(match[qtyCol])  || 0 : s.projQty,
@@ -6354,20 +6440,52 @@ App.importSalesRequestXlsx = async function(event, requestId) {
         };
       };
 
-      const allStyles     = [...(r.styles||[]), ...(r.cancelledStyles||[])].map(applyMatch);
-      const newActive     = allStyles.filter(s => !s.cancelled);
-      const newCancelled  = allStyles.filter(s =>  s.cancelled);
-      const updated       = Object.keys(lookup).filter(sn =>
+      const allStyles   = [...(r.styles||[]), ...(r.cancelledStyles||[])].map(applyMatch);
+      const updatedCount = Object.keys(lookup).filter(sn =>
         allStyles.some(s => (s.styleNumber||'').toUpperCase() === sn)
       ).length;
 
-      const importPatch = { styles: newActive, cancelledStyles: newCancelled };
+      // Append net-new style numbers from the file (deduped against existing)
+      const existingKeys = new Set(allStyles.map(s => (s.styleNumber||'').toUpperCase().trim()));
+      const addedStyles  = rows.slice(1)
+        .map(row => {
+          const sn = (row[snCol]||'').toString().toUpperCase().trim();
+          if (!sn || existingKeys.has(sn)) return null;
+          existingKeys.add(sn); // guard against duplicates within the file itself
+          return {
+            styleNumber:   (row[snCol]||'').toString().trim(),
+            styleName:     nmCol  >= 0 ? (row[nmCol]  ||'').toString().trim() : '',
+            projQty:       qtyCol  >= 0 && row[qtyCol]  !== '' ? parseFloat(row[qtyCol])  || null : null,
+            projSell:      sellCol >= 0 && row[sellCol] !== '' ? parseFloat(row[sellCol]) || null : null,
+            projSellPrice: sellCol >= 0 && row[sellCol] !== '' ? parseFloat(row[sellCol]) || null : null,
+            fabrication:   fabCol  >= 0 ? (row[fabCol]  ||'').toString().trim() : '',
+            notes:         noteCol >= 0 && row[noteCol] !== '' ? row[noteCol].toString() : '',
+            cancelled:     false,
+          };
+        })
+        .filter(Boolean);
+
+      const finalActive     = [...allStyles.filter(s => !s.cancelled), ...addedStyles];
+      const finalCancelled  = allStyles.filter(s => s.cancelled);
+
+      const importPatch = { styles: finalActive, cancelledStyles: finalCancelled };
       if (r.status === 'batch-review') importPatch.status = 'submitted';
       await API.SalesRequests.update(requestId, importPatch);
       event.target.value = '';
-      App.closeModal();
-      App.navigate('sales-requests');
-      setTimeout(() => alert(`✅ Imported successfully — ${updated} styles updated from ${file.name}.`), 150);
+
+      const toastMsg = addedStyles.length
+        ? `Import done: ${updatedCount} updated, ${addedStyles.length} added ✓`
+        : `Import done: ${updatedCount} style${updatedCount !== 1 ? 's' : ''} updated ✓`;
+
+      if (r.status === 'batch-review') {
+        App.closeModal();
+        App.navigate('sales-requests');
+        App.showToast(toastMsg);
+      } else {
+        App.closeModal();
+        App.openSalesRequestDetail(requestId);
+        App.showToast(toastMsg);
+      }
     } catch (err) {
       alert('❌ Could not read file: ' + err.message);
     }
@@ -6523,18 +6641,36 @@ App.saveSalesRequestEdits = async function(requestId, mode) {
     else newActive.push(updated);
   });
 
+  // Collect inline rows added via "+ Add Style Row" button
+  const existingSNs = new Set(allStyles.map(s => (s.styleNumber||'').toUpperCase().trim()));
+  document.querySelectorAll('.sr-new-row').forEach(tr => {
+    const sn = (tr.querySelector('.sr-new-sn-input')?.value || '').trim();
+    if (!sn || existingSNs.has(sn.toUpperCase())) return;
+    const qty  = parseFloat(tr.querySelector('.sr-new-qty-input')?.value)  || null;
+    const sell = parseFloat(tr.querySelector('.sr-new-sell-input')?.value) || null;
+    newActive.push({
+      styleNumber: sn,
+      styleName:   (tr.querySelector('.sr-new-nm-input')?.value   || '').trim(),
+      projQty:     qty,
+      projSell:    sell,
+      projSellPrice: sell,
+      notes:       (tr.querySelector('.sr-new-note-input')?.value || '').trim(),
+    });
+  });
+
   const patch = { styles: newActive, cancelledStyles: newCancelled };
-  // batch mode: transition batch-review → submitted; draft mode: keep current status
-  if (mode === 'batch') patch.status = 'submitted';
+  if (mode === 'batch' || mode === 'submit') patch.status = 'submitted';
 
   await API.SalesRequests.update(requestId, patch);
 
   if (mode === 'draft') {
-    // Keep modal open — just show a brief toast
     App.showToast('Draft saved');
+  } else if (mode === 'changes') {
+    App.showToast('Changes saved');
   } else {
     App.closeModal();
     App.navigate('sales-requests');
+    if (mode === 'submit') App.showToast('SR submitted for costing ✓');
   }
 };
 

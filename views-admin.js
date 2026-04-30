@@ -691,8 +691,8 @@ const AdminViews = (() => {
       shownRequests = [];
     } else {
       shownPrograms = allPrograms.filter(p => p.status === 'Draft' || p.status === 'Costing');
-      shownHandoffs = allHandoffs.filter(h => !h.linkedProgramId && !allRequests.find(r => r.sourceHandoffId === h.id));
-      shownRequests = allRequests.filter(r => !r.linkedProgramId);
+      shownHandoffs = allHandoffs.filter(h => h.status !== 'cancelled' && !h.linkedProgramId && !allRequests.find(r => r.sourceHandoffId === h.id));
+      shownRequests = allRequests.filter(r => !r.linkedProgramId && r.status !== 'cancelled');
     }
 
     const openHandoffs = shownHandoffs;
@@ -755,18 +755,19 @@ const AdminViews = (() => {
   // ── Shared stage badge (includes pre-program stages) ───────
   function stageBadge(stage) {
     const map = {
-      'Design Submitted': ['badge-costing',   '🎨'],
-      'Sales Request':    ['badge-pending',    '📝'],
-      'Draft':            ['badge-pending',    '⏳'],
-      'Costing':          ['badge-costing',    '📋'],
-      'Placed':           ['badge-placed',     '✅'],
-      'Cancelled':        ['badge-cancelled',  '✕'],
-      'cancelled':        ['badge-cancelled',  '✕'],
-      'Batch Review':     ['badge-amber',      '📦'],
-      'In Progress':      ['badge-costing',    '▶'],
-      'Batching':         ['badge-costing',    '📦'],
-      'Released':         ['badge-placed',     '↗'],
-      'Complete':         ['badge-placed',     '🏁'],
+      'Design Submitted':    ['badge-costing',    '🎨'],
+      'Sales Request':       ['badge-pending',    '📝'],
+      'Draft':               ['badge-pending',    '📝'],
+      'Submitted to Sales':  ['badge-submitted',  '⏳'],
+      'Costing':             ['badge-costing',    '📋'],
+      'Placed':              ['badge-placed',     '✅'],
+      'Cancelled':           ['badge-cancelled',  '✕'],
+      'cancelled':           ['badge-cancelled',  '✕'],
+      'Batch Review':        ['badge-amber',      '📦'],
+      'In Progress':         ['badge-costing',    '▶'],
+      'Batching':            ['badge-costing',    '📦'],
+      'Released':            ['badge-placed',     '↗'],
+      'Complete':            ['badge-placed',     '🏁'],
     };
     const [cls, icon] = map[stage] || ['badge-pending', ''];
     return `<span class="badge ${cls}">${icon} ${stage}</span>`;
@@ -963,26 +964,28 @@ const AdminViews = (() => {
     const requestRows = openRequests.map(r => {
       const sc = (r.styles || []).length;
       const projQty = (r.styles || []).reduce((s, x) => s + (parseFloat(x.projQty) || 0), 0);
-      const brandLabel = r.retailer || r.name || [r.season, r.year].filter(Boolean).join(' ') || 'Sales Request';
       const reqTCIds = r.assignedTCIds || [];
       const reqTCs   = reqTCIds.map(id => API.TradingCompanies.get(id)).filter(Boolean);
       const reqTCChips = reqTCs.length
         ? `<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px">${reqTCs.map(tc =>
             `<span class="tag" style="font-size:0.7rem;padding:2px 6px">${tc.code}</span>`).join('')}</div>`
         : `<span class="text-muted" style="font-size:0.75rem">None assigned</span>`;
+      const srStage = r.status === 'draft' ? 'Draft'
+        : r.status === 'cancelled' ? 'cancelled'
+        : 'Sales Request';
       return `<tr style="background:rgba(245,158,11,0.03)"
         data-flt-season="${r.season || ''}"
         data-flt-year="${r.year || ''}"
         data-flt-gender="${(r.gender || '').replace(/"/g, '&quot;')}"
         data-flt-brand="${(r.brand || '').replace(/"/g, '&quot;')}"
         data-flt-tier="${(r.retailer || '').replace(/"/g, '&quot;')}"
-        data-flt-stage="Sales Request">
+        data-flt-stage="${srStage}">
         <td>${r.season || dash}</td>
         <td>${r.year || dash}</td>
-        <td>${dash}</td>
-        <td class="font-bold">${brandLabel}</td>
-        <td>${dash}</td>
-        <td>${stageBadge('Sales Request')}</td>
+        <td>${r.gender ? `<span class="tag">${r.gender}</span>` : dash}</td>
+        <td class="font-bold">${r.brand || dash}</td>
+        <td>${r.retailer ? `<span class="tag" style="font-size:0.75rem">${r.retailer}</span>` : dash}</td>
+        <td>${stageBadge(srStage)}</td>
         <td>${r.number ? `<span class="tag" style="font-family:monospace;font-size:0.78rem">${r.number}</span>` : dash}</td>
         <td>${batchStateCell(r.sourceHandoffId ? API.DesignHandoffs.all().find(h => h.id === r.sourceHandoffId) : null)}</td>
         <td style="text-align:center">${sc ? `<span class="tag">${sc}</span>` : dash}</td>
@@ -3100,13 +3103,16 @@ const AdminViews = (() => {
         ? `<span class="status-dot dot-green"></span><span class="tag">${fabricCount} fabrics</span>`
         : `<span class="status-dot dot-amber"></span><button class="btn btn-ghost btn-xs" onclick="App.openAddFabricListModal('${h.id}')">+ Add Fabric List</button>`;
 
-      // Stage derived from handoff workflow state
+      // Stage derived from handoff workflow state.
+      // linkedProgramId alone is not sufficient for 'Complete' — all styles must
+      // be released. Previously both linked and sfc=1 showed 'Complete' prematurely.
       const hStage = h.status === 'cancelled' ? 'cancelled'
-        : h.linkedProgramId ? 'Complete'
-        : h.submittedForCosting ? 'Complete'
+        : h.linkedProgramId && allStylesReleased(h) ? 'Complete'
+        : h.linkedProgramId ? 'In Progress'
+        : h.submittedForCosting ? 'Submitted to Sales'
         : hasBatches && allStylesReleased(h) ? 'Released'
         : hasBatches ? 'Batching'
-        : 'In Progress';
+        : 'Draft';
 
       // Costs Due Date: from linked program's CRD if available
       const linkedProg  = h.linkedProgramId ? API.Programs.get(h.linkedProgramId) : null;
@@ -3211,8 +3217,9 @@ const AdminViews = (() => {
   // ── Sales Request ──────────────────────────────────────────
   function renderSalesRequests() {
     const _srUser      = typeof App !== 'undefined' && App._getState ? App._getState()?.user || {} : {};
-    const _isPlanning  = _srUser.role === 'planning';
-    const _canCreateSR = _srUser.role === 'admin' || _srUser.role === 'pc' || _srUser.role === 'sales';
+    const _isPlanning    = _srUser.role === 'planning';
+    const _canCreateSR   = _srUser.role === 'admin' || _srUser.role === 'pc' || _srUser.role === 'sales';
+    const _canConvertSRList = _srUser.role === 'admin' || _srUser.role === 'pc';
     const requests = API.SalesRequests.all().slice().reverse();
     const allHandoffs = API.DesignHandoffs.all();
     // Handoffs not yet linked to a Sales Request — available for Sales to build from
@@ -3271,9 +3278,11 @@ const AdminViews = (() => {
         ? cancellationBadge(r, { cascaded: !!r.previousProgramName, inline: true })
         : r.linkedProgramId
           ? `<span class="badge badge-placed" style="cursor:pointer" onclick="App.navigate('cost-summary','${r.linkedProgramId}')">→ Program</span>`
-          : hasQtyPrice
+          : _canConvertSRList && hasQtyPrice
             ? `<button class="btn btn-primary btn-sm" onclick="App.proposeProgramFromRequest('${r.id}')">📤 Submit for Costing</button>`
-            : `<span class="badge badge-pending" title="Add Proj Qty and Sell Price to all styles first">Needs Qty/Price</span>`;
+            : _canConvertSRList
+              ? `<span class="badge badge-pending" title="Add Proj Qty and Sell Price to all styles first">Needs Qty/Price</span>`
+              : srDash;
       // Check if there's a matching unlinked handoff for reconciliation
       const matchingHandoff = !r.sourceHandoffId ? allHandoffs.find(h => h.season === r.season && h.year === r.year && !h.linkedProgramId) : null;
       const reconcileBadge = matchingHandoff

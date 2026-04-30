@@ -36,7 +36,7 @@ function applyPatch(table, id, body, fieldMap) {
   for (const [camel, col] of Object.entries(fieldMap)) {
     if (body[camel] !== undefined) {
       setClauses.push(`${col} = ?`);
-      vals.push(body[camel] === '' ? null : body[camel]);
+      vals.push(body[camel] === '' ? null : typeof body[camel] === 'boolean' ? (body[camel] ? 1 : 0) : body[camel]);
     }
   }
   if (!setClauses.length) return null;
@@ -651,15 +651,23 @@ const HANDOFF_FIELDS = {
 
 router.get('/design-handoffs', requireAuth, (req, res) => {
   const isDesign = req.user?.role === 'design';
+  // "Public" = submitted for costing OR already linked to a program via batch-release.
+  // Cancelled drafts (sfc=0, no linked_program_id) stay private to their creator —
+  // mirrors the SR visibility model.
   const rows = isDesign
-    ? db.prepare('SELECT * FROM design_handoffs WHERE submitted_for_costing = 1 OR created_by = ? OR created_by IS NULL ORDER BY created_at DESC').all(req.user.id)
-    : db.prepare('SELECT * FROM design_handoffs ORDER BY created_at DESC').all();
+    ? db.prepare('SELECT * FROM design_handoffs WHERE submitted_for_costing = 1 OR linked_program_id IS NOT NULL OR created_by = ? OR created_by IS NULL ORDER BY created_at DESC').all(req.user.id)
+    : db.prepare('SELECT * FROM design_handoffs WHERE submitted_for_costing = 1 OR linked_program_id IS NOT NULL ORDER BY created_at DESC').all();
   res.json(rows.map(handoffFromRow));
 });
 
 router.get('/design-handoffs/:id', requireAuth, (req, res) => {
   const row = db.prepare('SELECT * FROM design_handoffs WHERE id = ?').get(req.params.id);
   if (!row) return res.status(404).json({ error: 'Not found' });
+  // Draft gate: mirrors SR pattern. A draft (sfc=0, not yet batch-released) is
+  // only visible to its creator. created_by IS NULL = legacy handoff, allow through.
+  const isDraft    = !row.submitted_for_costing && !row.linked_program_id;
+  const isCreator  = row.created_by === req.user?.id || row.created_by === null;
+  if (isDraft && !isCreator) return res.status(404).json({ error: 'Not found' });
   res.json(handoffFromRow(row));
 });
 
@@ -1173,11 +1181,28 @@ router.get('/sales-requests', requireAuth, (req, res) => {
 router.get('/sales-requests/:id', requireAuth, (req, res) => {
   const row = db.prepare('SELECT * FROM sales_requests WHERE id = ?').get(req.params.id);
   if (!row) return res.status(404).json({ error: 'Not found' });
+  if (row.status === 'draft' && row.requested_by !== req.user?.id) {
+    return res.status(404).json({ error: 'Not found' });
+  }
   res.json(srFromRow(row));
 });
 
 router.post('/sales-requests', requireAuth, (req, res) => {
   const b = req.body;
+
+  // Idempotency: prevent duplicate costing SRs for the same handoff.
+  // Batch-review SRs are exempt — multiple can exist per handoff.
+  if (b.sourceHandoffId && b.status !== 'batch-review') {
+    const existingSR = db.prepare(
+      "SELECT id FROM sales_requests WHERE source_handoff_id = ? AND status NOT IN ('cancelled','batch-review') LIMIT 1"
+    ).get(b.sourceHandoffId);
+    if (existingSR) {
+      // Heal the handoff flag in case a previous attempt left it unset (boolean→SQLite bug)
+      db.prepare('UPDATE design_handoffs SET submitted_for_costing = 1 WHERE id = ?').run(b.sourceHandoffId);
+      return res.status(409).json({ error: 'This handoff has already been submitted for costing', existingId: existingSR.id });
+    }
+  }
+
   const id = uid();
   db.prepare(`
     INSERT INTO sales_requests
@@ -1197,6 +1222,12 @@ router.post('/sales-requests', requireAuth, (req, res) => {
          req.user?.name || null,
          b.salesSubmittedAt || null,
          now());
+
+  // Atomically mark the source handoff as submitted for costing
+  if (b.sourceHandoffId && b.status !== 'batch-review') {
+    db.prepare('UPDATE design_handoffs SET submitted_for_costing = 1 WHERE id = ?').run(b.sourceHandoffId);
+  }
+
   res.status(201).json(srFromRow(db.prepare('SELECT * FROM sales_requests WHERE id = ?').get(id)));
 });
 

@@ -449,6 +449,29 @@ function runMigrations() {
     "UPDATE users SET role = 'sales' WHERE role = 'planning' AND (department_id = 'dept-sales-price' OR id = 'sales1')"
   ).run();
   if (migrated.changes > 0) console.log(`[db] v17: migrated ${migrated.changes} user(s) planning→sales`);
+
+  // v18: backfill null requested_by on draft SRs — assign to the first sales user found.
+  // Drafts with no owner were created before req.user.id was stamped server-side.
+  const salesUser = db.prepare("SELECT id, name FROM users WHERE role = 'sales' ORDER BY created_at LIMIT 1").get();
+  if (salesUser) {
+    const backfilled = db.prepare(
+      "UPDATE sales_requests SET requested_by = ?, requested_by_name = ? WHERE status = 'draft' AND requested_by IS NULL"
+    ).run(salesUser.id, salesUser.name);
+    if (backfilled.changes > 0) console.log(`[db] v18: backfilled ${backfilled.changes} draft SR(s) → requested_by=${salesUser.id}`);
+  }
+
+  // v19: backfill submitted_for_costing=1 on handoffs that already have costing SRs.
+  // These were left at 0 because applyPatch() threw on boolean `true` (better-sqlite3
+  // only accepts number/string/bigint/Buffer/null — not boolean).
+  const hdBackfill = db.prepare(`
+    UPDATE design_handoffs
+    SET submitted_for_costing = 1
+    WHERE id IN (
+      SELECT DISTINCT source_handoff_id FROM sales_requests
+      WHERE source_handoff_id IS NOT NULL AND status NOT IN ('cancelled','batch-review')
+    ) AND submitted_for_costing = 0
+  `).run();
+  if (hdBackfill.changes > 0) console.log(`[db] v19: backfilled submitted_for_costing on ${hdBackfill.changes} handoff(s)`);
 }
 
 // One-shot-ish per-country lead-time fill. Only overwrites rows
