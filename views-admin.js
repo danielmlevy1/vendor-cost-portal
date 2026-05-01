@@ -3060,8 +3060,8 @@ const AdminViews = (() => {
     const handoffBuckets = {
       inProgress:       activeHandoffs.filter(h => !h.linkedProgramId && !h.submittedForCosting && !(h.batchReleases || []).length && !(h.stagedBatches || []).some(b => b.status === 'staged')),
       staged:           activeHandoffs.filter(h => (h.stagedBatches || []).some(b => b.status === 'staged')),
-      batching:         activeHandoffs.filter(h => (h.batchReleases || []).length > 0 && !allStylesReleased(h)),
-      submittedToSales: activeHandoffs.filter(h => h.submittedForCosting && !h.linkedProgramId),
+      batching:         activeHandoffs.filter(h => !(h.stagedBatches || []).some(b => b.status === 'staged') && (h.batchReleases || []).length > 0 && !allStylesReleased(h)),
+      submittedToSales: activeHandoffs.filter(h => h.submittedForCosting && !h.linkedProgramId && !(h.batchReleases || []).length),
       released:         activeHandoffs.filter(h => allStylesReleased(h) && !h.submittedForCosting),
       complete:         activeHandoffs.filter(h => h.linkedProgramId && allStylesReleased(h)),
       cancelled:        handoffs.filter(h => h.status === 'cancelled'),
@@ -3115,12 +3115,12 @@ const AdminViews = (() => {
       // be released. Previously both linked and sfc=1 showed 'Complete' prematurely.
       const hasStagedBatches = (h.stagedBatches || []).some(b => b.status === 'staged');
       const hStage = h.status === 'cancelled' ? 'cancelled'
-        : hasStagedBatches ? 'Staged'
         : h.linkedProgramId && allStylesReleased(h) ? 'Complete'
+        : hasStagedBatches ? 'Staged'
+        : hasBatches && !allStylesReleased(h) ? 'Batching'
+        : hasBatches ? 'Released'
         : h.linkedProgramId ? 'In Progress'
         : h.submittedForCosting ? 'Submitted to Sales'
-        : hasBatches && allStylesReleased(h) ? 'Released'
-        : hasBatches ? 'Batching'
         : 'Draft';
 
       // Costs Due Date: from linked program's CRD if available
