@@ -3054,13 +3054,17 @@ const AdminViews = (() => {
       if (!total) return false;
       return releasedStyleIds(h).size >= total;
     };
+    // "Designer planned multi-batch release" — true when any style has a label other than
+    // the auto-stamp default ('Batch 1'). Single-batch plans that leave all labels as
+    // 'Batch 1' are treated as no-batch-planning (known edge case, accepted for launch).
+    const hasBatchLabels = h => (h.stylesList || []).some(s => s.batchLabel && s.batchLabel !== 'Batch 1');
     const activeHandoffs = handoffs.filter(h => h.status !== 'cancelled');
     const handoffBuckets = {
-      draft:            activeHandoffs.filter(h => !h.submittedForCosting && !(h.batchReleases || []).length && !(h.stagedBatches || []).some(b => b.status === 'staged')),
+      draft:            activeHandoffs.filter(h => !h.submittedForCosting && !(h.stagedBatches || []).some(b => b.status === 'staged')),
       staged:           activeHandoffs.filter(h => (h.stagedBatches || []).some(b => b.status === 'staged')),
-      batching:         activeHandoffs.filter(h => !(h.stagedBatches || []).some(b => b.status === 'staged') && (h.batchReleases || []).length > 0 && !allStylesReleased(h)),
+      batching:         activeHandoffs.filter(h => h.submittedForCosting && hasBatchLabels(h) && !allStylesReleased(h) && !(h.stagedBatches || []).some(b => b.status === 'staged')),
       complete:         activeHandoffs.filter(h => h.linkedProgramId && allStylesReleased(h)),
-      submittedToSales: activeHandoffs.filter(h => h.submittedForCosting && !(h.batchReleases || []).length),
+      submittedToSales: activeHandoffs.filter(h => h.submittedForCosting && (!hasBatchLabels(h) || allStylesReleased(h)) && !(h.stagedBatches || []).some(b => b.status === 'staged')),
       cancelled:        handoffs.filter(h => h.status === 'cancelled'),
     };
 
@@ -3073,7 +3077,8 @@ const AdminViews = (() => {
       // Aging badge — only for handoffs not yet linked to a program
       // (linked ones are "done", aging doesn't matter).
       const ageDays = Math.floor((Date.now() - created.getTime()) / 86400000);
-      const hasBatches  = (h.batchReleases || []).length > 0;
+      const hasBatches     = (h.batchReleases || []).length > 0;
+      const hasBatchLabels = (h.stylesList || []).some(s => s.batchLabel && s.batchLabel !== 'Batch 1');
       const totalStyles = (h.stylesList || []).length;
       const releasedCount = releasedStyleIds(h).size;
       const stillOpen = !h.linkedProgramId && !h.submittedForCosting && !hasBatches;
@@ -3113,7 +3118,7 @@ const AdminViews = (() => {
       const hasStagedBatches = (h.stagedBatches || []).some(b => b.status === 'staged');
       const hStage = h.status === 'cancelled' ? 'cancelled'
         : hasStagedBatches ? 'Staged'
-        : hasBatches && !allStylesReleased(h) ? 'Batching'
+        : h.submittedForCosting && hasBatchLabels && !allStylesReleased(h) ? 'Batching'
         : h.linkedProgramId && allStylesReleased(h) ? 'Complete'
         : h.submittedForCosting ? 'Submitted to Sales'
         : 'Draft';
