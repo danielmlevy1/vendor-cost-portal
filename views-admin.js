@@ -768,6 +768,7 @@ const AdminViews = (() => {
       'Batching':            ['badge-costing',    '📦'],
       'Released':            ['badge-placed',     '↗'],
       'Complete':            ['badge-placed',     '🏁'],
+      'Staged':              ['badge-amber',      '⏳'],
     };
     const [cls, icon] = map[stage] || ['badge-pending', ''];
     return `<span class="badge ${cls}">${icon} ${stage}</span>`;
@@ -3096,8 +3097,12 @@ const AdminViews = (() => {
       const batchPill   = hasBatches
         ? `<span class="tag" style="font-size:0.68rem;background:rgba(99,102,241,0.12);color:#6366f1;font-weight:600;margin-left:4px">${releasedCount}/${styleCount} released</span>`
         : '';
+      const stagedCount  = (h.stagedBatches || []).filter(b => b.status === 'staged').reduce((acc, b) => acc + (b.styleIds || []).length, 0);
+      const stagedPill   = stagedCount
+        ? `<span class="tag" style="font-size:0.68rem;background:rgba(245,158,11,0.12);color:#f59e0b;font-weight:600;margin-left:4px;cursor:pointer" onclick="event.stopPropagation();App.openRetractPicker('${h.id}')">⏳ ${stagedCount} staged</span>`
+        : '';
       const stylesBadge  = styleCount
-        ? `<span class="status-dot dot-green"></span><span class="tag">${styleCount} styles</span>${batchPill}`
+        ? `<span class="status-dot dot-green"></span><span class="tag">${styleCount} styles</span>${batchPill}${stagedPill}`
         : `<span class="status-dot dot-amber"></span><span class="tag tag-warn">No styles</span>`;
       const fabricsBadge = h.fabricsUploaded
         ? `<span class="status-dot dot-green"></span><span class="tag">${fabricCount} fabrics</span>`
@@ -3106,7 +3111,9 @@ const AdminViews = (() => {
       // Stage derived from handoff workflow state.
       // linkedProgramId alone is not sufficient for 'Complete' — all styles must
       // be released. Previously both linked and sfc=1 showed 'Complete' prematurely.
+      const hasStagedBatches = (h.stagedBatches || []).some(b => b.status === 'staged');
       const hStage = h.status === 'cancelled' ? 'cancelled'
+        : hasStagedBatches ? 'Staged'
         : h.linkedProgramId && allStylesReleased(h) ? 'Complete'
         : h.linkedProgramId ? 'In Progress'
         : h.submittedForCosting ? 'Submitted to Sales'
@@ -3466,7 +3473,9 @@ const AdminViews = (() => {
     const styles         = h.stylesList || [];
     const releases       = h.batchReleases || [];
     const releasedSet    = new Set(releases.flatMap(b => b.styleIds || []));
-    const unreleasedStyles = styles.filter(s => !releasedSet.has(s.id));
+    const activeStagedBatches = (h.stagedBatches || []).filter(b => b.status === 'staged');
+    const stagedIds      = new Set(activeStagedBatches.flatMap(b => b.styleIds || []));
+    const unreleasedStyles = styles.filter(s => !releasedSet.has(s.id) && !stagedIds.has(s.id));
     const releasedStyles   = styles.filter(s =>  releasedSet.has(s.id));
     const releasedCount  = releasedSet.size;
     const totalCount     = styles.length;
@@ -3541,6 +3550,9 @@ const AdminViews = (() => {
           <button class="btn btn-primary" id="hd-release-btn" onclick="App.releaseBatch('${h.id}')" disabled>
             Release Batch
           </button>
+          <button class="btn btn-secondary" id="hd-stage-btn" onclick="App.stageBatch('${h.id}')" disabled>
+            📋 Stage for Review
+          </button>
           <span id="hd-selected-count" class="text-sm text-muted"></span>
           <div style="flex:1"></div>
           <button class="btn btn-secondary btn-sm" onclick="App.downloadHandoffStylesSheet('${h.id}')" title="Download 3-tab handoff (Styles, Fabrics, Trims)">⬇ Download Handoff</button>
@@ -3564,6 +3576,27 @@ const AdminViews = (() => {
             <tbody id="hd-style-tbody">${pendingRows}</tbody>
           </table>
         </div>
+      </div>`;
+    }
+
+    // ── PENDING PC REVIEW SECTION ────────────────────────────────
+    let pcReviewSection = '';
+    if (activeStagedBatches.length) {
+      const stagedCards = activeStagedBatches.map(b => {
+        const count = (b.styleIds || []).length;
+        return `<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:var(--bg-elevated);border-radius:var(--radius-sm);border:1px solid rgba(245,158,11,0.3)">
+          <div>
+            <span class="font-bold">${b.batchLabel}</span>
+            <span class="tag" style="margin-left:8px;background:rgba(245,158,11,0.12);color:#f59e0b;font-weight:600">${count} style${count !== 1 ? 's' : ''}</span>
+            <span class="text-sm text-muted" style="margin-left:8px">Staged ${fmtDate(b.stagedAt)}${b.stagedByName ? ' · by ' + b.stagedByName : ''}</span>
+          </div>
+          <button class="btn btn-secondary btn-sm" onclick="App.retractStagedBatch('${b.id}','${h.id}')">↩ Retract</button>
+        </div>`;
+      }).join('');
+      pcReviewSection = `
+      <div class="font-bold" style="font-size:0.95rem;margin:${hasPending ? '0' : '20px'} 0 10px">⏳ Pending PC Review <span class="tag" style="margin-left:6px;background:rgba(245,158,11,0.12);color:#f59e0b">${activeStagedBatches.length}</span></div>
+      <div class="card mb-4" style="border-color:rgba(245,158,11,0.3);padding:12px">
+        <div style="display:flex;flex-direction:column;gap:8px">${stagedCards}</div>
       </div>`;
     }
 
@@ -3666,6 +3699,9 @@ const AdminViews = (() => {
 
       <!-- PENDING BATCHES (only when unreleased styles exist) -->
       ${pendingSection}
+
+      <!-- PENDING PC REVIEW (only when staged batches exist) -->
+      ${pcReviewSection}
 
       <!-- RELEASED STYLES (only when released styles exist) -->
       ${releasedSection}

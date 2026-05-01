@@ -363,6 +363,26 @@ CREATE TABLE IF NOT EXISTS design_handoffs (
   created_at              TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
 
+-- ── Staged Batches (Phase 2 PC review queue) ──────────────────
+
+CREATE TABLE IF NOT EXISTS staged_batches (
+  id                TEXT PRIMARY KEY,
+  handoff_id        TEXT NOT NULL,
+  batch_label       TEXT NOT NULL,
+  style_ids         TEXT NOT NULL DEFAULT '[]',
+  status            TEXT NOT NULL DEFAULT 'staged',
+  staged_at         TEXT NOT NULL,
+  staged_by_id      TEXT,
+  staged_by_name    TEXT,
+  reviewed_at       TEXT,
+  reviewed_by_id    TEXT,
+  reviewed_by_name  TEXT,
+  linked_program_id TEXT,
+  rejection_note    TEXT,
+  hold_note         TEXT,
+  cancelled_reason  TEXT
+);
+
 -- ── Fabric Library ────────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS fabric_library (

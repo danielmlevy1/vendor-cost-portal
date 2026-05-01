@@ -571,6 +571,26 @@ router.get('/vendor/available-fabrics', requireAuth, (req, res) => {
 // DESIGN HANDOFFS
 // =============================================================
 
+function stagedBatchFromRow(r) {
+  return {
+    id:               r.id,
+    handoffId:        r.handoff_id,
+    batchLabel:       r.batch_label,
+    styleIds:         JSON.parse(r.style_ids || '[]'),
+    status:           r.status,
+    stagedAt:         r.staged_at,
+    stagedById:       r.staged_by_id,
+    stagedByName:     r.staged_by_name,
+    reviewedAt:       r.reviewed_at,
+    reviewedById:     r.reviewed_by_id,
+    reviewedByName:   r.reviewed_by_name,
+    linkedProgramId:  r.linked_program_id,
+    rejectionNote:    r.rejection_note,
+    holdNote:         r.hold_note,
+    cancelledReason:  r.cancelled_reason,
+  };
+}
+
 function handoffFromRow(r) {
   // Lazily stamp each style with a stable id and default batchLabel so
   // batchReleases.styleIds[] can reference them precisely.  If any styles
@@ -621,6 +641,7 @@ function handoffFromRow(r) {
     createdBy:            r.created_by,
     createdByName:        r.created_by_name,
     createdAt:            r.created_at,
+    stagedBatches:        db.prepare('SELECT * FROM staged_batches WHERE handoff_id = ?').all(r.id).map(stagedBatchFromRow),
   };
 }
 
@@ -732,13 +753,40 @@ router.delete('/design-handoffs/:id', requireAuth, requireRole('admin', 'pc'), (
 });
 
 // POST /api/design-handoffs/:id/cancel  — direct cancel (only for handoffs with no linked program)
+// Cascades atomically: retract any active staged batches + cancel orphaned batch-review SRs.
+// NOTE: cancelling a handoff with batch-review SRs will cascade-cancel those SRs (intentional — Phase 2a).
 router.post('/design-handoffs/:id/cancel', requireAuth, requireRole('admin', 'pc', 'design'), (req, res) => {
   const row = db.prepare('SELECT * FROM design_handoffs WHERE id = ?').get(req.params.id);
   if (!row) return res.status(404).json({ error: 'Not found' });
+  // Preserve existing block: linked handoffs must be cancelled via their program
   if (row.linked_program_id) return res.status(400).json({ error: 'Cancel the program instead — handoff is linked to a program' });
-  const now = new Date().toISOString();
-  db.prepare(`UPDATE design_handoffs SET status = 'cancelled', cancelled_at = ?, cancelled_by = ?, cancelled_by_name = ? WHERE id = ?`)
-    .run(now, req.user?.id || null, req.user?.name || null, req.params.id);
+
+  const ts            = now();
+  const cancellerId   = req.user?.id   || null;
+  const cancellerName = req.user?.name || null;
+
+  db.transaction(() => {
+    // 1. Cancel the handoff (existing behaviour — unchanged for simple case)
+    db.prepare(`UPDATE design_handoffs SET status = 'cancelled', cancelled_at = ?, cancelled_by = ?, cancelled_by_name = ? WHERE id = ?`)
+      .run(ts, cancellerId, cancellerName, req.params.id);
+
+    // 2. Retract any active staged batches so they don't orphan in the PC queue
+    db.prepare(`
+      UPDATE staged_batches
+      SET status = 'retracted', reviewed_at = ?, reviewed_by_id = ?, reviewed_by_name = ?,
+          cancelled_reason = 'handoff-cancelled'
+      WHERE handoff_id = ? AND status IN ('staged', 'held')
+    `).run(ts, cancellerId, cancellerName, req.params.id);
+
+    // 3. Cancel any orphaned batch-review SRs (source_handoff_id matches)
+    db.prepare(`
+      UPDATE sales_requests
+      SET status = 'cancelled', cancelled_at = ?, cancelled_by = ?, cancelled_by_name = ?,
+          previous_program_id = linked_program_id
+      WHERE source_handoff_id = ? AND status = 'batch-review'
+    `).run(ts, cancellerId, cancellerName, req.params.id);
+  })();
+
   res.json(handoffFromRow(db.prepare('SELECT * FROM design_handoffs WHERE id = ?').get(req.params.id)));
 });
 
@@ -1086,6 +1134,73 @@ router.post('/design-handoffs/:id/release-batch', requireAuth, requireRole('admi
   })();
 
   res.json(handoffFromRow(db.prepare('SELECT * FROM design_handoffs WHERE id = ?').get(req.params.id)));
+});
+
+// POST /api/design-handoffs/:id/stage-batch
+// Body: { styleIds: string[], batchLabel: string }
+// Stages styles for PC review without creating a program or SR.
+// Two guards: label must not be in batch_releases (already released) or in an active staged_batches row.
+router.post('/design-handoffs/:id/stage-batch', requireAuth, requireRole('admin', 'pc', 'design'), (req, res) => {
+  const row = db.prepare('SELECT * FROM design_handoffs WHERE id = ?').get(req.params.id);
+  if (!row) return res.status(404).json({ error: 'Handoff not found' });
+
+  const { styleIds, batchLabel } = req.body;
+  if (!Array.isArray(styleIds) || !styleIds.length)
+    return res.status(400).json({ error: 'styleIds must be a non-empty array' });
+  if (!batchLabel || !batchLabel.toString().trim())
+    return res.status(400).json({ error: 'batchLabel is required' });
+
+  const label      = batchLabel.toString().trim();
+  const stylesList = JSON.parse(row.styles_list || '[]');
+  const batchReleases = JSON.parse(row.batch_releases || '[]');
+
+  // Guard 0: handoff must not be cancelled
+  if (row.status === 'cancelled')
+    return res.status(400).json({ error: 'Cannot stage a batch on a cancelled handoff' });
+
+  // Guard 1: already fully released to program
+  if (batchReleases.find(b => b.batchLabel === label))
+    return res.status(400).json({ error: `Batch "${label}" has already been released to the program` });
+
+  // Guard 2: already pending PC review (retracted rows excluded)
+  const existingStaged = db.prepare(
+    "SELECT id FROM staged_batches WHERE handoff_id = ? AND batch_label = ? AND status = 'staged'"
+  ).get(req.params.id, label);
+  if (existingStaged)
+    return res.status(400).json({ error: `Batch "${label}" is already pending PC review` });
+
+  // Resolve style objects — validate all IDs exist in this handoff
+  const styleMap = {};
+  for (const s of stylesList) styleMap[s.id] = s;
+  const toStage = styleIds.map(sid => styleMap[sid]).filter(Boolean);
+  if (toStage.length !== styleIds.length)
+    return res.status(400).json({ error: 'One or more styleIds not found in this handoff' });
+
+  db.prepare(`
+    INSERT INTO staged_batches
+      (id, handoff_id, batch_label, style_ids, status, staged_at, staged_by_id, staged_by_name)
+    VALUES (?,?,?,?,?,?,?,?)
+  `).run(uid(), req.params.id, label, JSON.stringify(styleIds), 'staged', now(),
+         req.user?.id || null, req.user?.name || null);
+
+  res.json(handoffFromRow(db.prepare('SELECT * FROM design_handoffs WHERE id = ?').get(req.params.id)));
+});
+
+// POST /api/staged-batches/:id/retract
+// Retracts a staged batch — only works while status='staged'. Returns updated handoff.
+router.post('/staged-batches/:id/retract', requireAuth, requireRole('admin', 'pc', 'design'), (req, res) => {
+  const row = db.prepare('SELECT * FROM staged_batches WHERE id = ?').get(req.params.id);
+  if (!row) return res.status(404).json({ error: 'Staged batch not found' });
+  if (row.status !== 'staged')
+    return res.status(400).json({ error: 'Only staged batches can be retracted' });
+
+  db.prepare(`
+    UPDATE staged_batches
+    SET status = 'retracted', reviewed_at = ?, reviewed_by_id = ?, reviewed_by_name = ?
+    WHERE id = ?
+  `).run(now(), req.user?.id || null, req.user?.name || null, req.params.id);
+
+  res.json(handoffFromRow(db.prepare('SELECT * FROM design_handoffs WHERE id = ?').get(row.handoff_id)));
 });
 
 function _upsertFabricLibrary(fabricsList, handoffId) {

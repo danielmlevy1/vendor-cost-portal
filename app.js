@@ -5885,33 +5885,131 @@ App._hdSaveBatchLabel = async function(handoffId, styleId, newLabel) {
 
 // Update the release button text + count based on toolbar label
 App._hdUpdateReleaseCount = function(handoffId) {
-  const label = (document.getElementById('hd-batch-label')?.value || '').trim();
+  const label   = (document.getElementById('hd-batch-label')?.value || '').trim();
   const btn     = document.getElementById('hd-release-btn');
+  const stageBtn = document.getElementById('hd-stage-btn');
   const counter = document.getElementById('hd-selected-count');
   if (!label || !handoffId) {
-    if (btn) { btn.disabled = true; btn.textContent = 'Release Batch'; }
-    if (counter) counter.textContent = '';
+    if (btn)      { btn.disabled = true;      btn.textContent = 'Release Batch'; }
+    if (stageBtn) { stageBtn.disabled = true; stageBtn.textContent = '📋 Stage for Review'; }
+    if (counter)  counter.textContent = '';
     return;
   }
   const h = API.DesignHandoffs.get(handoffId);
   if (!h) return;
   const releasedSet = new Set((h.batchReleases || []).flatMap(b => b.styleIds || []));
+  const stagedSet   = new Set((h.stagedBatches || []).filter(b => b.status === 'staged').flatMap(b => b.styleIds || []));
   // Count styles whose current in-DOM label input matches OR whose cached batchLabel matches
-  // (covers the case where the user edited a label and hasn't blurred yet)
   const liveLabels = {};
   document.querySelectorAll('.hd-label-input').forEach(inp => {
     liveLabels[inp.dataset.styleId] = (inp.value || '').trim();
   });
-  const count = (h.stylesList || []).filter(s => {
+  const releasableCount = (h.stylesList || []).filter(s => {
     if (releasedSet.has(s.id)) return false;
     const live = liveLabels[s.id];
     return (live !== undefined ? live : (s.batchLabel || 'Batch 1')) === label;
   }).length;
+  // Stage count also excludes styles already in an active staged batch
+  const stageableCount = (h.stylesList || []).filter(s => {
+    if (releasedSet.has(s.id) || stagedSet.has(s.id)) return false;
+    const live = liveLabels[s.id];
+    return (live !== undefined ? live : (s.batchLabel || 'Batch 1')) === label;
+  }).length;
   if (btn) {
-    btn.disabled = count === 0;
-    btn.textContent = count > 0 ? `Release "${label}" (${count} style${count !== 1 ? 's' : ''})` : 'Release Batch';
+    btn.disabled = releasableCount === 0;
+    btn.textContent = releasableCount > 0 ? `Release "${label}" (${releasableCount} style${releasableCount !== 1 ? 's' : ''})` : 'Release Batch';
   }
-  if (counter) counter.textContent = count > 0 ? `${count} style${count !== 1 ? 's' : ''} will be released` : 'No styles with this label';
+  if (stageBtn) {
+    stageBtn.disabled = stageableCount === 0;
+    stageBtn.textContent = stageableCount > 0 ? `📋 Stage "${label}" for Review (${stageableCount} style${stageableCount !== 1 ? 's' : ''})` : '📋 Stage for Review';
+  }
+  if (counter) counter.textContent = releasableCount > 0 ? `${releasableCount} style${releasableCount !== 1 ? 's' : ''} match` : 'No styles with this label';
+};
+
+App.stageBatch = async function(handoffId) {
+  const batchLabel = (document.getElementById('hd-batch-label')?.value || '').trim();
+  if (!batchLabel) { alert('Enter a batch label.'); return; }
+
+  const h = API.DesignHandoffs.get(handoffId);
+  if (!h) return;
+
+  const releasedSet = new Set((h.batchReleases || []).flatMap(b => b.styleIds || []));
+  const stagedSet   = new Set((h.stagedBatches || []).filter(b => b.status === 'staged').flatMap(b => b.styleIds || []));
+  const liveLabels  = {};
+  document.querySelectorAll('.hd-label-input').forEach(inp => {
+    liveLabels[inp.dataset.styleId] = (inp.value || '').trim();
+  });
+  const toStage = (h.stylesList || []).filter(s => {
+    if (releasedSet.has(s.id) || stagedSet.has(s.id)) return false;
+    const live = liveLabels[s.id];
+    return (live !== undefined ? live : (s.batchLabel || 'Batch 1')) === batchLabel;
+  }).map(s => s.id);
+
+  if (!toStage.length) {
+    alert(`No available styles are labeled "${batchLabel}". Assign that label to styles in the Batch Label column first.`);
+    return;
+  }
+
+  const btn = document.getElementById('hd-stage-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Staging…'; }
+
+  try {
+    await API.StagedBatches.stage(handoffId, toStage, batchLabel);
+    const mc = document.getElementById('content');
+    if (mc) mc.innerHTML = AdminViews.renderHandoffDetail(handoffId);
+    App._hdUpdateReleaseCount(handoffId);
+    App.showToast(`"${batchLabel}" staged for PC review ✓`);
+  } catch (err) {
+    App.showToast('Stage failed: ' + (err.message || err));
+    if (btn) { btn.disabled = false; App._hdUpdateReleaseCount(handoffId); }
+  }
+};
+
+App.openRetractPicker = function(handoffId) {
+  const h = API.DesignHandoffs.get(handoffId);
+  if (!h) return;
+  const active = (h.stagedBatches || []).filter(b => b.status === 'staged');
+  if (!active.length) { alert('No active staged batches to retract.'); return; }
+
+  const fmtDate = iso => iso ? new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
+  const rows = active.map(b => `
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:var(--bg-elevated);border-radius:var(--radius-sm);border:1px solid var(--border);margin-bottom:8px">
+      <div>
+        <div class="font-bold">${b.batchLabel}</div>
+        <div class="text-sm text-muted">${(b.styleIds||[]).length} style${(b.styleIds||[]).length !== 1 ? 's' : ''} · Staged ${fmtDate(b.stagedAt)}${b.stagedByName ? ` by ${b.stagedByName}` : ''}</div>
+      </div>
+      <button class="btn btn-secondary btn-sm" style="color:#ef4444;border-color:#ef4444"
+        onclick="App.retractStagedBatch('${b.id}','${handoffId}')">↩ Retract</button>
+    </div>`).join('');
+
+  App.showModal(`
+    <div class="modal-header">
+      <h2>↩ Retract Staged Batch</h2>
+      <button class="btn btn-ghost btn-icon" onclick="App.closeModal()">✕</button>
+    </div>
+    <p class="text-muted mb-3">Select a staged batch to retract. Styles will return to Pending Batches and can be re-staged.</p>
+    ${rows}
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="App.closeModal()">Cancel</button>
+    </div>`);
+};
+
+App.retractStagedBatch = async function(stagedBatchId, handoffId) {
+  const h = API.DesignHandoffs.get(handoffId);
+  const batch = (h?.stagedBatches || []).find(b => b.id === stagedBatchId);
+  const label = batch?.batchLabel || 'this batch';
+  const count = (batch?.styleIds || []).length;
+  App.closeModal();
+  if (!confirm(`Retract "${label}"? Returns ${count} style${count !== 1 ? 's' : ''} to Pending Batches.`)) return;
+  try {
+    await API.StagedBatches.retract(stagedBatchId);
+    const mc = document.getElementById('content');
+    if (mc) mc.innerHTML = AdminViews.renderHandoffDetail(handoffId);
+    App._hdUpdateReleaseCount(handoffId);
+    App.showToast(`"${label}" retracted — styles returned to Pending Batches`);
+  } catch (err) {
+    App.showToast('Retract failed: ' + (err.message || err));
+  }
 };
 
 // ─ Sales Requests ────────────────────────────────────────────────

@@ -1024,6 +1024,27 @@ const API = (() => {
     },
   };
 
+  // ── Staged Batches ────────────────────────────────────────────
+
+  const StagedBatches = {
+    // Stage styles for PC review. Server returns the updated handoff (stagedBatches embedded).
+    async stage(handoffId, styleIds, batchLabel) {
+      const h = await POST(`/api/design-handoffs/${handoffId}/stage-batch`, { styleIds, batchLabel });
+      cache.handoffMap[handoffId] = h;
+      const idx = cache.designHandoffs.findIndex(x => x.id === handoffId);
+      if (idx >= 0) cache.designHandoffs[idx] = h; else cache.designHandoffs.push(h);
+      return h;
+    },
+    // Retract a staged batch. Server returns the updated handoff.
+    async retract(stagedBatchId) {
+      const h = await POST(`/api/staged-batches/${stagedBatchId}/retract`);
+      cache.handoffMap[h.id] = h;
+      const idx = cache.designHandoffs.findIndex(x => x.id === h.id);
+      if (idx >= 0) cache.designHandoffs[idx] = h; else cache.designHandoffs.push(h);
+      return h;
+    },
+  };
+
   // ── Fabric Library ────────────────────────────────────────────
 
   const FabricLibrary = {
@@ -1559,7 +1580,7 @@ const API = (() => {
     Programs, Styles, TradingCompanies, Assignments,
     Submissions, Placements, CustomerAssignments, CustomerBuys,
     StyleLinks, DesignChanges, RecostRequests, CellFlags, Revisions,
-    PendingChanges, DesignHandoffs, FabricLibrary, FabricRequests, FabricPackages, AvailableFabrics,
+    PendingChanges, DesignHandoffs, StagedBatches, FabricLibrary, FabricRequests, FabricPackages, AvailableFabrics,
     Factories, DeliveryPlans, CapacityPlans, SalesRequests, CostHistory, Performance,
     calcLDP, computeTargetLDP, parseCSV, csvRowToStyle,
     cache, preload,
