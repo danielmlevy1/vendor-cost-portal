@@ -1328,18 +1328,40 @@ const API = (() => {
       delete cache.srMap[id];
     },
     async cancel(id) {
-      const r = await POST(`/api/sales-requests/${id}/cancel`);
-      cache.srMap[id] = r;
+      const resp = await POST(`/api/sales-requests/${id}/cancel`);
+      const sr = resp.sr || resp;
+      cache.srMap[id] = sr;
       const idx = cache.salesRequests.findIndex(x => x.id === id);
-      if (idx >= 0) cache.salesRequests[idx] = r;
-      return r;
+      if (idx >= 0) cache.salesRequests[idx] = sr;
+      if (resp.program) {
+        cache.programMap[resp.program.id] = resp.program;
+        const pidx = cache.programs.findIndex(x => x.id === resp.program.id);
+        if (pidx >= 0) cache.programs[pidx] = resp.program;
+      }
+      if (resp.handoff) {
+        cache.handoffMap[resp.handoff.id] = resp.handoff;
+        const hidx = cache.designHandoffs.findIndex(x => x.id === resp.handoff.id);
+        if (hidx >= 0) cache.designHandoffs[hidx] = resp.handoff;
+      }
+      return resp;
     },
     async reactivate(id) {
-      const r = await POST(`/api/sales-requests/${id}/reactivate`);
-      cache.srMap[id] = r;
+      const resp = await POST(`/api/sales-requests/${id}/reactivate`);
+      const sr = resp.sr || resp;
+      cache.srMap[id] = sr;
       const idx = cache.salesRequests.findIndex(x => x.id === id);
-      if (idx >= 0) cache.salesRequests[idx] = r;
-      return r;
+      if (idx >= 0) cache.salesRequests[idx] = sr;
+      if (resp.program) {
+        cache.programMap[resp.program.id] = resp.program;
+        const pidx = cache.programs.findIndex(x => x.id === resp.program.id);
+        if (pidx >= 0) cache.programs[pidx] = resp.program;
+      }
+      if (resp.handoff) {
+        cache.handoffMap[resp.handoff.id] = resp.handoff;
+        const hidx = cache.designHandoffs.findIndex(x => x.id === resp.handoff.id);
+        if (hidx >= 0) cache.designHandoffs[hidx] = resp.handoff;
+      }
+      return resp;
     },
     async convertToProgram(requestId, programData) {
       const result = await POST(`/api/sales-requests/${requestId}/convert`, programData);

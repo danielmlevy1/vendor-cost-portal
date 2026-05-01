@@ -1294,3 +1294,4 @@ router.put('/programs/:id/customer-buys/:styleId', requireAuth, requireRole('adm
 });
 
 module.exports = router;
+module.exports.programWithCounts = programWithCounts;

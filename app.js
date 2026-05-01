@@ -24,8 +24,9 @@ App = (() => {
       if (user) {
         state.user = user;
         // Pre-load data needed by the sidebar (users list for role switcher, badges)
+        const _canSeeUsers = user.role === 'admin' || user.role === 'pc';
         await Promise.all([
-          user.role !== 'vendor' ? API.Users.all().catch(() => {}) : Promise.resolve(),
+          _canSeeUsers ? API.Users.all().catch(() => {}) : Promise.resolve(),
           API.TradingCompanies.all().catch(() => {}),
           API.preload.nav(),
         ]);
@@ -147,8 +148,9 @@ App = (() => {
       const user = await API.Auth.login(email, password);
       state.user = user;
       // Pre-load sidebar data before first render
+      const _canSeeUsers = user.role === 'admin' || user.role === 'pc';
       await Promise.all([
-        API.Users.all().catch(() => {}),
+        _canSeeUsers ? API.Users.all().catch(() => {}) : Promise.resolve(),
         API.TradingCompanies.all().catch(() => {}),
         API.preload.nav(),
       ]);
@@ -7925,15 +7927,41 @@ App.reactivateHandoff = async function(id) {
 App.cancelSR = async function(id) {
   const r = API.SalesRequests.get(id);
   const label = [r?.season, r?.year, r?.brand].filter(Boolean).join(' ') || 'this request';
-  if (!confirm(`Cancel ${label}?\n\nThe sales request will be moved to the Cancelled bucket. It can be reactivated later.`)) return;
+  if (r?.linkedProgramId) {
+    const prog = API.Programs.get(r.linkedProgramId);
+    const progName = prog?.name || r.linkedProgramId;
+    const handoff = API.DesignHandoffs.all().find(h => h.linkedProgramId === r.linkedProgramId);
+    const handoffLine = handoff ? `\n• Design Handoff: ${handoff.season || ''} ${handoff.year || ''} ${handoff.brand || ''}`.trim() : '';
+    if (!confirm(
+      `⚠️ Cancel SR with Linked Program\n\n` +
+      `Cancelling "${label}" will also cancel:\n` +
+      `• Program: ${progName}${handoffLine}\n\n` +
+      `All three will be moved to Cancelled and can be reactivated together.`
+    )) return;
+  } else {
+    if (!confirm(`Cancel ${label}?\n\nThe sales request will be moved to the Cancelled bucket. It can be reactivated later.`)) return;
+  }
   await API.SalesRequests.cancel(id);
   App.navigate('sales-requests');
 };
 
 App.reactivateSR = async function(id) {
-  if (!confirm('Reactivate this sales request? It will return to In Progress so you can propose a new program.')) return;
-  await API.SalesRequests.reactivate(id);
-  App.navigate('sales-requests');
+  const r = API.SalesRequests.get(id);
+  const hasPrev = !!(r?.previousProgramId);
+  const msg = hasPrev
+    ? 'Reactivate this sales request? The linked program and handoff will also be restored to their previous state.'
+    : 'Reactivate this sales request? It will return to In Progress so you can propose a new program.';
+  if (!confirm(msg)) return;
+  try {
+    await API.SalesRequests.reactivate(id);
+    App.navigate('sales-requests');
+  } catch (err) {
+    if (err.status === 403) {
+      App.showToast('Insufficient permissions to reactivate. Contact an admin.');
+    } else {
+      App.showToast('Reactivation failed: ' + (err.message || 'Unknown error'));
+    }
+  }
 };
 
 App._toggleTcRow = function(tr) {

@@ -1249,30 +1249,102 @@ router.delete('/sales-requests/:id', requireAuth, requireRole('admin', 'pc'), (r
   res.json({ ok: true });
 });
 
-// POST /api/sales-requests/:id/cancel  — direct cancel (only for SRs with no linked program)
+// POST /api/sales-requests/:id/cancel  — cancels SR; if linked to a program, cascades upward (SR → program → handoff)
 router.post('/sales-requests/:id/cancel', requireAuth, requireRole('admin', 'pc', 'planning', 'sales'), (req, res) => {
   const row = db.prepare('SELECT * FROM sales_requests WHERE id = ?').get(req.params.id);
   if (!row) return res.status(404).json({ error: 'Not found' });
-  if (row.linked_program_id) return res.status(400).json({ error: 'Cancel the program instead — SR is linked to a program' });
-  const now = new Date().toISOString();
-  db.prepare(`UPDATE sales_requests SET status = 'cancelled', cancelled_at = ?, cancelled_by = ?, cancelled_by_name = ? WHERE id = ?`)
-    .run(now, req.user?.id || null, req.user?.name || null, req.params.id);
-  res.json(srFromRow(db.prepare('SELECT * FROM sales_requests WHERE id = ?').get(req.params.id)));
+  const now          = new Date().toISOString();
+  const cancellerId   = req.user?.id   || null;
+  const cancellerName = req.user?.name || null;
+
+  if (!row.linked_program_id) {
+    // Simple cancel — no program chain
+    db.prepare(`UPDATE sales_requests SET status = 'cancelled', cancelled_at = ?, cancelled_by = ?, cancelled_by_name = ? WHERE id = ?`)
+      .run(now, cancellerId, cancellerName, req.params.id);
+    return res.json({ sr: srFromRow(db.prepare('SELECT * FROM sales_requests WHERE id = ?').get(req.params.id)) });
+  }
+
+  // Cascade cancel: SR → linked program → linked handoff
+  const progId   = row.linked_program_id;
+  const progRow  = db.prepare('SELECT * FROM programs WHERE id = ?').get(progId);
+  const progName = progRow?.name || null;
+
+  let cancelledHandoff = null;
+  db.transaction(() => {
+    // Cancel SR, preserve program link as previous_program_id for reactivation chain
+    db.prepare(`
+      UPDATE sales_requests
+      SET status = 'cancelled', cancelled_at = ?, cancelled_by = ?, cancelled_by_name = ?,
+          previous_program_id = ?, previous_program_name = ?, linked_program_id = NULL
+      WHERE id = ?
+    `).run(now, cancellerId, cancellerName, progId, progName, req.params.id);
+
+    // Cancel the program
+    if (progRow) {
+      db.prepare(`UPDATE programs SET status = 'cancelled', cancelled_at = ?, cancelled_by = ?, cancelled_by_name = ? WHERE id = ?`)
+        .run(now, cancellerId, cancellerName, progId);
+
+      // Cancel the handoff linked to this program (if any)
+      const handoff = db.prepare('SELECT * FROM design_handoffs WHERE linked_program_id = ?').get(progId);
+      if (handoff) {
+        db.prepare(`UPDATE design_handoffs SET status = 'cancelled', cancelled_at = ?, cancelled_by = ?, cancelled_by_name = ?, previous_program_id = ?, previous_program_name = ? WHERE id = ?`)
+          .run(now, cancellerId, cancellerName, progId, progName, handoff.id);
+        cancelledHandoff = handoffFromRow(db.prepare('SELECT * FROM design_handoffs WHERE id = ?').get(handoff.id));
+      }
+    }
+  })();
+
+  const result = { sr: srFromRow(db.prepare('SELECT * FROM sales_requests WHERE id = ?').get(req.params.id)) };
+  if (progRow) {
+    const { programWithCounts } = require('./routes');
+    try { result.program = programWithCounts(db.prepare('SELECT * FROM programs WHERE id = ?').get(progId)); } catch (_) {}
+  }
+  if (cancelledHandoff) result.handoff = cancelledHandoff;
+  res.json(result);
 });
 
-// POST /api/sales-requests/:id/reactivate  — restores to submitted, clears cancellation state
-router.post('/sales-requests/:id/reactivate', requireAuth, requireRole('admin', 'pc'), (req, res) => {
+// POST /api/sales-requests/:id/reactivate  — restores SR to submitted; if previous_program_id exists, restores program + handoff
+router.post('/sales-requests/:id/reactivate', requireAuth, requireRole('admin', 'pc', 'planning', 'sales'), (req, res) => {
   const row = db.prepare('SELECT * FROM sales_requests WHERE id = ?').get(req.params.id);
   if (!row) return res.status(404).json({ error: 'Not found' });
-  const prevProgramId   = row.linked_program_id   || row.previous_program_id;
+  const prevProgramId   = row.linked_program_id || row.previous_program_id;
   const prevProgramName = row.previous_program_name || null;
-  db.prepare(`
-    UPDATE sales_requests
-    SET status = 'submitted', cancelled_at = NULL, linked_program_id = NULL,
-        previous_program_id = ?, previous_program_name = ?
-    WHERE id = ?
-  `).run(prevProgramId || null, prevProgramName || null, row.id);
-  res.json(srFromRow(db.prepare('SELECT * FROM sales_requests WHERE id = ?').get(row.id)));
+
+  let restoredProgram = null;
+  let restoredHandoff = null;
+
+  db.transaction(() => {
+    // TODO: preserve pre-cancel SR status (batch-review, converted, etc.) by storing it at cancel time
+    db.prepare(`
+      UPDATE sales_requests
+      SET status = 'submitted', cancelled_at = NULL, linked_program_id = ?,
+          previous_program_id = NULL, previous_program_name = NULL
+      WHERE id = ?
+    `).run(prevProgramId || null, row.id);
+
+    if (prevProgramId) {
+      // TODO: preserve original program status when cancellation stores it
+      db.prepare(`UPDATE programs SET status = 'Costing', cancelled_at = NULL, cancelled_by = NULL, cancelled_by_name = NULL WHERE id = ?`)
+        .run(prevProgramId);
+      restoredProgram = db.prepare('SELECT * FROM programs WHERE id = ?').get(prevProgramId);
+
+      // Restore handoff that was linked to this program
+      const handoff = db.prepare('SELECT * FROM design_handoffs WHERE previous_program_id = ? AND status = ?').get(prevProgramId, 'cancelled');
+      if (handoff) {
+        db.prepare(`UPDATE design_handoffs SET status = 'active', cancelled_at = NULL, cancelled_by = NULL, cancelled_by_name = NULL, linked_program_id = ?, previous_program_id = NULL, previous_program_name = NULL WHERE id = ?`)
+          .run(prevProgramId, handoff.id);
+        restoredHandoff = handoffFromRow(db.prepare('SELECT * FROM design_handoffs WHERE id = ?').get(handoff.id));
+      }
+    }
+  })();
+
+  const result = { sr: srFromRow(db.prepare('SELECT * FROM sales_requests WHERE id = ?').get(row.id)) };
+  if (restoredProgram) {
+    const { programWithCounts } = require('./routes');
+    try { result.program = programWithCounts(restoredProgram); } catch (_) {}
+  }
+  if (restoredHandoff) result.handoff = restoredHandoff;
+  res.json(result);
 });
 
 // POST /api/sales-requests/:id/convert  — creates Program + bulk styles, marks SR converted

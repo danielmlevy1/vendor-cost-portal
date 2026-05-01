@@ -3338,7 +3338,7 @@ const AdminViews = (() => {
               ? `<button class="btn btn-secondary btn-sm" onclick="App.reactivateSR('${r.id}')">↩ Reactivate</button>`
               : `<button class="btn btn-secondary btn-sm" onclick="App.openSalesRequestDetail('${r.id}')">👁 Open</button>
                  <button class="btn btn-ghost btn-sm" onclick="App.downloadSalesRequest('${r.id}')" title="Download as Excel">⬇</button>
-                 ${!r.linkedProgramId ? `<button class="btn btn-secondary btn-sm" style="color:#ef4444;border-color:#ef4444" onclick="App.cancelSR('${r.id}')">🚫 Cancel</button>` : ''}`
+                 <button class="btn btn-secondary btn-sm" style="color:#ef4444;border-color:#ef4444" onclick="App.cancelSR('${r.id}')">🚫 Cancel</button>`
             }
           </div>
         </td>
