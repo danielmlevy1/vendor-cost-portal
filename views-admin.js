@@ -764,9 +764,7 @@ const AdminViews = (() => {
       'Cancelled':           ['badge-cancelled',  '✕'],
       'cancelled':           ['badge-cancelled',  '✕'],
       'Batch Review':        ['badge-amber',      '📦'],
-      'In Progress':         ['badge-costing',    '▶'],
       'Batching':            ['badge-costing',    '📦'],
-      'Released':            ['badge-placed',     '↗'],
       'Complete':            ['badge-placed',     '🏁'],
       'Staged':              ['badge-amber',      '⏳'],
     };
@@ -3058,12 +3056,11 @@ const AdminViews = (() => {
     };
     const activeHandoffs = handoffs.filter(h => h.status !== 'cancelled');
     const handoffBuckets = {
-      inProgress:       activeHandoffs.filter(h => !h.linkedProgramId && !h.submittedForCosting && !(h.batchReleases || []).length && !(h.stagedBatches || []).some(b => b.status === 'staged')),
+      draft:            activeHandoffs.filter(h => !h.submittedForCosting && !(h.batchReleases || []).length && !(h.stagedBatches || []).some(b => b.status === 'staged')),
       staged:           activeHandoffs.filter(h => (h.stagedBatches || []).some(b => b.status === 'staged')),
       batching:         activeHandoffs.filter(h => !(h.stagedBatches || []).some(b => b.status === 'staged') && (h.batchReleases || []).length > 0 && !allStylesReleased(h)),
-      submittedToSales: activeHandoffs.filter(h => h.submittedForCosting && !h.linkedProgramId && !(h.batchReleases || []).length),
-      released:         activeHandoffs.filter(h => allStylesReleased(h) && !h.submittedForCosting),
       complete:         activeHandoffs.filter(h => h.linkedProgramId && allStylesReleased(h)),
+      submittedToSales: activeHandoffs.filter(h => h.submittedForCosting && !(h.batchReleases || []).length),
       cancelled:        handoffs.filter(h => h.status === 'cancelled'),
     };
 
@@ -3115,11 +3112,9 @@ const AdminViews = (() => {
       // be released. Previously both linked and sfc=1 showed 'Complete' prematurely.
       const hasStagedBatches = (h.stagedBatches || []).some(b => b.status === 'staged');
       const hStage = h.status === 'cancelled' ? 'cancelled'
-        : h.linkedProgramId && allStylesReleased(h) ? 'Complete'
         : hasStagedBatches ? 'Staged'
         : hasBatches && !allStylesReleased(h) ? 'Batching'
-        : hasBatches ? 'Released'
-        : h.linkedProgramId ? 'In Progress'
+        : h.linkedProgramId && allStylesReleased(h) ? 'Complete'
         : h.submittedForCosting ? 'Submitted to Sales'
         : 'Draft';
 
@@ -3202,11 +3197,10 @@ const AdminViews = (() => {
 
     const handoffSections = handoffs.length
       ? [
-          bucketSection('🟢 In Progress',        handoffBuckets.inProgress,       'inProgress',       { open: true,  accent: '#22c55e' }),
+          bucketSection('📝 Draft',               handoffBuckets.draft,            'draft',            { open: true,  accent: '#94a3b8' }),
           bucketSection('⏳ Staged for Review',   handoffBuckets.staged,           'staged',           { open: true,  accent: '#f59e0b' }),
           bucketSection('📦 Batching',            handoffBuckets.batching,         'batching',         { open: true,  accent: '#6366f1' }),
           bucketSection('📤 Submitted to Sales',  handoffBuckets.submittedToSales, 'submittedToSales', { open: true,  accent: '#6366f1' }),
-          bucketSection('✅ All Styles Released', handoffBuckets.released,         'released',         { open: true,  accent: '#f59e0b' }),
           bucketSection('🏁 Complete',            handoffBuckets.complete,         'complete',         { open: false, accent: '#94a3b8' }),
           bucketSection('✕ Cancelled',            handoffBuckets.cancelled,        'cancelled',        { open: false, accent: '#94a3b8' }),
         ].join('')
