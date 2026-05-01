@@ -3058,11 +3058,13 @@ const AdminViews = (() => {
     };
     const activeHandoffs = handoffs.filter(h => h.status !== 'cancelled');
     const handoffBuckets = {
-      inProgress: activeHandoffs.filter(h => !h.linkedProgramId && !h.submittedForCosting && !(h.batchReleases || []).length),
-      batching:   activeHandoffs.filter(h => (h.batchReleases || []).length > 0 && !allStylesReleased(h)),
-      released:   activeHandoffs.filter(h => allStylesReleased(h) && !h.submittedForCosting),
-      complete:   activeHandoffs.filter(h => h.submittedForCosting || (h.linkedProgramId && allStylesReleased(h))),
-      cancelled:  handoffs.filter(h => h.status === 'cancelled'),
+      inProgress:       activeHandoffs.filter(h => !h.linkedProgramId && !h.submittedForCosting && !(h.batchReleases || []).length && !(h.stagedBatches || []).some(b => b.status === 'staged')),
+      staged:           activeHandoffs.filter(h => (h.stagedBatches || []).some(b => b.status === 'staged')),
+      batching:         activeHandoffs.filter(h => (h.batchReleases || []).length > 0 && !allStylesReleased(h)),
+      submittedToSales: activeHandoffs.filter(h => h.submittedForCosting && !h.linkedProgramId),
+      released:         activeHandoffs.filter(h => allStylesReleased(h) && !h.submittedForCosting),
+      complete:         activeHandoffs.filter(h => h.linkedProgramId && allStylesReleased(h)),
+      cancelled:        handoffs.filter(h => h.status === 'cancelled'),
     };
 
     const fmtDate = d => d ? new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' }) : '—';
@@ -3200,11 +3202,13 @@ const AdminViews = (() => {
 
     const handoffSections = handoffs.length
       ? [
-          bucketSection('🟢 In Progress',      handoffBuckets.inProgress, 'inProgress', { open: true,  accent: '#22c55e' }),
-          bucketSection('📦 Batching',          handoffBuckets.batching,   'batching',   { open: true,  accent: '#6366f1' }),
-          bucketSection('✅ All Styles Released', handoffBuckets.released,  'released',   { open: true,  accent: '#f59e0b' }),
-          bucketSection('🏁 Complete',          handoffBuckets.complete,   'complete',   { open: false, accent: '#94a3b8' }),
-          bucketSection('✕ Cancelled',          handoffBuckets.cancelled,  'cancelled',  { open: false, accent: '#94a3b8' }),
+          bucketSection('🟢 In Progress',        handoffBuckets.inProgress,       'inProgress',       { open: true,  accent: '#22c55e' }),
+          bucketSection('⏳ Staged for Review',   handoffBuckets.staged,           'staged',           { open: true,  accent: '#f59e0b' }),
+          bucketSection('📦 Batching',            handoffBuckets.batching,         'batching',         { open: true,  accent: '#6366f1' }),
+          bucketSection('📤 Submitted to Sales',  handoffBuckets.submittedToSales, 'submittedToSales', { open: true,  accent: '#6366f1' }),
+          bucketSection('✅ All Styles Released', handoffBuckets.released,         'released',         { open: true,  accent: '#f59e0b' }),
+          bucketSection('🏁 Complete',            handoffBuckets.complete,         'complete',         { open: false, accent: '#94a3b8' }),
+          bucketSection('✕ Cancelled',            handoffBuckets.cancelled,        'cancelled',        { open: false, accent: '#94a3b8' }),
         ].join('')
       : `<div class="card text-center text-muted" style="padding:40px">No design handoffs yet. Click "+ New Handoff" to upload a style list from Design.</div>`;
 
