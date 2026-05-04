@@ -697,7 +697,10 @@ const AdminViews = (() => {
 
     const openHandoffs = shownHandoffs;
     const openRequests = shownRequests;
-    const draftPrograms = bucket === 'open' ? shownPrograms.filter(p => p.status === 'Draft') : [];
+    const draftPrograms     = bucket === 'open' ? shownPrograms.filter(p => p.status === 'Draft') : [];
+    const noVendorPrograms  = _canNewProg && bucket === 'open'
+      ? shownPrograms.filter(p => p.status === 'Costing' && (p.tcCount || 0) === 0 && (p.styleCount || 0) > 0)
+      : [];
 
     const totalEntries = openHandoffs.length + openRequests.length + shownPrograms.length;
 
@@ -736,6 +739,34 @@ const AdminViews = (() => {
       </div>
     </div>` : '';
 
+    const assignVendorsBanner = noVendorPrograms.length ? `
+    <div class="card mb-4" style="border-color:#f59e0b;border-left:3px solid #f59e0b">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <div>
+          <div class="font-bold" style="color:#f59e0b">🏭 Programs Awaiting Vendor Assignment</div>
+          <div class="text-sm text-muted mt-1">These programs have released styles but no vendors assigned yet.</div>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        ${noVendorPrograms.map(p => {
+          const meta = [p.season, p.year, p.gender ? p.gender : null, p.retailer ? p.retailer : null].filter(Boolean).join(' · ');
+          return `<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:var(--bg-elevated);border-radius:var(--radius-sm);border:1px solid var(--border)">
+            <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+              <div>
+                <div class="font-bold">${p.name}</div>
+                ${meta ? `<div class="text-sm text-muted" style="margin-top:2px">${meta}</div>` : ''}
+              </div>
+              <span class="tag">${p.styleCount} style${p.styleCount !== 1 ? 's' : ''}</span>
+            </div>
+            <div style="display:flex;gap:8px;flex-shrink:0;margin-left:16px">
+              <button class="btn btn-primary btn-sm" onclick="App.openAssignTCs('${p.id}')">🏭 Assign Vendors</button>
+              <span class="badge badge-placed" style="cursor:pointer" onclick="App.navigate('cost-summary','${p.id}')">→ Program</span>
+            </div>
+          </div>`;
+        }).join('')}
+      </div>
+    </div>` : '';
+
     return `
     <div class="page-header">
       <div><h1 class="page-title">${bucketMeta.title}</h1><p class="page-subtitle">${bucketMeta.subtitle}</p></div>
@@ -747,6 +778,7 @@ const AdminViews = (() => {
       <div class="search-input-wrap"><span class="search-icon">🔍</span><input class="form-input" id="prog-search" placeholder="Search programs…" oninput="App.filterPrograms()"></div>
     </div>
     ${pendingBanner}
+    ${assignVendorsBanner}
     <div id="programs-grid">
       ${programsTable(openHandoffs, openRequests, shownPrograms)}
     </div>`;
@@ -766,7 +798,7 @@ const AdminViews = (() => {
       'Batch Review':        ['badge-amber',      '📦'],
       'Batching':            ['badge-costing',    '📦'],
       'Complete':            ['badge-placed',     '🏁'],
-      'Staged':              ['badge-amber',      '⏳'],
+      'Submitted':           ['badge-amber',      '⏳'],
     };
     const [cls, icon] = map[stage] || ['badge-pending', ''];
     return `<span class="badge ${cls}">${icon} ${stage}</span>`;
@@ -814,6 +846,7 @@ const AdminViews = (() => {
     }
   }
 
+  // DUPLICATED in views-vendor.js — keep in sync.
   // ── Shared batch-state cell (used by all three pipeline tables) ──────────────
   // Returns HTML for the "Batches" column. Three visual states:
   //   zero batches  → dash (new handoff, nothing released yet)
@@ -1382,8 +1415,18 @@ const AdminViews = (() => {
       ...styles.map(s => s.releasedBatch).filter(Boolean),
       ...(_csLinkedHandoff?.stylesList || []).map(s => s.batchLabel).filter(Boolean),
     ])];
-    const _csHasManyBatches = _csBatchLabels.length >= 2;
+    const _csReleasedIds      = new Set(_csBatchReleases.flatMap(b => b.styleIds || []));
+    const _csHasUnreleased    = (_csLinkedHandoff?.stylesList || []).some(s => !_csReleasedIds.has(s.id));
+    const _csTotalUnreleased  = (_csLinkedHandoff?.stylesList || []).filter(s => !_csReleasedIds.has(s.id)).length;
+    const _csHasManyBatches   = _csBatchLabels.length >= 2 || _csHasUnreleased;
     const batchTileRow = _csHasManyBatches ? (() => {
+      const totalStyles = styles.length + _csTotalUnreleased;
+      const allTile = `<div class="kpi-card-wide batch-tile-active" data-batch-tile="__all__"
+        onclick="App._toggleBatchFilter('cost-summary-table',this.dataset.batchTile,this)"
+        style="cursor:pointer;border-top:3px solid #6366f1;min-width:100px;user-select:none">
+        <div class="kpi-value" style="font-size:1.1rem;color:#6366f1">All</div>
+        <div class="kpi-label">${totalStyles} style${totalStyles!==1?'s':''} · ${styles.length} released</div>
+      </div>`;
       const tiles = _csBatchLabels.map((label, i) => {
         const rel      = _csBatchReleases.find(r => r.batchLabel === label);
         const color    = _csBatchColors[i % _csBatchColors.length];
@@ -1398,7 +1441,7 @@ const AdminViews = (() => {
           <div class="kpi-label">${count} style${count!==1?'s':''} · ${dateStr}</div>
         </div>`;
       }).join('');
-      return `<div class="kpi-grid" style="margin-bottom:16px">${tiles}</div>`;
+      return `<div class="kpi-grid" style="margin-bottom:16px">${allTile}${tiles}</div>`;
     })() : '';
 
     return `
@@ -1569,11 +1612,13 @@ const AdminViews = (() => {
     Object.values(repeatHistory).forEach(arr => arr.sort((a, b) => b.progCreatedAt - a.progCreatedAt));
 
     // Batch context — computed early so buildRows/buildGhostRows closures can use it
-    const linkedHandoff = (API.DesignHandoffs?.all?.() || []).find(h => h.linkedProgramId === programId);
+    const linkedHandoff  = (API.DesignHandoffs?.all?.() || []).find(h => h.linkedProgramId === programId);
+    const _batchRelIds   = new Set((linkedHandoff?.batchReleases || []).flatMap(b => b.styleIds || []));
+    const _hasUnreleased = (linkedHandoff?.stylesList || []).some(s => !_batchRelIds.has(s.id));
     const hasManyBatches = new Set([
       ...styles.map(s => s.releasedBatch).filter(Boolean),
       ...(linkedHandoff?.stylesList || []).map(s => s.batchLabel).filter(Boolean),
-    ]).size >= 2;
+    ]).size >= 2 || _hasUnreleased;
 
     // Margin compliance color helper — compares actual GM% against prog.targetMargin
     // targetMargin is stored as a fraction (0.46 = 46% target gross margin).
@@ -1991,7 +2036,7 @@ const AdminViews = (() => {
     }
     const ghostColspan = totalFixedCols - 3;
     function buildGhostRows(handoffStyles) {
-      return handoffStyles.map(hs => `<tr style="opacity:0.35;pointer-events:none" data-batch-label="${(hs.batchLabel||'').replace(/"/g,'&quot;')}">
+      return handoffStyles.map(hs => `<tr style="opacity:0.35;pointer-events:none" title="Not yet released" data-batch-label="${(hs.batchLabel||'').replace(/"/g,'&quot;')}">
         <td class="sel-col sticky-col mat-cell-white" style="width:36px;min-width:36px"></td>
         <td class="sticky-col mat-cell-white" style="width:28px;min-width:28px;padding:0"></td>
         <td data-col="styleNum" class="sticky-col mat-cell-white" style="color:#94a3b8;font-style:italic">${hs.styleNumber || '—'}</td>
@@ -3103,7 +3148,7 @@ const AdminViews = (() => {
         : '';
       const stagedCount  = (h.stagedBatches || []).filter(b => b.status === 'staged').reduce((acc, b) => acc + (b.styleIds || []).length, 0);
       const stagedPill   = stagedCount
-        ? `<span class="tag" style="font-size:0.68rem;background:rgba(245,158,11,0.12);color:#f59e0b;font-weight:600;margin-left:4px;cursor:pointer" onclick="event.stopPropagation();App.openRetractPicker('${h.id}')">⏳ ${stagedCount} staged</span>`
+        ? `<span class="tag" style="font-size:0.68rem;background:rgba(245,158,11,0.12);color:#f59e0b;font-weight:600;margin-left:4px;cursor:pointer" onclick="event.stopPropagation();App.openRetractPicker('${h.id}')">⏳ ${stagedCount} pending</span>`
         : '';
       const stylesBadge  = styleCount
         ? `<span class="status-dot dot-green"></span><span class="tag">${styleCount} styles</span>${batchPill}${stagedPill}`
@@ -3117,7 +3162,7 @@ const AdminViews = (() => {
       // be released. Previously both linked and sfc=1 showed 'Complete' prematurely.
       const hasStagedBatches = (h.stagedBatches || []).some(b => b.status === 'staged');
       const hStage = h.status === 'cancelled' ? 'cancelled'
-        : hasStagedBatches ? 'Staged'
+        : hasStagedBatches ? 'Submitted'
         : h.submittedForCosting && hasBatchLabels && !allStylesReleased(h) ? 'Batching'
         : h.linkedProgramId && allStylesReleased(h) ? 'Complete'
         : h.submittedForCosting ? 'Submitted to Sales'
@@ -3132,7 +3177,7 @@ const AdminViews = (() => {
         ? `<span class="tag" style="font-size:0.75rem">${linkedProg.costedCount||0}/${linkedProg.styleCount||0}</span>`
         : dash;
 
-      return `<tr
+      return `<tr style="cursor:pointer" onclick="App.openHandoffDetail('${h.id}')"
         data-flt-season="${(h.season || '').replace(/"/g, '&quot;')}"
         data-flt-year="${h.year || ''}"
         data-flt-brand="${(h.brand || '').replace(/"/g, '&quot;')}"
@@ -3156,10 +3201,10 @@ const AdminViews = (() => {
         <td>
           <div style="display:flex;gap:6px">
             ${h.status === 'cancelled'
-              ? `<button class="btn btn-secondary btn-sm" onclick="App.reactivateHandoff('${h.id}')">↩ Reactivate</button>`
-              : `<button class="btn btn-secondary btn-sm" onclick="App.openEditHandoffModal('${h.id}')">✏ Edit</button>
-                 <button class="btn btn-secondary btn-sm" onclick="App.openHandoffDetail('${h.id}')">👁 Open</button>
-                 ${!h.linkedProgramId ? `<button class="btn btn-secondary btn-sm" style="color:#ef4444;border-color:#ef4444" onclick="App.cancelHandoff('${h.id}')">🚫 Cancel</button>` : ''}`
+              ? `<button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();App.reactivateHandoff('${h.id}')">↩ Reactivate</button>`
+              : `<button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();App.openEditHandoffModal('${h.id}')">✏ Edit</button>
+                 <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();App.openHandoffDetail('${h.id}')">👁 Open</button>
+                 ${!h.linkedProgramId ? `<button class="btn btn-secondary btn-sm" style="color:#ef4444;border-color:#ef4444" onclick="event.stopPropagation();App.cancelHandoff('${h.id}')">🚫 Cancel</button>` : ''}`
             }
           </div>
         </td>
@@ -3203,7 +3248,7 @@ const AdminViews = (() => {
     const handoffSections = handoffs.length
       ? [
           bucketSection('📝 Draft',               handoffBuckets.draft,            'draft',            { open: true,  accent: '#94a3b8' }),
-          bucketSection('⏳ Staged for Review',   handoffBuckets.staged,           'staged',           { open: true,  accent: '#f59e0b' }),
+          bucketSection('⏳ Submitted for Release', handoffBuckets.staged,           'staged',           { open: true,  accent: '#f59e0b' }),
           bucketSection('📦 Batching',            handoffBuckets.batching,         'batching',         { open: true,  accent: '#6366f1' }),
           bucketSection('📤 Submitted to Sales',  handoffBuckets.submittedToSales, 'submittedToSales', { open: true,  accent: '#6366f1' }),
           bucketSection('🏁 Complete',            handoffBuckets.complete,         'complete',         { open: false, accent: '#94a3b8' }),
@@ -3313,7 +3358,7 @@ const AdminViews = (() => {
         ? `<span class="tag" style="font-size:0.75rem">${srLinkedProg.costedCount||0}/${srLinkedProg.styleCount||0}</span>`
         : srDash;
 
-      return `<tr
+      return `<tr style="cursor:pointer" onclick="App.openSalesRequestDetail('${r.id}')"
         data-flt-season="${(r.season || '').replace(/"/g, '&quot;')}"
         data-flt-year="${r.year || ''}"
         data-flt-brand="${(r.brand || '').replace(/"/g, '&quot;')}"
@@ -3345,10 +3390,10 @@ const AdminViews = (() => {
         <td>
           <div style="display:flex;gap:6px">
             ${r.status === 'cancelled'
-              ? `<button class="btn btn-secondary btn-sm" onclick="App.reactivateSR('${r.id}')">↩ Reactivate</button>`
-              : `<button class="btn btn-secondary btn-sm" onclick="App.openSalesRequestDetail('${r.id}')">👁 Open</button>
-                 <button class="btn btn-ghost btn-sm" onclick="App.downloadSalesRequest('${r.id}')" title="Download as Excel">⬇</button>
-                 <button class="btn btn-secondary btn-sm" style="color:#ef4444;border-color:#ef4444" onclick="App.cancelSR('${r.id}')">🚫 Cancel</button>`
+              ? `<button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();App.reactivateSR('${r.id}')">↩ Reactivate</button>`
+              : `<button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();App.openSalesRequestDetail('${r.id}')">👁 Open</button>
+                 <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();App.downloadSalesRequest('${r.id}')" title="Download as Excel">⬇</button>
+                 <button class="btn btn-secondary btn-sm" style="color:#ef4444;border-color:#ef4444" onclick="event.stopPropagation();App.cancelSR('${r.id}')">🚫 Cancel</button>`
             }
           </div>
         </td>
@@ -3487,6 +3532,10 @@ const AdminViews = (() => {
 
     const fmtDate = iso => iso ? new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
 
+    const _hdRole       = typeof App !== 'undefined' && App._getState ? (App._getState()?.user?.role || '') : '';
+    const _hdIsPC       = _hdRole === 'admin' || _hdRole === 'pc';
+    const _hdCanRetract = _hdRole === 'admin' || _hdRole === 'pc' || _hdRole === 'design';
+
     // Color palette indexed by batch label
     const batchColors = ['#6366f1','#22c55e','#f59e0b','#ef4444','#0ea5e9','#a855f7'];
     const batchColorMap = {};
@@ -3550,11 +3599,8 @@ const AdminViews = (() => {
           <input id="hd-batch-label" class="form-input" type="text" value="${suggestedLabel}"
             placeholder="e.g. Batch 2" style="width:140px;padding:6px 10px"
             oninput="App._hdUpdateReleaseCount('${h.id}')">
-          <button class="btn btn-primary" id="hd-release-btn" onclick="App.releaseBatch('${h.id}')" disabled>
-            Release Batch
-          </button>
-          <button class="btn btn-secondary" id="hd-stage-btn" onclick="App.stageBatch('${h.id}')" disabled>
-            📋 Stage for Review
+          <button class="btn btn-primary" id="hd-stage-btn" onclick="App.stageBatch('${h.id}')" disabled>
+            📋 Submit for Release
           </button>
           <span id="hd-selected-count" class="text-sm text-muted"></span>
           <div style="flex:1"></div>
@@ -3582,25 +3628,86 @@ const AdminViews = (() => {
       </div>`;
     }
 
-    // ── PENDING PC REVIEW SECTION ────────────────────────────────
+    // ── PENDING PC ACTION SECTION ────────────────────────────────
     let pcReviewSection = '';
     if (activeStagedBatches.length) {
       const stagedCards = activeStagedBatches.map(b => {
         const count = (b.styleIds || []).length;
-        return `<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:var(--bg-elevated);border-radius:var(--radius-sm);border:1px solid rgba(245,158,11,0.3)">
-          <div>
-            <span class="font-bold">${b.batchLabel}</span>
-            <span class="tag" style="margin-left:8px;background:rgba(245,158,11,0.12);color:#f59e0b;font-weight:600">${count} style${count !== 1 ? 's' : ''}</span>
-            <span class="text-sm text-muted" style="margin-left:8px">Staged ${fmtDate(b.stagedAt)}${b.stagedByName ? ' · by ' + b.stagedByName : ''}</span>
-          </div>
-          <button class="btn btn-secondary btn-sm" onclick="App.retractStagedBatch('${b.id}','${h.id}')">↩ Retract</button>
+        const meta  = `<span class="font-bold" style="font-size:0.95rem">${b.batchLabel}</span>
+            <span class="tag" style="background:rgba(245,158,11,0.12);color:#f59e0b;font-weight:600">${count} style${count !== 1 ? 's' : ''}</span>
+            <span class="text-sm text-muted">Awaiting PC release · Submitted ${fmtDate(b.stagedAt)}${b.stagedByName ? ' · by ' + b.stagedByName : ''}</span>`;
+
+        if (_hdIsPC) {
+          // ── PC / Admin: full picker + Approve & Release + Retract ──
+          const allTCs        = API.cache.tradingCompanies || [];
+          const existingAsgns = h.linkedProgramId ? API.Assignments.byProgram(h.linkedProgramId) : [];
+          const existingMap   = {};
+          for (const a of existingAsgns) existingMap[a.tcId] = new Set(a.coos || []);
+
+          const tcRows = allTCs.map(tc => {
+            const isExisting  = !!existingMap[tc.id];
+            const selectedSet = existingMap[tc.id];
+            const tcCoos      = tc.coos || [];
+            const cooChips    = tcCoos.length
+              ? tcCoos.map(coo => {
+                  const checked = isExisting ? selectedSet.has(coo) : true;
+                  return `<label class="coo-chip" style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border:1px solid var(--border);border-radius:14px;font-size:0.75rem;cursor:pointer;background:${checked ? 'rgba(99,102,241,0.12)' : 'transparent'}">
+                    <input type="checkbox" class="assign-coo-chk" data-batchid="${b.id}" data-tcid="${tc.id}" value="${coo}" ${checked ? 'checked' : ''}
+                           onclick="event.stopPropagation()"
+                           onchange="this.parentElement.style.background=this.checked?'rgba(99,102,241,0.12)':'transparent';App._syncParentFromCoos('${tc.id}','${b.id}');App._syncApproveBtn('${b.id}')">
+                    ${coo}
+                  </label>`;
+                }).join(' ')
+              : '<span class="text-muted" style="font-size:0.75rem">No COOs configured</span>';
+
+            return `<tr style="border-top:1px solid var(--border);cursor:pointer" onclick="App._toggleTcRow(this)">
+              <td style="padding:8px 10px;text-align:center" onclick="event.stopPropagation()">
+                <input type="checkbox" class="assign-tc-chk" data-batchid="${b.id}" data-tcid="${tc.id}" value="${tc.id}" ${isExisting ? 'checked' : ''}
+                       onchange="App._syncTcRowCoos(this);App._syncApproveBtn('${b.id}')">
+              </td>
+              <td style="padding:8px 10px;font-weight:600;font-size:0.85rem">${tc.code}</td>
+              <td style="padding:8px 10px;font-size:0.85rem">${tc.name}</td>
+              <td style="padding:8px 10px" data-tcid="${tc.id}"><div style="display:flex;flex-wrap:wrap;gap:5px">${cooChips}</div></td>
+            </tr>`;
+          }).join('');
+
+          return `<div style="padding:16px;background:var(--bg-elevated);border-radius:var(--radius-sm);border:1px solid rgba(245,158,11,0.3)">
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap">${meta}</div>
+            <div class="font-bold text-sm" style="margin-bottom:6px">Assign vendors:</div>
+            <div style="border:1px solid var(--border);border-radius:var(--radius-sm);overflow:hidden;margin-bottom:8px">
+              <table style="width:100%;border-collapse:collapse">
+                <thead style="background:var(--bg-elevated)">
+                  <tr>
+                    <th style="width:36px;padding:8px 10px;text-align:center">
+                      <input type="checkbox" data-batchid="${b.id}" onchange="App._toggleBatchTcRows(this)" title="Select all">
+                    </th>
+                    <th style="padding:8px 10px;text-align:left;font-size:0.75rem;color:#94a3b8;text-transform:uppercase;letter-spacing:.05em">Code</th>
+                    <th style="padding:8px 10px;text-align:left;font-size:0.75rem;color:#94a3b8;text-transform:uppercase;letter-spacing:.05em">Name</th>
+                    <th style="padding:8px 10px;text-align:left;font-size:0.75rem;color:#94a3b8;text-transform:uppercase;letter-spacing:.05em">COOs to include</th>
+                  </tr>
+                </thead>
+                <tbody>${tcRows}</tbody>
+              </table>
+            </div>
+            <p class="text-sm text-muted" style="margin:0 0 12px">Add or update vendors for this batch. To remove a vendor entirely, use <strong>Assign Trading Cos.</strong> on the program page.</p>
+            <div style="display:flex;gap:8px;justify-content:flex-end">
+              <button class="btn btn-secondary btn-sm" onclick="App.retractStagedBatch('${b.id}','${h.id}')">↩ Retract</button>
+              <button class="btn btn-primary btn-sm" id="hd-approve-btn-${b.id}" onclick="App.approveStagedBatch('${b.id}','${h.id}')" disabled>✓ Approve & Release</button>
+            </div>
+          </div>`;
+        }
+
+        // ── Design / Sales / Planning: read-only status card ──
+        return `<div style="padding:14px 16px;background:var(--bg-elevated);border-radius:var(--radius-sm);border:1px solid rgba(245,158,11,0.3);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">${meta}</div>
+          ${_hdCanRetract ? `<button class="btn btn-secondary btn-sm" onclick="App.retractStagedBatch('${b.id}','${h.id}')">↩ Retract</button>` : ''}
         </div>`;
       }).join('');
+
+      const sectionHeader = _hdIsPC ? 'Pending PC Action' : 'Awaiting PC Release';
       pcReviewSection = `
-      <div class="font-bold" style="font-size:0.95rem;margin:${hasPending ? '0' : '20px'} 0 10px">⏳ Pending PC Review <span class="tag" style="margin-left:6px;background:rgba(245,158,11,0.12);color:#f59e0b">${activeStagedBatches.length}</span></div>
-      <div class="card mb-4" style="border-color:rgba(245,158,11,0.3);padding:12px">
-        <div style="display:flex;flex-direction:column;gap:8px">${stagedCards}</div>
-      </div>`;
+      <div class="font-bold" style="font-size:0.95rem;margin:${hasPending ? '0' : '20px'} 0 10px">⏳ ${sectionHeader} <span class="tag" style="margin-left:6px;background:rgba(245,158,11,0.12);color:#f59e0b">${activeStagedBatches.length}</span></div>
+      <div style="display:flex;flex-direction:column;gap:12px;margin-bottom:20px">${stagedCards}</div>`;
     }
 
     // ── RELEASED STYLES SECTION ────────────────────────────────

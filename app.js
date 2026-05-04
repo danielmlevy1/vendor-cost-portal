@@ -440,7 +440,7 @@ App = (() => {
       else if (route === 'performance')   mc.innerHTML = AdminViews.renderPerformance(routeParam);
       // Pre-costing workflow routes
       else if (route === 'design-handoff')       mc.innerHTML = AdminViews.renderDesignHandoff();
-      else if (route === 'handoff-detail')       { mc.innerHTML = AdminViews.renderHandoffDetail(routeParam); App._hdUpdateReleaseCount(routeParam); }
+      else if (route === 'handoff-detail')       { mc.innerHTML = AdminViews.renderHandoffDetail(routeParam); App._hdUpdateReleaseCount(routeParam); App._hdInitPcPickers(); }
       else if (route === 'sales-request' || route === 'sales-requests') mc.innerHTML = AdminViews.renderSalesRequests();
       else if (route === 'build-from-handoff')   { mc.innerHTML = AdminViews.renderBuildFromHandoff(routeParam); App._initBuildFromHandoffKbd(); }
       else if (route === 'design-changes')       mc.innerHTML = AdminViews.renderAllDesignChanges(document._dcTab || 'all');
@@ -461,7 +461,7 @@ App = (() => {
     } else if (isDesign) {
       if (route === 'dashboard')           mc.innerHTML = AdminViews.renderDashboard(user.role, user);
       else if (route === 'design-handoff') mc.innerHTML = AdminViews.renderDesignHandoff();
-      else if (route === 'handoff-detail') { mc.innerHTML = AdminViews.renderHandoffDetail(routeParam); App._hdUpdateReleaseCount(routeParam); }
+      else if (route === 'handoff-detail') { mc.innerHTML = AdminViews.renderHandoffDetail(routeParam); App._hdUpdateReleaseCount(routeParam); App._hdInitPcPickers(); }
       else if (route === 'design-changes') mc.innerHTML = AdminViews.renderAllDesignChanges(document._dcTab || 'all');
       else if (route === 'recost-queue')   mc.innerHTML = AdminViews.renderRecostQueue();
       else if (route === 'factories')      mc.innerHTML = AdminViews.renderFactories(user.role);
@@ -479,7 +479,7 @@ App = (() => {
       else if (route === 'design-costing')     mc.innerHTML = AdminViews.renderDesignCostingView(routeParam, user.role);
       else if (route === 'buy-summary')        mc.innerHTML = AdminViews.renderBuySummary(routeParam, user.role);
       else if (route === 'design-handoff')     mc.innerHTML = AdminViews.renderDesignHandoff();
-      else if (route === 'handoff-detail')     { mc.innerHTML = AdminViews.renderHandoffDetail(routeParam); App._hdUpdateReleaseCount(routeParam); }
+      else if (route === 'handoff-detail')     { mc.innerHTML = AdminViews.renderHandoffDetail(routeParam); App._hdUpdateReleaseCount(routeParam); App._hdInitPcPickers(); }
       else if (route === 'sales-request' || route === 'sales-requests') mc.innerHTML = AdminViews.renderSalesRequests();
       else if (route === 'build-from-handoff') { mc.innerHTML = AdminViews.renderBuildFromHandoff(routeParam); App._initBuildFromHandoffKbd(); }
       else if (route === 'design-changes')     mc.innerHTML = AdminViews.renderAllDesignChanges(document._dcTab || 'all');
@@ -495,7 +495,7 @@ App = (() => {
     } else if (isTechDesign) {
       if (route === 'dashboard')           mc.innerHTML = AdminViews.renderDashboard(user.role, user);
       else if (route === 'design-handoff') mc.innerHTML = AdminViews.renderDesignHandoff();
-      else if (route === 'handoff-detail') { mc.innerHTML = AdminViews.renderHandoffDetail(routeParam); App._hdUpdateReleaseCount(routeParam); }
+      else if (route === 'handoff-detail') { mc.innerHTML = AdminViews.renderHandoffDetail(routeParam); App._hdUpdateReleaseCount(routeParam); App._hdInitPcPickers(); }
       else if (route === 'design-changes') mc.innerHTML = AdminViews.renderAllDesignChanges(document._dcTab || 'all');
       else if (route === 'programs')       mc.innerHTML = AdminViews.renderPrograms(routeParam);
       else if (route === 'design-costing') mc.innerHTML = AdminViews.renderDesignCostingView(routeParam, user.role);
@@ -3519,16 +3519,20 @@ App._toggleBatchFilter = function(tableId, label, tileEl) {
   const table = document.getElementById(tableId);
   if (!table) return;
 
-  const isActive = tileEl.classList.contains('batch-tile-active');
-  // Deactivate all tiles in the same kpi-grid
-  const grid = tileEl.closest('.kpi-grid');
-  if (grid) grid.querySelectorAll('[data-batch-tile]').forEach(t => t.classList.remove('batch-tile-active'));
+  const wasActive = tileEl.classList.contains('batch-tile-active');
+  const grid      = tileEl.closest('.kpi-grid');
+  const allTiles  = grid ? [...grid.querySelectorAll('[data-batch-tile]')] : [];
+  const allTile   = allTiles.find(t => t.dataset.batchTile === '__all__');
 
-  if (isActive) {
-    // Show all rows
+  // Deactivate all tiles first
+  allTiles.forEach(t => t.classList.remove('batch-tile-active'));
+
+  if (label === '__all__' || wasActive) {
+    // 'All' clicked OR active batch tile deselected → show everything, re-activate All tile
     table.querySelectorAll('tr[data-batch-label]').forEach(tr => { tr.style.display = ''; });
+    if (allTile) allTile.classList.add('batch-tile-active');
   } else {
-    // Show only rows matching this label; keep group-header rows (no data-batch-label) visible always
+    // Activate specific batch tile, filter to matching rows only
     tileEl.classList.add('batch-tile-active');
     table.querySelectorAll('tr[data-batch-label]').forEach(tr => {
       tr.style.display = tr.dataset.batchLabel === label ? '' : 'none';
@@ -5830,46 +5834,6 @@ App.deleteHandoff = async function(id) {
   if (confirm('Delete this design handoff?')) { await API.DesignHandoffs.delete(id); App.navigate('design-handoff'); }
 };
 
-// ─ Batch Release ─────────────────────────────────────────────────
-
-App.releaseBatch = async function(handoffId) {
-  const batchLabel = (document.getElementById('hd-batch-label')?.value || '').trim();
-  if (!batchLabel) { alert('Enter a batch label.'); return; }
-
-  const h = API.DesignHandoffs.get(handoffId);
-  if (!h) return;
-
-  const releasedSet = new Set((h.batchReleases || []).flatMap(b => b.styleIds || []));
-  // Use live DOM values so unsaved-but-typed labels are honoured
-  const liveLabels = {};
-  document.querySelectorAll('.hd-label-input').forEach(inp => {
-    liveLabels[inp.dataset.styleId] = (inp.value || '').trim();
-  });
-  const toRelease = (h.stylesList || []).filter(s => {
-    if (releasedSet.has(s.id)) return false;
-    const live = liveLabels[s.id];
-    return (live !== undefined ? live : (s.batchLabel || 'Batch 1')) === batchLabel;
-  }).map(s => s.id);
-
-  if (!toRelease.length) {
-    alert(`No unreleased styles are labeled "${batchLabel}". Assign that label to styles in the Batch Label column first.`);
-    return;
-  }
-
-  const btn = document.getElementById('hd-release-btn');
-  if (btn) { btn.disabled = true; btn.textContent = 'Releasing…'; }
-
-  try {
-    await API.DesignHandoffs.releaseBatch(handoffId, toRelease, batchLabel);
-    const mc = document.getElementById('content');
-    if (mc) mc.innerHTML = AdminViews.renderHandoffDetail(handoffId);
-    App._hdUpdateReleaseCount(handoffId);
-  } catch (err) {
-    alert('Release failed: ' + (err.message || err));
-    if (btn) { btn.disabled = false; App._hdUpdateReleaseCount(handoffId); }
-  }
-};
-
 // Save a single style's batchLabel back to the handoff's stylesList
 App._hdSaveBatchLabel = async function(handoffId, styleId, newLabel) {
   const h = API.DesignHandoffs.get(handoffId);
@@ -5883,15 +5847,13 @@ App._hdSaveBatchLabel = async function(handoffId, styleId, newLabel) {
   App._hdUpdateReleaseCount(handoffId);
 };
 
-// Update the release button text + count based on toolbar label
+// Update the stage button text + count based on toolbar label
 App._hdUpdateReleaseCount = function(handoffId) {
-  const label   = (document.getElementById('hd-batch-label')?.value || '').trim();
-  const btn     = document.getElementById('hd-release-btn');
+  const label    = (document.getElementById('hd-batch-label')?.value || '').trim();
   const stageBtn = document.getElementById('hd-stage-btn');
-  const counter = document.getElementById('hd-selected-count');
+  const counter  = document.getElementById('hd-selected-count');
   if (!label || !handoffId) {
-    if (btn)      { btn.disabled = true;      btn.textContent = 'Release Batch'; }
-    if (stageBtn) { stageBtn.disabled = true; stageBtn.textContent = '📋 Stage for Review'; }
+    if (stageBtn) { stageBtn.disabled = true; stageBtn.textContent = '📋 Submit for Release'; }
     if (counter)  counter.textContent = '';
     return;
   }
@@ -5899,31 +5861,20 @@ App._hdUpdateReleaseCount = function(handoffId) {
   if (!h) return;
   const releasedSet = new Set((h.batchReleases || []).flatMap(b => b.styleIds || []));
   const stagedSet   = new Set((h.stagedBatches || []).filter(b => b.status === 'staged').flatMap(b => b.styleIds || []));
-  // Count styles whose current in-DOM label input matches OR whose cached batchLabel matches
   const liveLabels = {};
   document.querySelectorAll('.hd-label-input').forEach(inp => {
     liveLabels[inp.dataset.styleId] = (inp.value || '').trim();
   });
-  const releasableCount = (h.stylesList || []).filter(s => {
-    if (releasedSet.has(s.id)) return false;
-    const live = liveLabels[s.id];
-    return (live !== undefined ? live : (s.batchLabel || 'Batch 1')) === label;
-  }).length;
-  // Stage count also excludes styles already in an active staged batch
   const stageableCount = (h.stylesList || []).filter(s => {
     if (releasedSet.has(s.id) || stagedSet.has(s.id)) return false;
     const live = liveLabels[s.id];
     return (live !== undefined ? live : (s.batchLabel || 'Batch 1')) === label;
   }).length;
-  if (btn) {
-    btn.disabled = releasableCount === 0;
-    btn.textContent = releasableCount > 0 ? `Release "${label}" (${releasableCount} style${releasableCount !== 1 ? 's' : ''})` : 'Release Batch';
-  }
   if (stageBtn) {
     stageBtn.disabled = stageableCount === 0;
-    stageBtn.textContent = stageableCount > 0 ? `📋 Stage "${label}" for Review (${stageableCount} style${stageableCount !== 1 ? 's' : ''})` : '📋 Stage for Review';
+    stageBtn.textContent = stageableCount > 0 ? `📋 Submit "${label}" for Release (${stageableCount} style${stageableCount !== 1 ? 's' : ''})` : '📋 Submit for Release';
   }
-  if (counter) counter.textContent = releasableCount > 0 ? `${releasableCount} style${releasableCount !== 1 ? 's' : ''} match` : 'No styles with this label';
+  if (counter) counter.textContent = stageableCount > 0 ? `${stageableCount} style${stageableCount !== 1 ? 's' : ''} match` : 'No styles with this label';
 };
 
 App.stageBatch = async function(handoffId) {
@@ -5958,10 +5909,79 @@ App.stageBatch = async function(handoffId) {
     const mc = document.getElementById('content');
     if (mc) mc.innerHTML = AdminViews.renderHandoffDetail(handoffId);
     App._hdUpdateReleaseCount(handoffId);
-    App.showToast(`"${batchLabel}" staged for PC review ✓`);
+    App._hdInitPcPickers();
+    App.showToast(`"${batchLabel}" submitted for PC release ✓`);
   } catch (err) {
     App.showToast('Stage failed: ' + (err.message || err));
     if (btn) { btn.disabled = false; App._hdUpdateReleaseCount(handoffId); }
+  }
+};
+
+// After rendering a handoff detail page, sync TC picker state for all staged batch cards.
+App._hdInitPcPickers = function() {
+  const seen = new Set();
+  document.querySelectorAll('.assign-tc-chk[data-batchid]').forEach(chk => {
+    App._syncParentFromCoos(chk.dataset.tcid, chk.dataset.batchid);
+    if (!seen.has(chk.dataset.batchid)) {
+      App._syncApproveBtn(chk.dataset.batchid);
+      seen.add(chk.dataset.batchid);
+    }
+  });
+};
+
+App._syncApproveBtn = function(batchId) {
+  const btn     = document.getElementById(`hd-approve-btn-${batchId}`);
+  if (!btn) return;
+  const checked = document.querySelectorAll(`.assign-tc-chk[data-batchid="${batchId}"]:checked`).length;
+  btn.disabled  = checked === 0;
+};
+
+App._toggleBatchTcRows = function(selectAllChk) {
+  const batchId = selectAllChk.dataset.batchid;
+  document.querySelectorAll(`.assign-tc-chk[data-batchid="${batchId}"]`).forEach(chk => {
+    chk.checked = selectAllChk.checked;
+    App._syncTcRowCoos(chk);
+  });
+  App._syncApproveBtn(batchId);
+};
+
+App.approveStagedBatch = async function(stagedBatchId, handoffId) {
+  const h     = API.DesignHandoffs.get(handoffId);
+  const batch = (h?.stagedBatches || []).find(b => b.id === stagedBatchId);
+  const label = batch?.batchLabel || 'this batch';
+  const styleCount = (batch?.styleIds || []).length;
+
+  const assignments = [];
+  for (const chk of document.querySelectorAll(`.assign-tc-chk[data-batchid="${stagedBatchId}"]:checked`)) {
+    const tcId = chk.value;
+    const tc   = API.TradingCompanies.get(tcId);
+    const tcHasCoos = (tc?.coos || []).length > 0;
+    const coos = [...document.querySelectorAll(`.assign-coo-chk[data-batchid="${stagedBatchId}"][data-tcid="${tcId}"]:checked`)].map(el => el.value);
+    if (tcHasCoos && !coos.length) {
+      alert(`Pick at least one COO for ${tc?.code || tcId}, or uncheck the row.`);
+      return;
+    }
+    assignments.push({ tcId, coos });
+  }
+
+  if (!assignments.length) { alert('Select at least one vendor to approve this batch.'); return; }
+
+  const tcNames = assignments.map(a => API.TradingCompanies.get(a.tcId)?.code || a.tcId).join(', ');
+  if (!confirm(`Release "${label}" (${styleCount} style${styleCount !== 1 ? 's' : ''}) to ${assignments.length} vendor${assignments.length !== 1 ? 's' : ''}: ${tcNames}?`)) return;
+
+  const btn = document.getElementById(`hd-approve-btn-${stagedBatchId}`);
+  if (btn) { btn.disabled = true; btn.textContent = 'Releasing…'; }
+
+  try {
+    await API.StagedBatches.approve(stagedBatchId, assignments);
+    const mc = document.getElementById('content');
+    if (mc) mc.innerHTML = AdminViews.renderHandoffDetail(handoffId);
+    App._hdUpdateReleaseCount(handoffId);
+    App._hdInitPcPickers();
+    App.showToast(`"${label}" released to ${assignments.length} vendor${assignments.length !== 1 ? 's' : ''} ✓`);
+  } catch (err) {
+    App.showToast('Approval failed: ' + (err.message || err));
+    if (btn) { btn.disabled = false; btn.textContent = '✓ Approve & Release'; }
   }
 };
 
@@ -6006,6 +6026,7 @@ App.retractStagedBatch = async function(stagedBatchId, handoffId) {
     const mc = document.getElementById('content');
     if (mc) mc.innerHTML = AdminViews.renderHandoffDetail(handoffId);
     App._hdUpdateReleaseCount(handoffId);
+    App._hdInitPcPickers();
     App.showToast(`"${label}" retracted — styles returned to Pending Batches`);
   } catch (err) {
     App.showToast('Retract failed: ' + (err.message || err));
@@ -6761,12 +6782,23 @@ App.saveSalesRequestEdits = async function(requestId, mode) {
   const patch = { styles: newActive, cancelledStyles: newCancelled };
   if (mode === 'batch' || mode === 'submit') patch.status = 'submitted';
 
-  await API.SalesRequests.update(requestId, patch);
+  try {
+    await API.SalesRequests.update(requestId, patch);
+  } catch (err) {
+    App.showToast('Save failed: ' + (err.message || 'Unknown error'), 'error');
+    return;
+  }
 
   if (mode === 'draft') {
     App.showToast('Draft saved');
   } else if (mode === 'changes') {
-    App.showToast('Changes saved');
+    App.showToast('Changes saved ✓', 'success', 2000);
+    if (App._srSaveTimer) clearTimeout(App._srSaveTimer);
+    App._srSaveTimer = setTimeout(() => {
+      App._srSaveTimer = null;
+      if (!document.getElementById('modal-overlay')?.classList.contains('hidden'))
+        App.closeModal();
+    }, 1500);
   } else {
     App.closeModal();
     App.navigate('sales-requests');
@@ -8071,8 +8103,10 @@ App._toggleTcRow = function(tr) {
 
 App._syncTcRowCoos = function(tcChk) {
   tcChk.indeterminate = false;
-  const tcId = tcChk.dataset.tcid;
-  const cooChks = document.querySelectorAll(`.assign-coo-chk[data-tcid="${tcId}"]`);
+  const tcId    = tcChk.dataset.tcid;
+  const batchId = tcChk.dataset.batchid;
+  const scope   = batchId ? `[data-batchid="${batchId}"]` : '';
+  const cooChks = document.querySelectorAll(`.assign-coo-chk${scope}[data-tcid="${tcId}"]`);
   cooChks.forEach(c => {
     c.checked = tcChk.checked;
     const label = c.parentElement;
@@ -8080,9 +8114,10 @@ App._syncTcRowCoos = function(tcChk) {
   });
 };
 
-App._syncParentFromCoos = function(tcId) {
-  const cooChks = [...document.querySelectorAll(`.assign-coo-chk[data-tcid="${tcId}"]`)];
-  const tcChk = document.querySelector(`.assign-tc-chk[data-tcid="${tcId}"]`);
+App._syncParentFromCoos = function(tcId, batchId) {
+  const scope   = batchId ? `[data-batchid="${batchId}"]` : '';
+  const cooChks = [...document.querySelectorAll(`.assign-coo-chk${scope}[data-tcid="${tcId}"]`)];
+  const tcChk   = document.querySelector(`.assign-tc-chk${scope}[data-tcid="${tcId}"]`);
   if (!tcChk) return;
   if (!cooChks.length) {
     // No COOs — TC checkbox state is authoritative; don't touch it

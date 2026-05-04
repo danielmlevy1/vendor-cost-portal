@@ -10,6 +10,26 @@ const VendorViews = (() => {
     return `<span class="badge badge-${map[s] || 'pending'}">${{ submitted: 'Submitted', flagged: 'Flagged', accepted: 'Accepted', pending: 'Not Quoted' }[s] || s}</span>`;
   }
 
+  // DUPLICATED from views-admin.js — keep in sync.
+  // Returns HTML for the "Batches" column on the programs list.
+  function batchStateCell(handoff) {
+    if (!handoff) return `<span class="text-muted">—</span>`;
+    const allLabels = [...new Set([
+      ...(handoff.stylesList  || []).map(s => s.batchLabel).filter(Boolean),
+      ...(handoff.batchReleases || []).map(b => b.batchLabel),
+    ])];
+    const total    = allLabels.length;
+    const released = (handoff.batchReleases || []).length;
+    if (total === 0) return `<span class="text-muted">—</span>`;
+    const nav    = handoff.id ? `onclick="App.navigate('handoff-detail','${handoff.id}')" title="View batch detail"` : '';
+    const cursor = handoff.id ? 'cursor:pointer;' : '';
+    if (total === 1)
+      return `<span class="text-muted" ${nav} style="${cursor}font-size:0.8rem">1/1 <span style="opacity:0.6;font-size:0.72rem">(single)</span></span>`;
+    if (released >= total)
+      return `<span ${nav} style="${cursor}font-size:0.8rem;font-weight:600;color:#22c55e">${released}/${total} ✓</span>`;
+    return `<span ${nav} style="${cursor}font-size:0.8rem;font-weight:500">${released}/${total} <span class="text-muted" style="font-size:0.72rem">batches</span></span>`;
+  }
+
   // ── Programs Dashboard (TC home page) ──────────────────────
   function renderPrograms(tcId) {
     const tc = API.TradingCompanies.get(tcId);
@@ -89,6 +109,7 @@ const VendorViews = (() => {
         <td class="text-sm"><span class="tag" style="font-size:0.75rem;background:rgba(99,102,241,0.12);color:#818cf8">v${prog.version||1}</span></td>
         <td style="text-align:center"><span class="tag">${styles.length}</span></td>
         <td style="text-align:center">${costedCell}</td>
+        <td class="text-sm">${batchStateCell(linkedHandoff)}</td>
         <td class="text-sm">${costsDue !== '—' ? costsDue : vDash}</td>
         <td>
           <div style="display:flex;align-items:center;gap:8px">
@@ -161,6 +182,7 @@ const VendorViews = (() => {
             <th>Stage</th><th>SR #</th><th>Ver.</th>
             <th style="text-align:center">Styles</th>
             <th style="text-align:center">Costed</th>
+            <th>Batches</th>
             <th>Costs Due Date</th>
             <th>Quoted</th><th>Last activity</th><th>Quote Status</th><th></th>
           </tr></thead>
@@ -242,8 +264,16 @@ const VendorViews = (() => {
       ...styles.map(s => s.releasedBatch).filter(Boolean),
       ...(linkedHandoff?.stylesList || []).map(s => s.batchLabel).filter(Boolean),
     ])];
-    const vpHasManyBatches = vpAllBatchLabels.length >= 2;
+    const vpHasManyBatches = vpAllBatchLabels.length >= 2 || Object.keys(unreleasedByFab).length > 0;
     const vpBatchTileRow = vpHasManyBatches ? (() => {
+      const vpTotalUnreleased = Object.values(unreleasedByFab).reduce((s, a) => s + a.length, 0);
+      const vpTotalStyles     = styles.length + vpTotalUnreleased;
+      const allTile = `<div class="kpi-card-wide batch-tile-active" data-batch-tile="__all__"
+        onclick="App._toggleBatchFilter('tc-costing-table',this.dataset.batchTile,this)"
+        style="cursor:pointer;border-top:3px solid #6366f1;min-width:100px;user-select:none">
+        <div class="kpi-value" style="font-size:1.1rem;color:#6366f1">All</div>
+        <div class="kpi-label">${vpTotalStyles} style${vpTotalStyles!==1?'s':''} · ${styles.length} released</div>
+      </div>`;
       const tiles = vpAllBatchLabels.map((label, i) => {
         const rel      = vpBatchReleases.find(r => r.batchLabel === label);
         const color    = vpBatchColors[i % vpBatchColors.length];
@@ -258,7 +288,7 @@ const VendorViews = (() => {
           <div class="kpi-label">${count} style${count!==1?'s':''} · ${dateStr}</div>
         </div>`;
       }).join('');
-      return `<div class="kpi-grid" style="margin-bottom:16px">${tiles}</div>`;
+      return `<div class="kpi-grid" style="margin-bottom:16px">${allTile}${tiles}</div>`;
     })() : '';
 
     // Group styles by fabrication
@@ -326,7 +356,7 @@ const VendorViews = (() => {
         // Unreleased batch styles for this fabric group — greyed out, hoverable, non-actionable
         (unreleasedByFab[fab] || []).forEach(s => {
           const batchLabel = s.batchLabel || 'Batch 1';
-          bodyRows += `<tr style="opacity:0.45;cursor:default" title="Coming in ${batchLabel} · Pending release" data-batch-label="${(s.batchLabel||'').replace(/"/g,'&quot;')}">
+          bodyRows += `<tr style="opacity:0.45;cursor:default" title="Not yet released" data-batch-label="${(s.batchLabel||'').replace(/"/g,'&quot;')}">
             <td class="primary font-bold" style="white-space:nowrap">${s.styleNumber || '—'}</td>
             <td style="min-width:120px">${s.styleName || '—'}</td>
             <td class="text-sm text-muted">${(s.fabrication || s.fabric || '').substring(0,25)}</td>

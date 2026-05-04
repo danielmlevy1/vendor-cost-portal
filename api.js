@@ -986,16 +986,6 @@ const API = (() => {
       if (idx >= 0) cache.designHandoffs[idx] = h;
       return h;
     },
-    async releaseBatch(id, styleIds, batchLabel) {
-      const h = await POST(`/api/design-handoffs/${id}/release-batch`, { styleIds, batchLabel });
-      cache.handoffMap[id] = h;
-      const idx = cache.designHandoffs.findIndex(x => x.id === id);
-      if (idx >= 0) cache.designHandoffs[idx] = h; else cache.designHandoffs.push(h);
-      if (h.linkedProgramId && !cache.programMap[h.linkedProgramId]) {
-        await Programs.fetch(h.linkedProgramId);
-      }
-      return h;
-    },
     async delete(id) {
       await DEL(`/api/design-handoffs/${id}`);
       cache.designHandoffs = cache.designHandoffs.filter(h => h.id !== id);
@@ -1041,6 +1031,20 @@ const API = (() => {
       cache.handoffMap[h.id] = h;
       const idx = cache.designHandoffs.findIndex(x => x.id === h.id);
       if (idx >= 0) cache.designHandoffs[idx] = h; else cache.designHandoffs.push(h);
+      return h;
+    },
+    // Approve a staged batch: release styles + write TC assignments atomically.
+    // assignments: [{ tcId, coos: [...] }]
+    async approve(stagedBatchId, assignments) {
+      const h = await POST(`/api/staged-batches/${stagedBatchId}/approve`, { assignments });
+      cache.handoffMap[h.id] = h;
+      const idx = cache.designHandoffs.findIndex(x => x.id === h.id);
+      if (idx >= 0) cache.designHandoffs[idx] = h; else cache.designHandoffs.push(h);
+      if (h.linkedProgramId) {
+        const asgns = normalizeAssignments(await GET(`/api/programs/${h.linkedProgramId}/assignments`));
+        cache.assignments[h.linkedProgramId] = asgns;
+        syncTcCount(h.linkedProgramId, asgns.length);
+      }
       return h;
     },
   };
