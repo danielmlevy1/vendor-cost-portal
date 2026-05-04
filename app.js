@@ -12,7 +12,7 @@ App = (() => {
 
   // ── State ──────────────────────────────────────────────────
   const state = {
-    route: 'programs', routeParam: null,
+    route: 'programs', routeParam: null, prevRoute: null,
     user: null,
     tcColOrder: {},   // { [programId]: [colKey, ...] } for drag-reorder
   };
@@ -44,6 +44,7 @@ App = (() => {
 
   // ── Routing ────────────────────────────────────────────────
   async function navigate(route, param) {
+    state.prevRoute = state.route;
     state.route = route; state.routeParam = param || null;
 
     // Route-based preloading — warm the cache before rendering
@@ -79,6 +80,8 @@ App = (() => {
       }
       else if (route === 'sales-request')
         await API.preload.salesRequest();
+      else if (route === 'pre-costing')
+        await API.preload.designHandoff();
       else if (route === 'fabric-standards')
         await API.preload.fabricStandards();
       else if (route === 'recost-queue')
@@ -342,6 +345,7 @@ App = (() => {
         <div class="sidebar-section"><div class="sidebar-section-label">Pre-Costing</div></div>
         <button class="nav-item ${state.route === 'design-handoff' ? 'active' : ''}" onclick="App.navigate('design-handoff')"><span class="icon">🎨</span> Design Handoffs</button>
         <button class="nav-item ${state.route === 'sales-request' ? 'active' : ''}" onclick="App.navigate('sales-request')"><span class="icon">📝</span> Sales Requests</button>
+        <button class="nav-item ${state.route === 'pre-costing' ? 'active' : ''}" onclick="App.navigate('pre-costing')"><span class="icon">🔀</span> Pre-Costing Pipeline</button>
         <button class="nav-item ${state.route === 'fabric-standards' ? 'active' : ''}" onclick="App.navigate('fabric-standards')"><span class="icon">🧵</span> Fabric Standards</button>
         ${dcGroupAdmin}
         <div class="sidebar-section"><div class="sidebar-section-label">Settings</div></div>
@@ -360,6 +364,7 @@ App = (() => {
         <button class="nav-item ${state.route === 'dashboard' ? 'active' : ''}" onclick="App.navigate('dashboard')"><span class="icon">🏡</span> Dashboard</button>
         ${programsGroup}
         <button class="nav-item ${state.route === 'design-handoff' ? 'active' : ''}" onclick="App.navigate('design-handoff')"><span class="icon">🎨</span> Design Handoffs</button>
+        <button class="nav-item ${state.route === 'pre-costing' ? 'active' : ''}" onclick="App.navigate('pre-costing')"><span class="icon">🔀</span> Pre-Costing Pipeline</button>
         ${dcGroupNoBadge}
         <button class="nav-item ${state.route === 'factories' ? 'active' : ''}" onclick="App.navigate('factories')"><span class="icon">🏭</span> Factories</button>
       ` : isTechDesign ? `
@@ -377,6 +382,7 @@ App = (() => {
         ${programsGroup}
         <button class="nav-item ${state.route === 'sales-request' ? 'active' : ''}" onclick="App.navigate('sales-request')"><span class="icon">📝</span> Sales Requests</button>
         <button class="nav-item ${state.route === 'design-handoff' ? 'active' : ''}" onclick="App.navigate('design-handoff')"><span class="icon">🎨</span> Design Handoffs</button>
+        <button class="nav-item ${state.route === 'pre-costing' ? 'active' : ''}" onclick="App.navigate('pre-costing')"><span class="icon">🔀</span> Pre-Costing Pipeline</button>
         ${dcGroupSales}
         <button class="nav-item ${state.route === 'factories' ? 'active' : ''}" onclick="App.navigate('factories')"><span class="icon">🏭</span> Factories</button>
       ` : `
@@ -442,6 +448,7 @@ App = (() => {
       else if (route === 'design-handoff')       mc.innerHTML = AdminViews.renderDesignHandoff();
       else if (route === 'handoff-detail')       { mc.innerHTML = AdminViews.renderHandoffDetail(routeParam); App._hdUpdateReleaseCount(routeParam); App._hdInitPcPickers(); }
       else if (route === 'sales-request' || route === 'sales-requests') mc.innerHTML = AdminViews.renderSalesRequests();
+      else if (route === 'pre-costing')          mc.innerHTML = AdminViews.renderPreCostingPipeline();
       else if (route === 'build-from-handoff')   { mc.innerHTML = AdminViews.renderBuildFromHandoff(routeParam); App._initBuildFromHandoffKbd(); }
       else if (route === 'design-changes')       mc.innerHTML = AdminViews.renderAllDesignChanges(document._dcTab || 'all');
       else if (route === 'recost-queue')          mc.innerHTML = AdminViews.renderRecostQueue();
@@ -462,6 +469,7 @@ App = (() => {
       if (route === 'dashboard')           mc.innerHTML = AdminViews.renderDashboard(user.role, user);
       else if (route === 'design-handoff') mc.innerHTML = AdminViews.renderDesignHandoff();
       else if (route === 'handoff-detail') { mc.innerHTML = AdminViews.renderHandoffDetail(routeParam); App._hdUpdateReleaseCount(routeParam); App._hdInitPcPickers(); }
+      else if (route === 'pre-costing')    mc.innerHTML = AdminViews.renderPreCostingPipeline();
       else if (route === 'design-changes') mc.innerHTML = AdminViews.renderAllDesignChanges(document._dcTab || 'all');
       else if (route === 'recost-queue')   mc.innerHTML = AdminViews.renderRecostQueue();
       else if (route === 'factories')      mc.innerHTML = AdminViews.renderFactories(user.role);
@@ -481,6 +489,7 @@ App = (() => {
       else if (route === 'design-handoff')     mc.innerHTML = AdminViews.renderDesignHandoff();
       else if (route === 'handoff-detail')     { mc.innerHTML = AdminViews.renderHandoffDetail(routeParam); App._hdUpdateReleaseCount(routeParam); App._hdInitPcPickers(); }
       else if (route === 'sales-request' || route === 'sales-requests') mc.innerHTML = AdminViews.renderSalesRequests();
+      else if (route === 'pre-costing')        mc.innerHTML = AdminViews.renderPreCostingPipeline();
       else if (route === 'build-from-handoff') { mc.innerHTML = AdminViews.renderBuildFromHandoff(routeParam); App._initBuildFromHandoffKbd(); }
       else if (route === 'design-changes')     mc.innerHTML = AdminViews.renderAllDesignChanges(document._dcTab || 'all');
       else if (route === 'recost-queue')        mc.innerHTML = AdminViews.renderRecostQueue();

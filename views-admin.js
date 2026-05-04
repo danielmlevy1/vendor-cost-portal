@@ -3513,10 +3513,230 @@ const AdminViews = (() => {
     ${srSections}`;
   }
 
+  // ── Pre-Costing Pipeline — unified read-only view ────────────────────────────
+  function renderPreCostingPipeline() {
+    const _pcRole   = typeof App !== 'undefined' && App._getState ? (App._getState()?.user?.role || '') : '';
+    const _isDesign = _pcRole === 'design';
+
+    const allHandoffs = API.DesignHandoffs.all();
+    const allSRs      = API.SalesRequests.all();
+
+    // Design sees handoffs (already server-filtered) + only SRs linked to their handoffs
+    let visibleHandoffs, visibleSRs;
+    if (_isDesign) {
+      visibleHandoffs = allHandoffs;
+      const ownHandoffIds = new Set(visibleHandoffs.map(h => h.id));
+      visibleSRs = allSRs.filter(r => r.sourceHandoffId && ownHandoffIds.has(r.sourceHandoffId));
+    } else {
+      visibleHandoffs = allHandoffs;
+      visibleSRs      = allSRs;
+    }
+
+    // Tag each record with its display type, combine, sort by createdAt desc
+    const combined = [
+      ...visibleHandoffs.map(h => ({ _type: 'handoff',      item: h })),
+      ...visibleSRs.filter(r => r.status !== 'batch-review').map(r => ({ _type: 'sr',           item: r })),
+      ...visibleSRs.filter(r => r.status === 'batch-review').map(r => ({ _type: 'batch-review', item: r })),
+    ].sort((a, b) => new Date(b.item.createdAt) - new Date(a.item.createdAt));
+
+    // KPI counts (active = non-cancelled/non-converted)
+    const nHandoffs    = visibleHandoffs.filter(h => h.status !== 'cancelled').length;
+    const nSRs         = visibleSRs.filter(r => r.status !== 'cancelled' && r.status !== 'converted' && r.status !== 'batch-review').length;
+    const nBatchReview = visibleSRs.filter(r => r.status === 'batch-review').length;
+    const nInFlight    = nHandoffs + nSRs + nBatchReview;
+
+    const kpi = (icon, label, value, color) => `
+      <div class="kpi-card">
+        <div class="kpi-icon" style="background:${color}22;color:${color}">${icon}</div>
+        <div class="kpi-body">
+          <div class="kpi-value">${value}</div>
+          <div class="kpi-label">${label}</div>
+        </div>
+      </div>`;
+
+    const kpiTiles = `
+      <div class="kpi-grid" style="margin-bottom:20px">
+        ${kpi('🔀', 'Total In Flight', nInFlight, '#6366f1')}
+        ${kpi('🎨', 'Handoffs', nHandoffs, '#6366f1')}
+        ${kpi('📝', 'Sales Requests', nSRs, '#e04e39')}
+        ${kpi('🔄', 'Batch Review', nBatchReview, '#f59e0b')}
+      </div>`;
+
+    const dash = `<span class="text-muted">—</span>`;
+
+    const buildRow = entry => {
+      const { _type, item } = entry;
+      const isHandoff     = _type === 'handoff';
+      const isBatchReview = _type === 'batch-review';
+
+      const borderStyle = isHandoff
+        ? 'border-left:3px solid rgba(99,102,241,0.5)'
+        : isBatchReview ? 'border-left:3px solid rgba(245,158,11,0.5)'
+        : 'border-left:3px solid rgba(224,78,57,0.4)';
+
+      const typeBadge = isHandoff
+        ? `<span class="badge" style="background:rgba(99,102,241,0.12);color:#6366f1;border:1px solid rgba(99,102,241,0.25)">🎨 Handoff</span>`
+        : isBatchReview
+          ? `<span class="badge badge-amber">🔄 Batch Review</span>`
+          : `<span class="badge" style="background:rgba(224,78,57,0.1);color:#e04e39;border:1px solid rgba(224,78,57,0.25)">📝 SR</span>`;
+
+      // Stage: native logic per entity type
+      let stage;
+      if (isHandoff) {
+        const hasStagedBatches = (item.stagedBatches || []).some(b => b.status === 'staged');
+        const hdBatchLabels    = (item.stylesList || []).some(s => s.batchLabel && s.batchLabel !== 'Batch 1');
+        const releasedIds      = new Set((item.batchReleases || []).flatMap(b => b.styleIds || []));
+        const allReleased      = (item.stylesList || []).length > 0 && releasedIds.size >= (item.stylesList || []).length;
+        stage = item.status === 'cancelled' ? 'cancelled'
+          : hasStagedBatches ? 'Submitted'
+          : item.submittedForCosting && hdBatchLabels && !allReleased ? 'Batching'
+          : item.linkedProgramId && allReleased ? 'Complete'
+          : item.submittedForCosting ? 'Submitted to Sales'
+          : 'Draft';
+      } else {
+        const srLinkedProg = item.linkedProgramId ? API.Programs.get(item.linkedProgramId) : null;
+        stage = item.status === 'cancelled' ? 'cancelled'
+          : srLinkedProg ? srLinkedProg.status
+          : item.status === 'batch-review' ? 'Batch Review'
+          : item.status === 'converted' ? 'Costing'
+          : item.status === 'submitted' ? 'Sales Request'
+          : 'Draft';
+      }
+
+      const tier        = isHandoff ? (item.tier || '') : (item.retailer || '');
+      const stylesCount = isHandoff ? (item.stylesList || []).length : (item.styles || []).length;
+      const batchesCell = isHandoff ? batchStateCell(item) : dash;
+      const submittedBy = isHandoff ? (item.submittedByName || '—') : (item.requestedByName || '—');
+      const dateStr     = new Date(item.createdAt).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' });
+
+      const linkedProg  = item.linkedProgramId ? API.Programs.get(item.linkedProgramId) : null;
+      const costedCell  = linkedProg
+        ? `<span class="tag" style="font-size:0.75rem">${linkedProg.costedCount||0}/${linkedProg.styleCount||0}</span>`
+        : dash;
+
+      const programBadge = item.status === 'cancelled'
+        ? cancellationBadge(item, { inline: true })
+        : item.linkedProgramId
+          ? `<span class="badge badge-placed" style="cursor:pointer" onclick="event.stopPropagation();App.navigate('cost-summary','${item.linkedProgramId}')">→ Program</span>`
+          : dash;
+
+      const openFn  = isHandoff ? `App.openHandoffDetail('${item.id}')` : `App.openSalesRequestDetail('${item.id}')`;
+      const openBtn = `<button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();${openFn}">👁 Open</button>`;
+
+      return `<tr style="cursor:pointer;${borderStyle}" onclick="${openFn}"
+        data-flt-type="${isHandoff ? 'Handoff' : isBatchReview ? 'Batch Review' : 'SR'}"
+        data-flt-season="${(item.season || '').replace(/"/g, '&quot;')}"
+        data-flt-year="${item.year || ''}"
+        data-flt-brand="${(item.brand || '').replace(/"/g, '&quot;')}"
+        data-flt-gender="${(item.gender || '').replace(/"/g, '&quot;')}"
+        data-flt-tier="${tier.replace(/"/g, '&quot;')}">
+        <td>${typeBadge}</td>
+        <td>${item.season || dash}</td>
+        <td class="text-sm">${item.year || dash}</td>
+        <td class="text-sm">${item.gender || dash}</td>
+        <td class="text-sm font-bold">${item.brand || dash}</td>
+        <td class="text-sm">${tier || dash}</td>
+        <td>${stageBadge(stage)}</td>
+        <td>${batchesCell}</td>
+        <td>${stylesCount ? `<span class="tag">${stylesCount}</span>` : dash}</td>
+        <td style="text-align:center">${costedCell}</td>
+        <td class="text-sm text-muted">${dateStr}</td>
+        <td class="text-sm">${submittedBy}</td>
+        <td>${programBadge}</td>
+        <td><div style="display:flex;gap:6px">${openBtn}</div></td>
+      </tr>`;
+    };
+
+    const thead = `<thead><tr>
+      <th data-filter-col="type">Type</th>
+      <th data-filter-col="season">Season</th>
+      <th data-filter-col="year">Year</th>
+      <th data-filter-col="gender">Gender</th>
+      <th data-filter-col="brand">Brand</th>
+      <th data-filter-col="tier">Tier</th>
+      <th>Stage</th><th>Batches</th>
+      <th>Styles</th>
+      <th style="text-align:center">Costed</th>
+      <th>Date</th><th>Submitted By</th>
+      <th>Program</th><th>Open</th>
+    </tr></thead>`;
+
+    // Classify each entry into a workflow section bucket.
+    // Draft SRs (status='draft') are excluded — they're owner-private and
+    // not visible on the existing SR page to non-owners.
+    const buckets = { draft: [], staged: [], batching: [], submittedToSales: [], complete: [], cancelled: [] };
+    combined.forEach(entry => {
+      const { _type, item } = entry;
+      let key;
+      if (_type === 'handoff') {
+        const hasSB  = (item.stagedBatches || []).some(b => b.status === 'staged');
+        const hasBL  = (item.stylesList || []).some(s => s.batchLabel && s.batchLabel !== 'Batch 1');
+        const relIds = new Set((item.batchReleases || []).flatMap(b => b.styleIds || []));
+        const allRel = (item.stylesList || []).length > 0 && relIds.size >= (item.stylesList || []).length;
+        key = item.status === 'cancelled' ? 'cancelled'
+          : hasSB ? 'staged'
+          : item.submittedForCosting && hasBL && !allRel ? 'batching'
+          : item.linkedProgramId && allRel ? 'complete'
+          : item.submittedForCosting ? 'submittedToSales'
+          : 'draft';
+      } else {
+        if (item.status === 'cancelled')                                  key = 'cancelled';
+        else if (item.status === 'batch-review')                          key = 'batching';
+        else if (item.linkedProgramId || item.status === 'converted')     key = 'complete';
+        else if (item.status === 'submitted')                             key = 'submittedToSales';
+        else return; // draft SRs excluded from unified pipeline
+      }
+      buckets[key].push(entry);
+    });
+
+    const bucketSection = (label, entries, key, { open = true, accent = 'var(--accent)' } = {}) => {
+      if (!entries.length) return '';
+      return `
+        <details ${open ? 'open' : ''} style="margin-top:16px">
+          <summary style="cursor:pointer;padding:8px 0;font-weight:700;font-size:0.95rem;list-style:none;display:flex;align-items:center;gap:8px">
+            <span style="color:${accent}">▸</span>
+            <span>${label}</span>
+            <span class="tag" style="font-size:0.72rem">${entries.length}</span>
+          </summary>
+          <div class="card" style="padding:0;margin-top:8px">
+            <div class="table-wrap">
+              <table id="pc-${key}-tbl" data-column-filter>
+                ${thead}
+                <tbody>${entries.map(buildRow).join('')}</tbody>
+              </table>
+            </div>
+          </div>
+        </details>`;
+    };
+
+    const totalVisible = Object.values(buckets).reduce((n, b) => n + b.length, 0);
+    const sections = totalVisible
+      ? [
+          bucketSection('📝 Draft',               buckets.draft,            'draft',            { open: true,  accent: '#94a3b8' }),
+          bucketSection('⏳ Submitted for Release', buckets.staged,           'staged',           { open: true,  accent: '#f59e0b' }),
+          bucketSection('📦 Batching',            buckets.batching,         'batching',         { open: true,  accent: '#6366f1' }),
+          bucketSection('📤 Submitted to Sales',  buckets.submittedToSales, 'submittedToSales', { open: true,  accent: '#6366f1' }),
+          bucketSection('🏁 Complete',            buckets.complete,         'complete',         { open: false, accent: '#94a3b8' }),
+          bucketSection('✕ Cancelled',            buckets.cancelled,        'cancelled',        { open: false, accent: '#94a3b8' }),
+        ].join('')
+      : `<div class="card text-center text-muted" style="padding:40px">No records in pipeline yet.</div>`;
+
+    return `
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">Pre-Costing Pipeline</h1>
+        <p class="page-subtitle">Unified view of design handoffs and sales requests</p>
+      </div>
+    </div>
+    ${kpiTiles}
+    ${sections}`;
+  }
+
   // ── Handoff Detail — full-page batch release view ────────────────────────────
   function renderHandoffDetail(handoffId) {
     const h = API.DesignHandoffs.get(handoffId);
-    if (!h) return `<div class="empty-state"><div class="icon">❌</div><h3>Handoff not found</h3><p><button class="btn btn-secondary" onclick="App.navigate('design-handoff')">← Back</button></p></div>`;
+    const _hdBackRoute = (() => { try { const p = App._getState?.()?.prevRoute; return ['design-handoff','pre-costing'].includes(p) ? p : 'design-handoff'; } catch(e) { return 'design-handoff'; } })();
+    if (!h) return `<div class="empty-state"><div class="icon">❌</div><h3>Handoff not found</h3><p><button class="btn btn-secondary" onclick="App.navigate('${_hdBackRoute}')">← Back</button></p></div>`;
 
     const styles         = h.stylesList || [];
     const releases       = h.batchReleases || [];
@@ -3790,7 +4010,7 @@ const AdminViews = (() => {
       <!-- PAGE HEADER -->
       <div class="page-header">
         <div style="display:flex;align-items:center;gap:14px">
-          <button class="btn btn-ghost btn-sm" onclick="App.navigate('design-handoff')">← Back</button>
+          <button class="btn btn-ghost btn-sm" onclick="App.navigate('${_hdBackRoute}')">${_hdBackRoute === 'pre-costing' ? '← Pipeline' : '← Back'}</button>
           <div>
             <h1 class="page-title" style="margin:0">🎨 ${[h.season,h.year,h.brand,h.tier,h.gender].filter(Boolean).join(' · ')}</h1>
             <p class="page-subtitle" style="margin:4px 0 0">Design Handoff${h.supplierRequestNumber ? ` · SR# ${h.supplierRequestNumber}` : ''}</p>
@@ -6463,8 +6683,9 @@ const AdminViews = (() => {
     renderPendingChanges, renderStaff, renderDepartments,
     renderTradingCompaniesPC, renderInternalProgramsPC, renderCOOPC,
     crossProgramTable, statusBadge, toggleTCCols, expandAllTCs, collapseAllTCs,
-    // Pre-costing workflow (v11 + v12 batch release)
+    // Pre-costing workflow (v11 + v12 batch release + v18 unified pipeline)
     renderDesignHandoff, renderHandoffDetail, renderSalesRequests, renderBuildFromHandoff, renderFabricStandards, renderRecostQueue,
+    renderPreCostingPipeline,
     renderBottleneckTracker, designChangeHistoryPanel, renderAllDesignChanges, renderProgramChangesTab, renderStyleTimeline,
     // Design/Sales costing view (v13)
     renderDesignCostingView, renderCostHistoryTimeline,
