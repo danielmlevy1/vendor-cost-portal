@@ -1366,6 +1366,7 @@ const AdminViews = (() => {
   // ── Cost Summary Matrix ────────────────────────────────────
   function renderCostSummary(programId) {
     const prog = API.Programs.get(programId);
+    if (!prog) return `<div class="empty-state"><div class="icon">⚠️</div><h3>Program not found</h3><p class="text-muted" style="margin-top:8px">This program may have been deleted or the link is stale.</p><button class="btn btn-secondary btn-sm" style="margin-top:16px" onclick="App.navigate('pre-costing')">← Back to Pipeline</button></div>`;
     const styles = API.Styles.byProgram(programId);
     const asgns = API.Assignments.byProgram(programId);
     const tcs = asgns.map(a => a.tc).filter(Boolean);
@@ -3620,8 +3621,15 @@ const AdminViews = (() => {
           ? `<span class="badge badge-placed" style="cursor:pointer" onclick="event.stopPropagation();App.navigate('cost-summary','${item.linkedProgramId}')">→ Program</span>`
           : dash;
 
-      const openFn  = isHandoff ? `App.openHandoffDetail('${item.id}')` : `App.openSalesRequestDetail('${item.id}')`;
-      const openBtn = `<button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();${openFn}">👁 Open</button>`;
+      const openFn = isBatchReview
+        ? `App.openConsolidatedBatchReview('${item.linkedProgramId}')`
+        : item.linkedProgramId
+          ? `App.navigate('cost-summary','${item.linkedProgramId}')`
+          : isHandoff
+            ? `App.navigate('pre-costing-detail','handoff:${item.id}')`
+            : `App.navigate('pre-costing-detail','sr:${item.id}')`;
+      const openBtnLabel = isBatchReview ? '👁 Review Quantities' : item.linkedProgramId ? '→ Cost Summary' : '👁 Open';
+      const openBtn = `<button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();${openFn}">${openBtnLabel}</button>`;
 
       return `<tr style="cursor:pointer;${borderStyle}" onclick="${openFn}"
         data-flt-type="${isHandoff ? 'Handoff' : isBatchReview ? 'Batch Review' : 'SR'}"
@@ -3730,6 +3738,43 @@ const AdminViews = (() => {
     </div>
     ${kpiTiles}
     ${sections}`;
+  }
+
+  // ── Pre-Costing Interstitial — transitional detail for pre-program records ───
+  function renderPreCostingInterstitial(param) {
+    const colonIdx = (param || '').indexOf(':');
+    const type = colonIdx >= 0 ? param.slice(0, colonIdx) : '';
+    const id   = colonIdx >= 0 ? param.slice(colonIdx + 1) : '';
+    const isHandoff = type === 'handoff';
+    const item = isHandoff
+      ? API.DesignHandoffs.get(id)
+      : (API.SalesRequests.all().find(r => r.id === id));
+    if (!item) return `<div class="empty-state"><div class="icon">⚠️</div><h3>Record not found</h3><button class="btn btn-secondary btn-sm" style="margin-top:16px" onclick="App.navigate('pre-costing')">← Back to Pipeline</button></div>`;
+
+    const typeBadge = isHandoff
+      ? `<span class="badge" style="background:rgba(99,102,241,0.12);color:#6366f1;border:1px solid rgba(99,102,241,0.25)">🎨 Handoff</span>`
+      : `<span class="badge" style="background:rgba(224,78,57,0.1);color:#e04e39;border:1px solid rgba(224,78,57,0.25)">📝 Sales Request</span>`;
+    const styleCount = isHandoff ? (item.stylesList || []).length : (item.styles || []).length;
+    const openFn = isHandoff ? `App.openHandoffDetail('${item.id}')` : `App.openSalesRequestDetail('${item.id}')`;
+    const tierLabel = isHandoff ? (item.tier || '—') : (item.retailer || '—');
+
+    return `<div style="max-width:720px;margin:0 auto;padding:32px 16px">
+      <button class="btn btn-ghost btn-sm" onclick="App.navigate('pre-costing')" style="margin-bottom:20px">← Pipeline</button>
+      <div class="card" style="padding:24px">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
+          ${typeBadge}
+          <h2 style="margin:0;font-size:1.2rem">${item.season || ''} ${item.year || ''} — ${item.brand || item.retailer || '—'}</h2>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px">
+          <div class="card" style="padding:12px 16px;background:var(--surface-raised)"><div class="text-muted text-xs">Gender</div><div class="font-bold">${item.gender || '—'}</div></div>
+          <div class="card" style="padding:12px 16px;background:var(--surface-raised)"><div class="text-muted text-xs">Tier</div><div class="font-bold">${tierLabel}</div></div>
+          <div class="card" style="padding:12px 16px;background:var(--surface-raised)"><div class="text-muted text-xs">Styles</div><div class="font-bold">${styleCount}</div></div>
+        </div>
+        <div style="display:flex;gap:10px">
+          <button class="btn btn-primary" onclick="${openFn}">👁 Open Detail</button>
+        </div>
+      </div>
+    </div>`;
   }
 
   // ── Handoff Detail — full-page batch release view ────────────────────────────
@@ -6685,7 +6730,7 @@ const AdminViews = (() => {
     crossProgramTable, statusBadge, toggleTCCols, expandAllTCs, collapseAllTCs,
     // Pre-costing workflow (v11 + v12 batch release + v18 unified pipeline)
     renderDesignHandoff, renderHandoffDetail, renderSalesRequests, renderBuildFromHandoff, renderFabricStandards, renderRecostQueue,
-    renderPreCostingPipeline,
+    renderPreCostingPipeline, renderPreCostingInterstitial,
     renderBottleneckTracker, designChangeHistoryPanel, renderAllDesignChanges, renderProgramChangesTab, renderStyleTimeline,
     // Design/Sales costing view (v13)
     renderDesignCostingView, renderCostHistoryTimeline,

@@ -80,7 +80,7 @@ App = (() => {
       }
       else if (route === 'sales-request')
         await API.preload.salesRequest();
-      else if (route === 'pre-costing')
+      else if (route === 'pre-costing' || route === 'pre-costing-detail')
         await API.preload.designHandoff();
       else if (route === 'fabric-standards')
         await API.preload.fabricStandards();
@@ -449,6 +449,7 @@ App = (() => {
       else if (route === 'handoff-detail')       { mc.innerHTML = AdminViews.renderHandoffDetail(routeParam); App._hdUpdateReleaseCount(routeParam); App._hdInitPcPickers(); }
       else if (route === 'sales-request' || route === 'sales-requests') mc.innerHTML = AdminViews.renderSalesRequests();
       else if (route === 'pre-costing')          mc.innerHTML = AdminViews.renderPreCostingPipeline();
+      else if (route === 'pre-costing-detail')   mc.innerHTML = AdminViews.renderPreCostingInterstitial(routeParam);
       else if (route === 'build-from-handoff')   { mc.innerHTML = AdminViews.renderBuildFromHandoff(routeParam); App._initBuildFromHandoffKbd(); }
       else if (route === 'design-changes')       mc.innerHTML = AdminViews.renderAllDesignChanges(document._dcTab || 'all');
       else if (route === 'recost-queue')          mc.innerHTML = AdminViews.renderRecostQueue();
@@ -469,7 +470,8 @@ App = (() => {
       if (route === 'dashboard')           mc.innerHTML = AdminViews.renderDashboard(user.role, user);
       else if (route === 'design-handoff') mc.innerHTML = AdminViews.renderDesignHandoff();
       else if (route === 'handoff-detail') { mc.innerHTML = AdminViews.renderHandoffDetail(routeParam); App._hdUpdateReleaseCount(routeParam); App._hdInitPcPickers(); }
-      else if (route === 'pre-costing')    mc.innerHTML = AdminViews.renderPreCostingPipeline();
+      else if (route === 'pre-costing')          mc.innerHTML = AdminViews.renderPreCostingPipeline();
+      else if (route === 'pre-costing-detail')   mc.innerHTML = AdminViews.renderPreCostingInterstitial(routeParam);
       else if (route === 'design-changes') mc.innerHTML = AdminViews.renderAllDesignChanges(document._dcTab || 'all');
       else if (route === 'recost-queue')   mc.innerHTML = AdminViews.renderRecostQueue();
       else if (route === 'factories')      mc.innerHTML = AdminViews.renderFactories(user.role);
@@ -489,7 +491,8 @@ App = (() => {
       else if (route === 'design-handoff')     mc.innerHTML = AdminViews.renderDesignHandoff();
       else if (route === 'handoff-detail')     { mc.innerHTML = AdminViews.renderHandoffDetail(routeParam); App._hdUpdateReleaseCount(routeParam); App._hdInitPcPickers(); }
       else if (route === 'sales-request' || route === 'sales-requests') mc.innerHTML = AdminViews.renderSalesRequests();
-      else if (route === 'pre-costing')        mc.innerHTML = AdminViews.renderPreCostingPipeline();
+      else if (route === 'pre-costing')          mc.innerHTML = AdminViews.renderPreCostingPipeline();
+      else if (route === 'pre-costing-detail')   mc.innerHTML = AdminViews.renderPreCostingInterstitial(routeParam);
       else if (route === 'build-from-handoff') { mc.innerHTML = AdminViews.renderBuildFromHandoff(routeParam); App._initBuildFromHandoffKbd(); }
       else if (route === 'design-changes')     mc.innerHTML = AdminViews.renderAllDesignChanges(document._dcTab || 'all');
       else if (route === 'recost-queue')        mc.innerHTML = AdminViews.renderRecostQueue();
