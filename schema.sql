@@ -156,6 +156,7 @@ CREATE TABLE IF NOT EXISTS styles (
 );
 
 CREATE INDEX IF NOT EXISTS idx_styles_program_id ON styles(program_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_styles_prog_sn ON styles(program_id, style_number) WHERE style_number IS NOT NULL;
 
 -- Tech Pack history: extracted from the embedded array on each style
 -- (previously stored as styles.techPackHistory JSON)

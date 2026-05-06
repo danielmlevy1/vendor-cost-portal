@@ -935,12 +935,48 @@ router.patch('/styles/:id', requireAuth, (req, res) => {
     };
   } else if (role === 'planning' || role === 'sales') {
     allowedFields = {
-      sellStatus:    'sell_status',
-      sellStatusNote:'sell_status_note',
+      projQty:        'proj_qty',
+      projSellPrice:  'proj_sell_price',
+      sellStatus:     'sell_status',
+      sellStatusNote: 'sell_status_note',
     };
   }
 
-  applyPatch('styles', req.params.id, req.body, allowedFields);
+  db.transaction(() => {
+    applyPatch('styles', req.params.id, req.body, allowedFields);
+
+    // Mirror proj_qty / proj_sell_price / sell_status_note → linked batch-review SR styles[]
+    const syncFields = ['projQty', 'projSellPrice', 'sellStatusNote'];
+    const hasSyncField = syncFields.some(f => f in req.body && f in allowedFields);
+    if (hasSyncField) {
+      const freshStyle = stmt.styleById.get(req.params.id);
+      const linkedSRs = db.prepare(
+        "SELECT * FROM sales_requests WHERE linked_program_id = ? AND status IN ('batch-review','submitted')"
+      ).all(freshStyle.program_id);
+      for (const sr of linkedSRs) {
+        const srStyles = JSON.parse(sr.styles || '[]');
+        const idx = srStyles.findIndex(s => s.styleNumber === freshStyle.style_number);
+        if (idx < 0) continue;
+        const entry = { ...srStyles[idx] };
+        if (freshStyle.proj_qty       != null) entry.projQty = freshStyle.proj_qty;
+        if (freshStyle.proj_sell_price != null) entry.projSell = freshStyle.proj_sell_price;
+        entry.notes = freshStyle.sell_status_note ?? entry.notes ?? '';
+        srStyles[idx] = entry;
+        db.prepare('UPDATE sales_requests SET styles = ? WHERE id = ?')
+          .run(JSON.stringify(srStyles), sr.id);
+        if (sr.status === 'batch-review') {
+          const activeSrStyles = srStyles.filter(s => !s.cancelled);
+          const allFilled = activeSrStyles.length > 0 && activeSrStyles.every(s => {
+            const dbStyle = db.prepare(
+              'SELECT proj_qty, proj_sell_price FROM styles WHERE program_id = ? AND style_number = ?'
+            ).get(freshStyle.program_id, s.styleNumber);
+            return dbStyle && dbStyle.proj_qty != null && dbStyle.proj_sell_price != null;
+          });
+          if (allFilled) db.prepare("UPDATE sales_requests SET status = 'submitted' WHERE id = ?").run(sr.id);
+        }
+      }
+    }
+  })();
   res.json(styleFromRow(stmt.styleById.get(req.params.id)));
 });
 

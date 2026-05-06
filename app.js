@@ -2032,9 +2032,16 @@ App = (() => {
 
   // Called onblur: save Qty, reformat with thousands separator
   async function fmtBlurQty(el, styleId) {
-    const raw = el.type === 'number' ? el.value.trim() : el.value.trim();
+    const existing = parseFloat(el.dataset.raw) || 0;
+    const raw = el.value.trim();
     el.type = 'text';
     const num = raw === '' ? null : parseFloat(raw);
+    if (state.user?.role === 'admin' && existing !== 0) {
+      if (!confirm('This field is owned by Sales. Edit anyway?')) {
+        el.value = existing ? Number(existing).toLocaleString() : '';
+        return;
+      }
+    }
     el.dataset.raw = num != null ? String(num) : '';
     el.value = num != null ? Number(num).toLocaleString() : '';
     await API.Styles.update(styleId, { projQty: num });
@@ -2043,9 +2050,16 @@ App = (() => {
 
   // Called onblur: save currency field (Sell, EstFreight), reformat as $0.00
   async function fmtBlurCurrency(el, styleId, field) {
+    const existing = parseFloat(el.dataset.raw) || 0;
     const raw = el.value.replace(/[^0-9.]/g, '').trim();
     el.type = 'text';
     const num = raw === '' ? null : parseFloat(raw);
+    if (state.user?.role === 'admin' && existing !== 0 && field === 'projSellPrice') {
+      if (!confirm('This field is owned by Sales. Edit anyway?')) {
+        el.value = existing ? '$' + existing.toFixed(2) : '';
+        return;
+      }
+    }
     el.dataset.raw = num != null ? String(num) : '';
     el.value = num != null ? '$' + num.toFixed(2) : '';
     await API.Styles.update(styleId, { [field]: num });

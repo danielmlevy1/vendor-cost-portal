@@ -1128,6 +1128,16 @@ router.post('/staged-batches/:id/approve', requireAuth, requireRole('admin', 'pc
   for (const s of stylesList) styleMap[s.id] = s;
   const toRelease = styleIds.map(sid => styleMap[sid]).filter(Boolean);
 
+  if (handoff.linked_program_id) {
+    const existingNums = new Set(
+      db.prepare('SELECT style_number FROM styles WHERE program_id = ?')
+        .all(handoff.linked_program_id).map(r => r.style_number)
+    );
+    const dupNums = toRelease.map(s => s.styleNumber || null).filter(sn => sn && existingNums.has(sn));
+    if (dupNums.length > 0)
+      return res.status(400).json({ error: `Batch approval failed: duplicate style number(s): ${dupNums.join(', ')}. Please correct the handoff and try again.` });
+  }
+
   db.transaction(() => {
     // A. Create program if not yet linked
     let progId = handoff.linked_program_id;
@@ -1357,7 +1367,20 @@ router.patch('/sales-requests/:id', requireAuth, (req, res) => {
   if (!row) return res.status(404).json({ error: 'Not found' });
   const b = req.body;
 
-  if (b.styles          !== undefined) db.prepare('UPDATE sales_requests SET styles = ? WHERE id = ?').run(json(b.styles), req.params.id);
+  if (b.styles !== undefined) {
+    db.transaction(() => {
+      db.prepare('UPDATE sales_requests SET styles = ? WHERE id = ?').run(json(b.styles), req.params.id);
+      if (row.linked_program_id) {
+        for (const s of (Array.isArray(b.styles) ? b.styles : [])) {
+          if (!s.styleNumber) continue;
+          db.prepare(
+            'UPDATE styles SET proj_qty = ?, proj_sell_price = ?, sell_status_note = ? WHERE program_id = ? AND style_number = ?'
+          ).run(s.projQty ?? null, s.projSell ?? s.projSellPrice ?? null, s.notes ?? null,
+                row.linked_program_id, s.styleNumber);
+        }
+      }
+    })();
+  }
   if (b.cancelledStyles !== undefined) db.prepare('UPDATE sales_requests SET cancelled_styles = ? WHERE id = ?').run(json(b.cancelledStyles), req.params.id);
   if (b.assignedTCIds   !== undefined) db.prepare('UPDATE sales_requests SET assigned_tc_ids = ? WHERE id = ?').run(json(b.assignedTCIds), req.params.id);
 

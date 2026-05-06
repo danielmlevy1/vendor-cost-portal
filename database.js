@@ -494,6 +494,10 @@ function runMigrations() {
     )
   `).run();
   console.log('[db] v20: staged_batches table ensured');
+
+  // v21: unique index on (program_id, style_number) — required for bidirectional sync correctness
+  db.prepare('CREATE UNIQUE INDEX IF NOT EXISTS idx_styles_prog_sn ON styles(program_id, style_number) WHERE style_number IS NOT NULL').run();
+  console.log('[db] v21: unique index idx_styles_prog_sn applied');
 }
 
 // One-shot-ish per-country lead-time fill. Only overwrites rows
