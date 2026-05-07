@@ -1363,11 +1363,24 @@ router.post('/sales-requests', requireAuth, (req, res) => {
 });
 
 router.patch('/sales-requests/:id', requireAuth, (req, res) => {
+  const role = req.user.role;
+  // Vendors have no write access to sales requests
+  if (role === 'vendor') return res.status(403).json({ error: 'Vendors cannot edit sales requests' });
+  // styles[]/cancelledStyles[] are Sales/Planning-owned; PC is locked from qty/sell in v1
+  const mayWriteStyles = ['admin', 'planning', 'sales'].includes(role);
+  // assignedTCIds[] is PC-owned
+  const mayWriteTcIds  = ['admin', 'pc'].includes(role);
+  // SR metadata fields (status, dates, etc.) open to internal staff
+  const mayWriteFields = ['admin', 'pc', 'planning', 'sales'].includes(role);
+  if (!mayWriteFields) return res.status(403).json({ error: 'Insufficient permissions' });
+
   const row = db.prepare('SELECT * FROM sales_requests WHERE id = ?').get(req.params.id);
   if (!row) return res.status(404).json({ error: 'Not found' });
   const b = req.body;
 
   if (b.styles !== undefined) {
+    // Mirror: projQty / projSell / notes → styles table. Gated to roles that own these fields.
+    if (!mayWriteStyles) return res.status(403).json({ error: 'Your role cannot edit style quantities and pricing' });
     db.transaction(() => {
       db.prepare('UPDATE sales_requests SET styles = ? WHERE id = ?').run(json(b.styles), req.params.id);
       if (row.linked_program_id) {
@@ -1381,8 +1394,14 @@ router.patch('/sales-requests/:id', requireAuth, (req, res) => {
       }
     })();
   }
-  if (b.cancelledStyles !== undefined) db.prepare('UPDATE sales_requests SET cancelled_styles = ? WHERE id = ?').run(json(b.cancelledStyles), req.params.id);
-  if (b.assignedTCIds   !== undefined) db.prepare('UPDATE sales_requests SET assigned_tc_ids = ? WHERE id = ?').run(json(b.assignedTCIds), req.params.id);
+  if (b.cancelledStyles !== undefined) {
+    if (!mayWriteStyles) return res.status(403).json({ error: 'Your role cannot edit cancelled styles' });
+    db.prepare('UPDATE sales_requests SET cancelled_styles = ? WHERE id = ?').run(json(b.cancelledStyles), req.params.id);
+  }
+  if (b.assignedTCIds !== undefined) {
+    if (!mayWriteTcIds) return res.status(403).json({ error: 'Your role cannot edit vendor assignments' });
+    db.prepare('UPDATE sales_requests SET assigned_tc_ids = ? WHERE id = ?').run(json(b.assignedTCIds), req.params.id);
+  }
 
   applyPatch('sales_requests', req.params.id, b, SR_FIELDS);
   res.json(srFromRow(db.prepare('SELECT * FROM sales_requests WHERE id = ?').get(req.params.id)));
