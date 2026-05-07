@@ -1362,28 +1362,39 @@ router.post('/sales-requests', requireAuth, (req, res) => {
   res.status(201).json(srFromRow(db.prepare('SELECT * FROM sales_requests WHERE id = ?').get(id)));
 });
 
+// Per-role write permissions for the three special JSON columns.
+// Mirrors the allowedFields pattern from PATCH /styles/:id — one map,
+// one lookup, checked before each write category.
+// PC is locked from styles[]/cancelledStyles[] in v1 (qty/sell field ownership).
+const SR_WRITE_PERMS = {
+  admin:    { styles: true, cancelledStyles: true, assignedTcIds: true, metadata: true },
+  pc:       { styles: false, cancelledStyles: false, assignedTcIds: true, metadata: true },
+  planning: { styles: true,  cancelledStyles: true,  assignedTcIds: false, metadata: true },
+  sales:    { styles: true,  cancelledStyles: true,  assignedTcIds: false, metadata: true },
+};
+
 router.patch('/sales-requests/:id', requireAuth, (req, res) => {
-  const role = req.user.role;
-  // Vendors have no write access to sales requests
-  if (role === 'vendor') return res.status(403).json({ error: 'Vendors cannot edit sales requests' });
-  // styles[]/cancelledStyles[] are Sales/Planning-owned; PC is locked from qty/sell in v1
-  const mayWriteStyles = ['admin', 'planning', 'sales'].includes(role);
-  // assignedTCIds[] is PC-owned
-  const mayWriteTcIds  = ['admin', 'pc'].includes(role);
-  // SR metadata fields (status, dates, etc.) open to internal staff
-  const mayWriteFields = ['admin', 'pc', 'planning', 'sales'].includes(role);
-  if (!mayWriteFields) return res.status(403).json({ error: 'Insufficient permissions' });
+  const perms = SR_WRITE_PERMS[req.user.role];
+  if (!perms) return res.status(403).json({ error: 'Insufficient permissions' });
 
   const row = db.prepare('SELECT * FROM sales_requests WHERE id = ?').get(req.params.id);
   if (!row) return res.status(404).json({ error: 'Not found' });
   const b = req.body;
 
+  // Pre-validate all requested write categories before any writes execute.
+  // Prevents partial commits: a disallowed field anywhere in the body
+  // rejects the whole request before either store is touched.
+  if (b.styles          !== undefined && !perms.styles)          return res.status(403).json({ error: 'Insufficient permissions' });
+  if (b.cancelledStyles !== undefined && !perms.cancelledStyles) return res.status(403).json({ error: 'Insufficient permissions' });
+  if (b.assignedTCIds   !== undefined && !perms.assignedTcIds)   return res.status(403).json({ error: 'Insufficient permissions' });
+
   if (b.styles !== undefined) {
-    // Mirror: projQty / projSell / notes → styles table. Gated to roles that own these fields.
-    if (!mayWriteStyles) return res.status(403).json({ error: 'Your role cannot edit style quantities and pricing' });
     db.transaction(() => {
       db.prepare('UPDATE sales_requests SET styles = ? WHERE id = ?').run(json(b.styles), req.params.id);
-      if (row.linked_program_id) {
+      // Mirror: projQty / projSell / notes → styles table.
+      // perms.styles checked again independently here — "got past the entry gate" must not be
+      // assumed to imply permission to write the styles table. Both writes require perms.styles.
+      if (perms.styles && row.linked_program_id) {
         for (const s of (Array.isArray(b.styles) ? b.styles : [])) {
           if (!s.styleNumber) continue;
           db.prepare(
@@ -1395,11 +1406,11 @@ router.patch('/sales-requests/:id', requireAuth, (req, res) => {
     })();
   }
   if (b.cancelledStyles !== undefined) {
-    if (!mayWriteStyles) return res.status(403).json({ error: 'Your role cannot edit cancelled styles' });
+    if (!perms.cancelledStyles) return res.status(403).json({ error: 'Insufficient permissions' });
     db.prepare('UPDATE sales_requests SET cancelled_styles = ? WHERE id = ?').run(json(b.cancelledStyles), req.params.id);
   }
   if (b.assignedTCIds !== undefined) {
-    if (!mayWriteTcIds) return res.status(403).json({ error: 'Your role cannot edit vendor assignments' });
+    if (!perms.assignedTcIds) return res.status(403).json({ error: 'Insufficient permissions' });
     db.prepare('UPDATE sales_requests SET assigned_tc_ids = ? WHERE id = ?').run(json(b.assignedTCIds), req.params.id);
   }
 
