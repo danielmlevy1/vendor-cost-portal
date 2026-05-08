@@ -1,0 +1,1257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Vendor Cost Portal — Tracker</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #f5f7fa; color: #1a202c; padding: 24px;
+    max-width: 1200px; margin: 0 auto; line-height: 1.5;
+  }
+  h1 { font-size: 28px; margin-bottom: 4px; color: #2d3748; }
+  .subtitle { color: #718096; font-size: 14px; margin-bottom: 24px; }
+  .grid { display: grid; grid-template-columns: 1.2fr 1fr; gap: 24px; }
+  @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+  .section { background: white; border-radius: 12px; border: 1px solid #e2e8f0; overflow: hidden; margin-bottom: 24px; }
+  .section.complete { border-color: #9ae6b4; background: #f0fff4; }
+  .section.in-progress { border-color: #90cdf4; background: #ebf8ff; }
+  .section.major { border-color: #d6bcfa; background: #faf5ff; }
+  .section.urgent { border-color: #fc8181; background: #fff5f5; }
+  .section.decide { border-color: #f6ad55; background: #fffaf0; }
+  .section-header {
+    padding: 16px 20px; background: #f8fafc; border-bottom: 1px solid #e2e8f0;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .section.complete .section-header { background: #c6f6d5; border-bottom-color: #9ae6b4; }
+  .section.in-progress .section-header { background: #bee3f8; border-bottom-color: #90cdf4; }
+  .section.major .section-header { background: #e9d8fd; border-bottom-color: #d6bcfa; }
+  .section.urgent .section-header { background: #fed7d7; border-bottom-color: #fc8181; }
+  .section.decide .section-header { background: #feebc8; border-bottom-color: #f6ad55; }
+  .section-title { font-size: 16px; font-weight: 600; color: #2d3748; }
+  .section-count {
+    font-size: 12px; color: #718096; background: white;
+    padding: 4px 10px; border-radius: 12px; border: 1px solid #e2e8f0;
+  }
+  .group { padding: 12px 20px; }
+  .group-label {
+    font-size: 11px; text-transform: uppercase; color: #a0aec0;
+    letter-spacing: 0.8px; margin: 12px 0 8px 0; font-weight: 600;
+  }
+  .item { border-bottom: 1px solid #f1f5f9; }
+  .item:last-child { border-bottom: none; }
+  .item-header {
+    display: flex; align-items: flex-start; gap: 10px; padding: 10px 0; cursor: pointer;
+  }
+  .item-header:hover { background: #f9fafb; margin: 0 -8px; padding: 10px 8px; border-radius: 6px; }
+  .item-header input[type="checkbox"] {
+    margin-top: 3px; cursor: pointer; accent-color: #3182ce;
+    width: 16px; height: 16px; flex-shrink: 0;
+  }
+  .item-text { flex: 1; font-size: 14px; color: #2d3748; font-weight: 500; }
+  .item.done .item-text { text-decoration: line-through; color: #a0aec0; }
+  .item-priority {
+    font-size: 10px; padding: 2px 6px; border-radius: 4px;
+    text-transform: uppercase; font-weight: 600; letter-spacing: 0.5px; flex-shrink: 0;
+  }
+  .priority-high { background: #feebc8; color: #c05621; }
+  .priority-medium { background: #c6f6d5; color: #276749; }
+  .priority-low { background: #e2e8f0; color: #4a5568; }
+  .priority-now { background: #bee3f8; color: #2c5282; }
+  .priority-test { background: #fefcbf; color: #744210; }
+  .priority-major { background: #e9d8fd; color: #553c9a; }
+  .priority-decide { background: #fed7e2; color: #97266d; }
+  .priority-cleanup { background: #fbd38d; color: #7b341e; }
+  .priority-blocker { background: #fed7d7; color: #c53030; }
+  .priority-debt { background: #fbd38d; color: #7b341e; }
+  .test-detail {
+    margin: 4px 0 8px 26px; padding: 12px;
+    background: #f8fafc; border-left: 3px solid #3182ce;
+    border-radius: 4px; font-size: 13px; color: #2d3748;
+  }
+  .test-detail strong { color: #2c5282; }
+  .test-detail .label { font-weight: 700; color: #4a5568; display: block; margin-top: 8px; margin-bottom: 4px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .test-detail .label:first-child { margin-top: 0; }
+  .test-detail code { background: white; padding: 1px 5px; border-radius: 3px; font-size: 12px; word-break: break-all; }
+  .test-detail ol { margin: 0; padding-left: 20px; }
+  .test-detail ul { margin: 4px 0; padding-left: 20px; }
+  .controls { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+  button {
+    padding: 8px 14px; border-radius: 6px; border: 1px solid #cbd5e0;
+    background: white; color: #4a5568; cursor: pointer; font-size: 13px; font-weight: 500;
+  }
+  button:hover { background: #f7fafc; }
+  button.danger { background: white; color: #c53030; border-color: #fc8181; }
+  .ship-box {
+    background: #f0fff4; border-left: 4px solid #38a169;
+    padding: 16px 20px; border-radius: 6px; margin-bottom: 16px;
+    font-size: 14px; color: #276749;
+  }
+  .ship-box strong { color: #22543d; font-size: 16px; }
+  .ship-box code { background: white; padding: 1px 5px; border-radius: 3px; font-size: 12px; }
+  .alert {
+    background: #fffaf0; border-left: 4px solid #ed8936;
+    padding: 12px 16px; border-radius: 6px; margin-bottom: 16px;
+    font-size: 13px; color: #7b341e;
+  }
+  .alert strong { color: #5c2c0a; }
+  .blocker-box {
+    background: #fff5f5; border: 2px solid #fc8181;
+    padding: 16px 20px; border-radius: 8px; margin-bottom: 16px;
+    font-size: 14px; color: #c53030;
+  }
+  .blocker-box strong { color: #9b2c2c; font-size: 16px; }
+  .todo-box {
+    background: #faf5ff; border: 2px solid #9f7aea;
+    padding: 16px 20px; border-radius: 8px; margin-bottom: 16px;
+    font-size: 14px; color: #553c9a;
+  }
+  .todo-box strong { color: #44337a; font-size: 16px; }
+  .todo-box ol { padding-left: 24px; margin-top: 8px; }
+  .todo-box li { margin-bottom: 8px; }
+  .todo-box code { background: white; padding: 2px 6px; border-radius: 3px; font-size: 12px; }
+  .test-result {
+    display: inline-block; padding: 2px 8px; font-size: 11px; border-radius: 4px;
+    background: #c6f6d5; color: #276749; font-weight: 700; margin-left: 8px;
+  }
+  .note-toggle {
+    background: transparent; border: none; cursor: pointer; padding: 0 4px;
+    font-size: 14px; opacity: 0.4; transition: opacity 0.15s;
+    flex-shrink: 0;
+  }
+  .note-toggle:hover { opacity: 1; background: transparent; }
+  .item.has-note .note-toggle { opacity: 1; }
+  .note-area {
+    display: none; margin: 4px 0 8px 26px; padding: 10px 12px;
+    background: #fffaf0; border-left: 3px solid #ed8936; border-radius: 4px;
+  }
+  .item.note-open .note-area { display: block; }
+  .note-area textarea {
+    width: 100%; min-height: 60px; border: 1px solid #f6ad55;
+    border-radius: 4px; padding: 8px 10px; font-family: inherit;
+    font-size: 13px; color: #2d3748; resize: vertical; box-sizing: border-box;
+    background: white;
+  }
+  .note-area textarea:focus { outline: none; border-color: #dd6b20; }
+  .note-area .note-meta {
+    font-size: 10px; color: #92400e; margin-top: 4px; text-transform: uppercase;
+    letter-spacing: 0.5px; font-weight: 600;
+  }
+  .note-area .note-meta .note-saved { color: #276749; }
+  .item.has-note .item-text::after {
+    content: " 📝"; font-size: 11px;
+  }
+  .milestone-box {
+    background: linear-gradient(to right, #e6fffa, #f0fff4);
+    border: 2px solid #38b2ac; padding: 20px 24px;
+    border-radius: 12px; margin-bottom: 20px;
+    font-size: 14px; color: #234e52;
+  }
+  .milestone-box strong { color: #1d4044; font-size: 16px; }
+  .milestone-box h3 {
+    font-size: 14px; color: #1d4044; margin-top: 16px; margin-bottom: 8px;
+    text-transform: uppercase; letter-spacing: 0.6px; font-weight: 700;
+  }
+  .stage-row {
+    display: grid; grid-template-columns: 80px 130px 1fr; gap: 16px;
+    padding: 10px 0; border-bottom: 1px solid #b2f5ea;
+    align-items: start;
+  }
+  .stage-row:last-child { border-bottom: none; }
+  .stage-label {
+    font-weight: 700; color: #234e52; font-size: 14px;
+  }
+  .stage-date {
+    color: #2c7a7b; font-size: 13px; font-weight: 600;
+  }
+  .stage-criteria { font-size: 13px; color: #2d3748; line-height: 1.5; }
+  .stage-criteria strong { color: #1d4044; }
+  .qa-badge {
+    display: inline-block; padding: 1px 6px; font-size: 10px; border-radius: 3px;
+    font-weight: 700; margin-left: 4px; letter-spacing: 0.3px;
+  }
+  .qa-cc-pending { background: #e2e8f0; color: #718096; }
+  .qa-cc-done { background: #bee3f8; color: #2c5282; }
+  .qa-d-pending { background: #e2e8f0; color: #718096; }
+  .qa-d-done { background: #c6f6d5; color: #276749; }
+  .stage-tag {
+    display: inline-block; padding: 1px 6px; font-size: 10px; border-radius: 3px;
+    font-weight: 700; margin-right: 6px; letter-spacing: 0.3px;
+    background: #fef3c7; color: #92400e;
+  }
+  .stage-tag.stage-a { background: #fed7e2; color: #97266d; }
+  .stage-tag.stage-b { background: #bee3f8; color: #2c5282; }
+  .stage-tag.stage-c { background: #c6f6d5; color: #276749; }
+  .stage-tag.post-launch { background: #e2e8f0; color: #4a5568; }
+  .stage-tag.v11 { background: #fbd38d; color: #7b341e; }
+  .stage-tag.v20 { background: #d6bcfa; color: #553c9a; }
+  .stage-tag.never { background: #f1f5f9; color: #94a3b8; }
+  .promote-flag {
+    display: inline-block; padding: 1px 5px; font-size: 9px; border-radius: 3px;
+    background: #fed7d7; color: #c53030; font-weight: 700; margin-left: 4px;
+  }
+  .demote-flag {
+    display: inline-block; padding: 1px 5px; font-size: 9px; border-radius: 3px;
+    background: #fef3c7; color: #92400e; font-weight: 700; margin-left: 4px;
+  }
+  .risk-box {
+    background: #fff5f5; border-left: 4px solid #c53030;
+    padding: 14px 18px; border-radius: 6px; margin-bottom: 16px;
+    font-size: 13px; color: #742a2a;
+  }
+  .risk-box strong { color: #5d1a1a; }
+</style>
+</head>
+<body>
+
+<h1>Vendor Cost Portal — Tracker</h1>
+<div class="subtitle">May 8 · Staged go-live plan locked: A May 29 · B Jun 26 · C Aug 7 (flex) · 3 commits shipped today · B3 + audit pass tomorrow</div>
+
+<div class="milestone-box">
+  <strong>🎯 Go-Live Milestone — Staged Rollout (locked May 8)</strong>
+  <br><br>
+  Three stages, each with explicit bars. Locked target dates with criteria as gates. If criteria aren't met by target, deliberate decision is "slip the date" — not "ship anyway."
+  <br><br>
+  <div class="stage-row">
+    <div class="stage-label">Stage A</div>
+    <div class="stage-date">Fri May 29<br><span style="font-size:11px; color:#4a5568;">~3 weeks out</span></div>
+    <div class="stage-criteria">
+      <strong>Internal soft launch.</strong> Internal team uses VCP for real FOB costing work. No vendors yet.
+      <br><strong>IN:</strong> B3 fix · audit pass (exploitable-only scope) · roles/permissions table for internal roles · Phase 2b.2 + 2b.3 · Entra SSO for internal users
+      <br><strong>DEFERRED to A→B window:</strong> Azure SQL migration · systematic deeper audit · audit logging · MFA polish · vendor portal hardening
+      <br><strong>Bar:</strong> Internal users can do their actual jobs without breakage. Stable.
+      <br><strong>Trade-off:</strong> Shipping internal pilot on SQLite running in Azure App Service. Single point of failure; no horizontal scaling. Acceptable for small internal team; mandatory to migrate before vendors touch it.
+    </div>
+  </div>
+  <div class="stage-row">
+    <div class="stage-label">Stage B</div>
+    <div class="stage-date">Fri Jun 26<br><span style="font-size:11px; color:#4a5568;">~4 wks after A</span></div>
+    <div class="stage-criteria">
+      <strong>Internal + 1-2 vendor pilots.</strong> Real vendor users on the portal. Pilot reveals issues before going wide.
+      <br><strong>IN (added vs A):</strong> Azure SQL migration completed · Phase 3 (Vendor Change Log) · Entra B2B for pilot vendors · vendor data isolation curl-verified end-to-end · audit logging for vendor actions · systematic deeper audit pass
+      <br><strong>Bar:</strong> 1-2 vendor pilots can submit FOBs, see only their assigned styles, recover from typical errors. No data leaks between vendors.
+      <br><strong>Risk shift:</strong> bandwidth changes shape — pre-B is build, post-B is build + support. Plan for support load.
+    </div>
+  </div>
+  <div class="stage-row">
+    <div class="stage-label">Stage C</div>
+    <div class="stage-date">Fri Aug 7<br><span style="font-size:11px; color:#4a5568;">~6 wks after B<br>FLEXIBLE</span></div>
+    <div class="stage-criteria">
+      <strong>Full vendor rollout.</strong> All trading companies onboarded. Tool becomes source of truth.
+      <br><strong>IN (added vs B):</strong> Scale testing · vendor onboarding/offboarding process · support escalation paths · training materials · whatever pilot revealed
+      <br><strong>Bar:</strong> Tool replaces spreadsheets. Going back is no longer an option.
+      <br><strong>Why flexible:</strong> Real vendor pilot in B will surface issues you can't predict at single-vendor scale. Date may slip; that's fine. Bar is non-negotiable.
+    </div>
+  </div>
+  <h3>Open milestone decisions</h3>
+  <ul style="margin-left:20px; font-size:13px; color:#2d3748;">
+    <li><strong>Stage A pilot user:</strong> first internal person to use VCP for real work. Decide by <strong>Fri May 15</strong>. Their reactions become a forcing function — without them, "Stage A is ready" is your judgment alone.</li>
+    <li><strong>Stage B pilot vendors:</strong> identified informally; formalize selection by <strong>Fri Jun 5</strong>.</li>
+  </ul>
+</div>
+
+<div class="risk-box">
+  <strong>⚠️ Project risk: bandwidth (solo developer)</strong>
+  <br><br>
+  Most likely failure mode is not "obvious thing went wrong" — it's "Daniel runs out of capacity to maintain pace before reaching Stage C." Naming it so it can be planned against, not so it's accepted as inevitable.
+  <br><br>
+  <strong>Pre-B mitigation:</strong> realistic timelines with buffer · lower Stage A bar (defer Azure SQL to A→B window) · pre-decide cut-items so under-deadline cuts aren't panicked
+  <br>
+  <strong>Post-B mitigation:</strong> bandwidth shape changes — build + support concurrently · evaluate part-time help if support load grows · don't accept "I'll catch up next weekend" as a plan
+  <br>
+  <strong>Honesty check:</strong> if 2 weeks pass without progress on Stage A items, the date slips, period. Don't ship Stage A on cuts that surface as bugs in front of internal users.
+</div>
+
+<div class="ship-box">
+  <strong>🎯 What's done today (May 8)</strong>
+  <br><br>
+  ✓ <strong>Security hot patch v2</strong> <span class="qa-badge qa-cc-done">CC ✓</span><span class="qa-badge qa-d-done">D ✓</span> — <code>f467c3b</code>, tagged <code>security-hotpatch-sr-patch</code>. PATCH /sales-requests/:id role gate via <code>SR_WRITE_PERMS</code> map + independent mirror gate + pre-validation. 10 curl tests + SQL verification on every write path.
+  <br>✓ <strong>B5 fix</strong> <span class="qa-badge qa-cc-done">CC ✓</span><span class="qa-badge qa-d-done">D ✓</span> — <code>7f77db0</code> (v199). SR# render gate at 3 sites. Visually verified by Daniel — SR006 displays correctly.
+  <br>✓ <strong>B7+B8 fix</strong> <span class="qa-badge qa-cc-done">CC ✓</span><span class="qa-badge qa-d-done">D ✓</span> — <code>6a04ee4</code> (v200). Filter visibility banner + per-table Clear all. All 5 visual smoke tests passed by Daniel.
+  <br>✓ <strong>B6 closed</strong> <span class="qa-badge qa-cc-done">CC ✓</span><span class="qa-badge qa-d-done">D ✓</span> — working as intended. Self-repair path verified end-to-end.
+  <br>✓ <strong>Platform architecture locked</strong> — service-oriented; VCP owns its data; cross-app reads via API only.
+  <br>✓ <strong>Auth approach locked</strong> — Entra SSO internal + Entra B2B vendors; no local credentials in v1.0.
+  <br>✓ <strong>DB trajectory locked</strong> — SQLite for dev; Azure SQL for prod; migration in A→B window per staged rollout.
+  <br>✓ <strong>Staged go-live plan locked</strong> — A May 29 · B Jun 26 · C Aug 7 (flex). See milestone box above.
+  <br>✓ <strong>CLAUDE.md updated</strong> with new "Deployment & security posture" section.
+  <br>✓ <strong>Verification protocol established:</strong> <code>git log --oneline -3</code> + <code>git status</code> + <code>grep "?v=" index.html</code> after every fix, before browser test.
+  <br>✓ All today's commits pushed to origin.
+  <br><br>
+  <strong>QA legend:</strong> <span class="qa-badge qa-cc-done">CC ✓</span> = Claude Code reported done · <span class="qa-badge qa-d-done">D ✓</span> = Daniel verified · <span class="qa-badge qa-cc-pending">CC —</span> / <span class="qa-badge qa-d-pending">D —</span> = pending
+</div>
+
+<div class="todo-box">
+  <strong>📋 Tomorrow morning — resume here</strong>
+  <br><br>
+  Stopping at a clean checkpoint. All today's work is committed, pushed, and verified. Resume protocol:
+  <br>
+  <ol>
+    <li><strong>Read this tracker first.</strong> Then verify codebase state: <code>git log --oneline -3</code> + <code>git status</code> + <code>grep "?v=" index.html</code>. Confirm HEAD is <code>6a04ee4</code> and v=200 across all 5 tags.</li>
+    <li><strong>B3 fix (option c) — ~2 hours of focused work.</strong>
+      <ul>
+        <li>Replace 3 reads of <code>localStorage.getItem('vcp_placements')</code> with <code>Object.values(API.cache.placements).flat()</code> at views-admin.js:79, views-admin.js:1588, app.js:2435.</li>
+        <li>Add <code>programWithRepeatContext</code> preload variant in api.js (~12 lines).</li>
+        <li>Update app.js cost-summary route handler to call the new preload.</li>
+        <li><strong>Preconditions:</strong> verify <code>cache.programs</code> can't be partially populated by any path other than Programs.all()/Programs.create() (the <code>length &lt;= 1</code> guard depends on this).</li>
+        <li><strong>Smoke test must include real repeat scenario:</strong> style placed in prior Champion program → follow-up Champion program same style number → verify column populates with correct historical values, not just "non-empty."</li>
+        <li>Bump cache buster v200 → v201.</li>
+      </ul>
+    </li>
+    <li><strong>After B3 lands and is verified:</strong> begin authorization audit pass (the major next chunk of work — see v1.0 ship blockers below).</li>
+  </ol>
+</div>
+
+<div class="blocker-box">
+  <strong>🚨 Ship blockers by stage (each item tagged to the stage that requires it)</strong>
+  <br><br>
+  <span class="stage-tag stage-a">A</span> = required for Stage A (internal soft launch)
+  &nbsp; <span class="stage-tag stage-b">B</span> = required for Stage B (vendor pilot)
+  &nbsp; <span class="stage-tag stage-c">C</span> = required for Stage C (full rollout)
+  &nbsp; <span class="stage-tag post-launch">POST</span> = post-launch, not blocking
+  <br><br>
+  <strong><span class="stage-tag stage-a">A</span> 1. B3 fix</strong> — repeat style data populating in Cost Summary. ~2 hrs. Tomorrow.
+  <br>
+  <strong><span class="stage-tag stage-a">A</span> 2. Authorization audit pass — exploitable-scope only</strong> — the ~8 requireAuth-only mutation endpoints from the survey + obvious-on-grep issues. Defer deeper class-of-bug audit to A→B window.
+  <br>
+  <strong><span class="stage-tag stage-a">A</span> 3. Roles/permissions table</strong> — design + integrate <code>user_email → role → trading_company_id → department_id → active</code> table. Internal roles only at A; vendor scoping deeper-tested at B.
+  <br>
+  <strong><span class="stage-tag stage-a">A</span> 4. Phase 2b.2</strong> — Filtered Cost Summary + routing change. Folds B1+B2 in.
+  <br>
+  <strong><span class="stage-tag stage-a">A</span> 5. Phase 2b.3</strong> — Edit gating + Notes column. ~70 LOC.
+  <br>
+  <strong><span class="stage-tag stage-a">A</span> 6. Entra SSO for internal users</strong> — replace JWT-only auth for production. Internal team signs in via corporate tenant.
+  <br><br>
+  <strong><span class="stage-tag stage-b">B</span> 7. Azure SQL migration</strong> — sync→async refactor, T-SQL translation, driver swap. ~3-5 days focused. <strong>HARD DEADLINE: must land before any vendor touches the system.</strong>
+  <br>
+  <strong><span class="stage-tag stage-b">B</span> 8. Systematic authorization audit (deeper)</strong> — full sweep deferred from A. Closes any gaps the exploitable-scope pass missed.
+  <br>
+  <strong><span class="stage-tag stage-b">B</span> 9. Phase 3 (Vendor Change Log)</strong> — written against Azure SQL from the start. ~150 LOC.
+  <br>
+  <strong><span class="stage-tag stage-b">B</span> 10. Entra B2B integration</strong> — pilot vendors authenticate via guest accounts. Largest single auth item.
+  <br>
+  <strong><span class="stage-tag stage-b">B</span> 11. Vendor data isolation verified end-to-end</strong> — multi-vendor curl tests with different JWTs.
+  <br>
+  <strong><span class="stage-tag stage-b">B</span> 12. SQL injection audit</strong> — confirm parameterization across routes.js + routes-supporting.js.
+  <br>
+  <strong><span class="stage-tag stage-b">B</span> 13. Audit logging (vendor actions minimum)</strong> — design + implement for vendor mutations at least. Internal mutation logging may be lighter at B.
+  <br>
+  <strong><span class="stage-tag stage-b">B</span> 14. Secrets to Azure Key Vault</strong> — JWT secret + any other secrets out of <code>.env</code> / hardcoded fallbacks.
+  <br>
+  <strong><span class="stage-tag stage-b">B</span> 15. Basic MFA via Entra Conditional Access</strong> — enforced for vendor accounts; internal accounts at minimum.
+  <br><br>
+  <strong><span class="stage-tag stage-c">C</span> 16. Vendor onboarding / offboarding process</strong> — formalized; not ad-hoc per vendor.
+  <br>
+  <strong><span class="stage-tag stage-c">C</span> 17. Support escalation paths</strong> — what happens when a vendor reports a bug at 11pm.
+  <br>
+  <strong><span class="stage-tag stage-c">C</span> 18. Training materials</strong> — vendors don't read docs but they need something.
+  <br>
+  <strong><span class="stage-tag stage-c">C</span> 19. Scale testing</strong> — concurrent vendor sessions, larger data volumes.
+  <br>
+  <strong><span class="stage-tag stage-c">C</span> 20. Full audit logging scope</strong> — internal mutations included, retention policy, storage decision (separate audit DB? Azure Log Analytics?).
+  <br>
+  <strong><span class="stage-tag stage-c">C</span> 21. Full MFA Conditional Access policy</strong> — geo-restriction, device compliance, etc.
+</div>
+
+<div class="alert">
+  <strong>⚠️ Phase 2b.2 build prompt — DO NOT SEND until B3 ships AND authorization audit pass + permissions table close all findings.</strong> 2b.2 changes routing for SR-stage rows (Cost Summary edits use PATCH /sales-requests/:id) — building a new workflow on top of un-audited endpoints is the same shape that produced Conflict A. Audit first, fix systematically, then build on solid auth.
+</div>
+
+<div class="controls">
+  <button onclick="resetAll()" class="danger">Reset All</button>
+  <button onclick="exportData()">Export Status + Notes</button>
+  <button onclick="document.getElementById('import-file').click()">Import</button>
+  <input type="file" id="import-file" accept=".json" style="display:none" onchange="importData(event)">
+  <span id="import-status" style="font-size:12px; color:#4a5568; align-self:center;"></span>
+</div>
+
+<div class="grid">
+
+  <div>
+    <div class="section in-progress">
+      <div class="section-header">
+        <div class="section-title">🚧 Now: Stopped at clean checkpoint · B3 + audit pass tomorrow</div>
+        <div class="section-count">paused</div>
+      </div>
+      <div class="group">
+        <div class="group-label">Test seeded data</div>
+        <div class="item" data-id="test-handoff-uploads">
+          <div class="item-header"><input type="checkbox">
+            <div class="item-text">All 7 handoffs uploaded successfully (verify Pre-Costing Pipeline)</div>
+            <span class="item-priority priority-now">NOW</span></div>
+        </div>
+        <div class="item" data-id="walk-02-lifecycle">
+          <div class="item-header"><input type="checkbox">
+            <div class="item-text">Walk #02 Champion Q4 2026 through full lifecycle (handoff → batch approved → SR filled → TCs assigned → FOBs submitted → styles placed)</div>
+            <span class="item-priority priority-now">NOW</span></div>
+          <div class="test-detail">
+            <span class="label">Why:</span>
+            For repeat styles to populate in Cost Summary on #06/#07, the original styles in #02 need PLACEMENTS, not just handoff records.
+            <span class="label">Steps:</span>
+            <ol>
+              <li>Login as PC, approve the batch</li>
+              <li>Login as Sales, fill qty/sell on the batch-review SR</li>
+              <li>Login as PC, assign TCs to the program</li>
+              <li>Login as Vendor (each assigned TC), submit FOBs</li>
+              <li>Login as PC/Admin, place styles by selecting best FOB</li>
+            </ol>
+          </div>
+        </div>
+        <div class="item" data-id="investigate-b3">
+          <div class="item-header"><input type="checkbox">
+            <div class="item-text">Investigate B3 (repeat history not showing)</div>
+            <span class="item-priority priority-now">NOW</span></div>
+          <div class="test-detail">
+            <span class="label">Diagnose:</span>
+            <ol>
+              <li>Hard refresh (Cmd+Shift+R) on Cost Summary for #06</li>
+              <li>Click "≡ Columns" — is "🔁 Repeat Style" listed? Is it checked?</li>
+              <li>Check browser console (F12) for errors when page loads</li>
+              <li>Confirm you actually placed styles in #02 (not just stopped at FOB submission)</li>
+            </ol>
+            <span class="label">If still not showing:</span>
+            Real bug. May block 2b.2. Investigate <code>_allPlacements</code> and <code>_allStylesGlobal</code> state.
+          </div>
+        </div>
+        <div class="item" data-id="test-repeat-styles">
+          <div class="item-header"><input type="checkbox">
+            <div class="item-text">After #02 fully placed: open Cost Summary on #06 + #07, verify repeat history appears</div>
+            <span class="item-priority priority-test">TEST</span></div>
+          <div class="test-detail">
+            <span class="label">Repeats to verify:</span>
+            <ul>
+              <li>#06 CHM-Q4-LE-01 (Compression Legging) — should show #02 history</li>
+              <li>#06 CHM-Q4-SB-02 (Sports Bra High Support) — should show #02 history</li>
+              <li>#07 CHM-Q4-CR-01 (Crew Sweatshirt) — should show #02 history (cross-gender)</li>
+            </ul>
+          </div>
+        </div>
+        <div class="item" data-id="test-sales-initiated">
+          <div class="item-header"><input type="checkbox">
+            <div class="item-text">Test sales-initiated SR path — upload #08 + #09</div>
+            <span class="item-priority priority-test">TEST</span></div>
+        </div>
+        <div class="item" data-id="test-2b1-realistic-data">
+          <div class="item-header"><input type="checkbox">
+            <div class="item-text">Re-verify Phase 2b.1 sync against realistic seeded data</div>
+            <span class="item-priority priority-test">TEST</span></div>
+        </div>
+        <div class="item" data-id="characterize-b7">
+          <div class="item-header"><input type="checkbox">
+            <div class="item-text">Characterize B7 (window shrinks) — find reproducer</div>
+            <span class="item-priority priority-test">TEST</span></div>
+        </div>
+      </div>
+      <div class="group">
+        <div class="group-label">After data testing clean → next step</div>
+        <div class="item" data-id="2b2-build-prompt">
+          <div class="item-header"><input type="checkbox">
+            <div class="item-text">Send Phase 2b.2 build prompt to Claude</div>
+            <span class="item-priority priority-major">BUILD</span></div>
+          <div class="test-detail">
+            <span class="label">Scope locked:</span>
+            <ul>
+              <li>Add role parameter to buildCostMatrix and renderCostSummary (3 call sites in app.js)</li>
+              <li>Hide columns for Sales/Planning/Design/TechDesign: TC info, FOB, Target LDP, Duty Rate, Est Freight, Best TC, Category, Repeat Style, all TC×COO groups</li>
+              <li>Sales Mgmt: full view but read-only on all editors</li>
+              <li>Revert Phase 2a Option A: batch-review SRs route to Cost Summary instead of modal</li>
+              <li><strong>EXPANDED: Also fix Open Programs view routing</strong> (B1, B2)</li>
+              <li><strong>NEW micro-task: Add defensive comment block at sync mirror code</strong> in routes.js + routes-supporting.js reinforcing notes ↔ sell_status_note name mapping</li>
+            </ul>
+            <span class="label">LOC:</span>
+            ~115 client-side + small comment additions
+            <span class="label">Files:</span>
+            views-admin.js (heavy), app.js (light), routes.js + routes-supporting.js (comment), index.html (cache buster)
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section decide">
+      <div class="section-header">
+        <div class="section-title">🤔 Open Decisions</div>
+        <div class="section-count">1 pending</div>
+      </div>
+      <div class="group">
+        <div class="group-label">Infrastructure & quality (raised by reviewer May 6)</div>
+        <div class="item done" data-id="decide-fk-direction">
+          <div class="item-header"><input type="checkbox" checked>
+            <div class="item-text">FK enforcement — DECIDED May 8: revisit at Azure SQL migration</div></div>
+          <div class="test-detail">
+            <span class="label">Decision:</span>
+            FKs stay OFF on SQLite for dev. The natural moment to enable referential integrity is during the Azure SQL migration (T-SQL strict types, explicit constraints). Until then: don't write code assuming cascading deletes; use UNIQUE INDEX constraints for data integrity instead of FK-based ones.
+            <span class="label">Captured in:</span>
+            CLAUDE.md "Known infrastructure gaps" section.
+          </div>
+        </div>
+        <div class="item" data-id="decide-test-harness">
+          <div class="item-header"><input type="checkbox">
+            <div class="item-text">DECIDE: Automated test harness — recommended before audit pass</div>
+            <span class="item-priority priority-decide">DECIDE</span></div>
+          <div class="test-detail">
+            <span class="label">Current state:</span>
+            No Jest/Mocha/etc. All testing is manual UI clicks + curl + SQL verification.
+            <span class="label">Updated framing (May 8):</span>
+            Audit pass + permissions table work introduces auth-regression risk. Manual curl tests catch this once but won't catch regressions. Minimal harness covering auth-relevant endpoints (role gates, mirror writes, vendor scoping) is now recommended BEFORE audit-driven fixes start landing.
+            <span class="label">Option A:</span>
+            Add minimal harness for auth tests now (~1 day before audit work).
+            <span class="label">Option B:</span>
+            Manual curl regression suite documented as a checklist; re-run after every fix.
+            <span class="label">Decision needed:</span>
+            Soon — before audit pass closes findings.
+          </div>
+        </div>
+      </div>
+      <div class="group">
+        <div class="group-label">Phase 2b.3 (when reached)</div>
+        <div class="item" data-id="readonly-treatment">
+          <div class="item-header"><input type="checkbox">
+            <div class="item-text">Read-only field treatment Option B vs D — Claude to recommend</div>
+            <span class="item-priority priority-decide">DEFER</span></div>
+          <div class="test-detail">
+            <span class="label">Option B:</span>
+            Read-only fields look identical to editable, click does nothing.
+            <span class="label">Option D:</span>
+            Subtle background tint differentiates "your fields" from "others'".
+          </div>
+        </div>
+      </div>
+      <div class="group">
+        <div class="group-label">Phase 3 build (when reached)</div>
+        <div class="item" data-id="p3-q-quantity-threshold">
+          <div class="item-header"><input type="checkbox">
+            <div class="item-text">Q: Quantity change threshold — always notify, or only if &gt;X% change, or only after FOB submitted?</div>
+            <span class="item-priority priority-decide">DEFER</span></div>
+        </div>
+        <div class="item" data-id="p3-q-notification">
+          <div class="item-header"><input type="checkbox">
+            <div class="item-text">Q: Email notification or in-app only?</div>
+            <span class="item-priority priority-decide">DEFER</span></div>
+        </div>
+        <div class="item" data-id="p3-q-stale">
+          <div class="item-header"><input type="checkbox">
+            <div class="item-text">Q: What if vendor never re-costs? Escalation? Stale state warning?</div>
+            <span class="item-priority priority-decide">DEFER</span></div>
+        </div>
+        <div class="item" data-id="p3-q-existing-infra">
+          <div class="item-header"><input type="checkbox">
+            <div class="item-text">Q: What does "Confirm" button on existing History row do today? Audit before building.</div>
+            <span class="item-priority priority-decide">DEFER</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section urgent">
+      <div class="section-header">
+        <div class="section-title">🚨 Phase 3 — Vendor Change Log (v1.0 GATE)</div>
+        <div class="section-count">~150 LOC</div>
+      </div>
+      <div class="group">
+        <div class="group-label">Locked decisions</div>
+        <div class="item" data-id="p3-trigger">
+          <div class="item-header"><input type="checkbox" checked>
+            <div class="item-text">Notification trigger: existing Style Change modal with "Request re-cost" checkbox</div></div>
+        </div>
+        <div class="item" data-id="p3-flow">
+          <div class="item-header"><input type="checkbox" checked>
+            <div class="item-text">Approval flow exists: Design/Admin logs change → Sales approves → Production releases → vendors notified</div></div>
+        </div>
+        <div class="item" data-id="p3-fields">
+          <div class="item-header"><input type="checkbox" checked>
+            <div class="item-text">Fields shared: cost-impacting + spec-relevant (fabrication, qty, name, batch label, trims, color, additions/removals, status changes)</div></div>
+        </div>
+        <div class="item" data-id="p3-fields-excluded">
+          <div class="item-header"><input type="checkbox" checked>
+            <div class="item-text">Fields NOT shared: internal notes, cosmetic edits, backend metadata</div></div>
+        </div>
+        <div class="item" data-id="p3-vendor-scope">
+          <div class="item-header"><input type="checkbox" checked>
+            <div class="item-text">Vendors only see changes for styles assigned to them</div></div>
+        </div>
+        <div class="item" data-id="p3-action">
+          <div class="item-header"><input type="checkbox" checked>
+            <div class="item-text">Click change → navigates to program/style view (no inline FOB entry)</div></div>
+        </div>
+        <div class="item" data-id="p3-status">
+          <div class="item-header"><input type="checkbox" checked>
+            <div class="item-text">Status field: "Recost" or similar</div></div>
+        </div>
+        <div class="item" data-id="p3-completion">
+          <div class="item-header"><input type="checkbox" checked>
+            <div class="item-text">Vendor submits new FOB → status flips to complete; history visible</div></div>
+        </div>
+        <div class="item" data-id="p3-history-pattern">
+          <div class="item-header"><input type="checkbox" checked>
+            <div class="item-text">History "ticker" pattern (like styles already have) extended to vendors</div></div>
+        </div>
+        <div class="item" data-id="p3-surfaces">
+          <div class="item-header"><input type="checkbox" checked>
+            <div class="item-text">Two surfaces: standalone "My Re-cost Requests" page + per-program panel</div></div>
+        </div>
+      </div>
+      <div class="group">
+        <div class="group-label">Build sequencing</div>
+        <div class="item" data-id="p3-after-2b">
+          <div class="item-header"><input type="checkbox">
+            <div class="item-text">Phase 3 starts AFTER Phase 2b.3 ships</div>
+            <span class="item-priority priority-blocker">v1.0 GATE</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section major">
+      <div class="section-header">
+        <div class="section-title">🟣 Phase 2b.3 — Edit Gating + Notes Column</div>
+        <div class="section-count">~70 LOC</div>
+      </div>
+      <div class="group">
+        <div class="item" data-id="2b3">
+          <div class="item-header"><input type="checkbox">
+            <div class="item-text">Edit gating per field ownership + add Notes column to Cost Summary</div>
+            <span class="item-priority priority-major">BUILD</span></div>
+          <div class="test-detail">
+            <span class="label">Scope:</span>
+            <ul>
+              <li>Make Design's fields editable for Design only (read-only for others)</li>
+              <li>Make qty/sell editable for Sales/Planning + Admin (with popup)</li>
+              <li>Make TC fields editable for PC/Admin only</li>
+              <li>Add Notes column showing sell_status_note (already syncing per 2b.1)</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-header">
+        <div class="section-title">🐛 Active Bugs</div>
+        <div class="section-count">5 open · 7 resolved/folded</div>
+      </div>
+      <div class="group">
+        <div class="group-label">Surfaced in seeded testing (May 6) — UPDATED May 8</div>
+        <div class="item done" data-id="b1-open-prog-row-click">
+          <div class="item-header"><input type="checkbox" checked>
+            <div class="item-text">B1: Open Programs SR-stage row click — folded into Phase 2b.2 scope (locked)</div>
+            <span class="item-priority priority-medium">2b.2</span></div>
+        </div>
+        <div class="item done" data-id="b2-open-prog-button-modal">
+          <div class="item-header"><input type="checkbox" checked>
+            <div class="item-text">B2: Open Programs SR "Open" button — folded into Phase 2b.2 scope (locked)</div>
+            <span class="item-priority priority-medium">2b.2</span></div>
+        </div>
+        <div class="item" data-id="b3-repeat-history">
+          <div class="item-header"><input type="checkbox">
+            <div class="item-text">B3: Repeat style — diagnosed (vcp_placements never written), option (c) approved, deferred to tomorrow morning</div>
+            <span class="item-priority priority-high">TOMORROW</span></div>
+          <div class="test-detail">
+            <span class="label">Root cause:</span>
+            Three reads of <code>localStorage.getItem('vcp_placements')</code> at views-admin.js:79, views-admin.js:1588, app.js:2435. Key is never written anywhere in the codebase. All three always read <code>[]</code>.
+            <span class="label">Fix (option c):</span>
+            (1) Replace 3 localStorage reads with <code>Object.values(API.cache.placements).flat()</code>. (2) Add <code>programWithRepeatContext</code> preload variant in api.js (~12 lines). (3) Update cost-summary route handler.
+            <span class="label">Preconditions before implementing:</span>
+            Verify <code>cache.programs</code> can't be partially populated by any path other than Programs.all()/Programs.create().
+            <span class="label">Smoke test:</span>
+            Real repeat scenario required — style placed in prior Champion program → follow-up Champion program same style number → verify column populates with CORRECT historical values, not just non-empty. The detection logic at views-admin.js:1585-1613 has never run against real data.
+          </div>
+        </div>
+        <div class="item" data-id="b4-sortable-cols">
+          <div class="item-header"><input type="checkbox">
+            <div class="item-text">B4: Sortable columns missing from Open Programs</div>
+            <span class="item-priority priority-medium">MED</span></div>
+        </div>
+        <div class="item done" data-id="b5-sr-col-hidden">
+          <div class="item-header"><input type="checkbox" checked>
+            <div class="item-text">B5: SR# render gate — SHIPPED <span class="test-result">7f77db0 (v199)</span></div></div>
+          <div class="test-detail">
+            <span class="label">Fixed at 3 sites:</span>
+            views-admin.js:1008, views-admin.js:3333, app.js:677. Resolves SR# via <code>r.sourceHandoffId → DesignHandoffs.find() → supplierRequestNumber</code>. Adjacent-cell .find() deduped at sites 1+2 as a small concurrent improvement. Visually verified — SR006 displays correctly across all three views.
+          </div>
+        </div>
+        <div class="item done" data-id="b6-target-ldp">
+          <div class="item-header"><input type="checkbox" checked>
+            <div class="item-text">B6: Target LDP — CLOSED as working as intended; self-repair path verified</div></div>
+          <div class="test-detail">
+            <span class="label">Diagnosis:</span>
+            Requires both <code>program.targetMargin</code> AND <code>style.projSellPrice</code>. Programs without a margin show "—" correctly until repaired.
+            <span class="label">Self-repair:</span>
+            Edit Program modal → Save triggers <code>BrandTierMargins.lookup(brand, retailer)</code> automatically. Verified end-to-end: lookup resolves → modal pre-populates → applyPatch writes via presence check → computeTargetLDP unblocks.
+            <span class="label">Tracker items captured below (Open Tracker Notes section):</span>
+            (1) targetMargin 0/null write-path defect for audit pass. (2) Tooltip on Target LDP column header (UX, defer).
+          </div>
+        </div>
+        <div class="item done" data-id="b7-window-shrinks">
+          <div class="item-header"><input type="checkbox" checked>
+            <div class="item-text">B7+B8: Filter visibility banner — SHIPPED <span class="test-result">6a04ee4 (v200)</span></div></div>
+          <div class="test-detail">
+            <span class="label">Diagnosis:</span>
+            Window doesn't actually shrink — content inside it does, silently. Column filter persistence (<code>vcp_colf_*</code>) hides rows on page return; sections collapse to just their header row of filter buttons.
+            <span class="label">Fix:</span>
+            Banner injected above each filtered table showing hidden row count + "Clear all" link. Per-table scoping (one banner per filtered table; "Clear all" affects only the clicked table's filters and localStorage). Uses existing <code>alert alert-info</code> + <code>col-flt-link</code> styling. Banner-only fix; sessionStorage option deliberately deferred until banner UX observed in real use.
+            <span class="label">Smoke tests:</span>
+            5 visual tests passed end-to-end — banner appears with correct count, persists across nav, scoped Clear all, localStorage cleanup verified, cache buster v200 confirmed in browser.
+          </div>
+        </div>
+      </div>
+      <div class="group">
+        <div class="group-label">Pre-existing</div>
+        <div class="item" data-id="bug-tcs-preselected">
+          <div class="item-header"><input type="checkbox">
+            <div class="item-text">openAssignTCs modal pre-selects ALL TCs for unassigned programs</div>
+            <span class="item-priority priority-high">HIGH</span></div>
+          <div class="test-detail">
+            Risk: PC could accidentally save and assign program to every TC.
+          </div>
+        </div>
+        <div class="item" data-id="bug-tier-dropdown">
+          <div class="item-header"><input type="checkbox">
+            <div class="item-text">Retailer / Tier checkboxes → dropdown</div>
+            <span class="item-priority priority-medium">MED</span></div>
+        </div>
+        <div class="item done" data-id="bug-export-notes">
+          <div class="item-header"><input type="checkbox" checked>
+            <div class="item-text">Tracker "Export Status + Notes" button — FIXED May 8 (notes textarea per item, working JSON export, working import)</div></div>
+        </div>
+        <div class="item" data-id="bug-program-column">
+          <div class="item-header"><input type="checkbox">
+            <div class="item-text">All Open Programs: "Program" column should show Brand · Year · Season · Tier · Gender + add Proj Qty/Actual Qty/Wtd Avg Sell columns</div>
+            <span class="item-priority priority-medium">MED</span></div>
+        </div>
+        <div class="item" data-id="bug-dashboard-vcp-placements">
+          <div class="item-header"><input type="checkbox">
+            <div class="item-text">Dashboard placed-style count uses non-existent vcp_placements key (same root cause as B3) — deferred separately</div>
+            <span class="item-priority priority-low">DEFER</span></div>
+          <div class="test-detail">
+            <span class="label">Why deferred from B3 fix:</span>
+            views-admin.js:79 has the same bug but fixing it requires loading placements for ALL programs on every dashboard render — expensive. Decide on a non-expensive strategy (lazy load, on-demand fetch, pagination) before fixing.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section urgent">
+      <div class="section-header">
+        <div class="section-title">🔒 AUDIT-NOTEs — for authorization audit pass</div>
+        <div class="section-count">4 items</div>
+      </div>
+      <div class="group">
+        <div class="group-label">Captured during today's triage — apply during audit pass, not before</div>
+        <div class="item" data-id="audit-localstorage-parity">
+          <div class="item-header"><input type="checkbox">
+            <div class="item-text">Client-side localStorage read/write parity: grep all getItem calls, verify each has matching setItem</div>
+            <span class="item-priority priority-high">AUDIT</span></div>
+          <div class="test-detail">
+            <span class="label">Origin:</span>
+            B3 root cause was 3 reads of <code>vcp_placements</code> with no writes anywhere. Same shape could exist for security-relevant state.
+            <span class="label">Risk:</span>
+            A never-written key means security checks depending on it silently pass or fail vacuously. Pay special attention to any localStorage that stores authorization-relevant flags.
+            <span class="label">Action:</span>
+            During audit, run comprehensive grep across all JS for <code>localStorage.getItem</code> and <code>localStorage.setItem</code>; pair them up; flag any orphan reads.
+          </div>
+        </div>
+        <div class="item" data-id="audit-targetmargin-write-path">
+          <div class="item-header"><input type="checkbox">
+            <div class="item-text">targetMargin 0/null write-path defect — fix order matters</div>
+            <span class="item-priority priority-high">AUDIT</span></div>
+          <div class="test-detail">
+            <span class="label">Origin:</span>
+            B6 investigation. <code>saveProgramModal</code> and SR convert flow both use <code>|| 0</code> as fallback when <code>BrandTierMargins.lookup</code> returns null. This coerces missing-margin into 0-margin in the DB, losing the information.
+            <span class="label">Fix sequencing:</span>
+            (1) Write paths first — remove <code>|| 0</code> fallbacks in saveProgramModal and convert flow. (2) Read path guard — change <code>computeTargetLDP</code> to use <code>!= null</code>. (3) Data migration — any existing target_margin = 0 should probably be NULL'd and re-looked-up.
+            <span class="label">Why order matters:</span>
+            Applying the read guard alone, without the write fix, would make things worse — programs with explicitly-saved 0 from the broken fallback would silently produce 0 LDPs instead of "—".
+          </div>
+        </div>
+        <div class="item" data-id="audit-filter-state-security-views">
+          <div class="item-header"><input type="checkbox">
+            <div class="item-text">Filter persistence in authorization-scoped views</div>
+            <span class="item-priority priority-medium">AUDIT</span></div>
+          <div class="test-detail">
+            <span class="label">Origin:</span>
+            B7+B8 investigation. Column filter persistence (<code>vcp_colf_*</code>) hides rows on page return.
+            <span class="label">Risk in audit context:</span>
+            In authorization-scoped views (vendor portal, etc.), this could cause "why is my table empty?" confusion that's hard to distinguish from a stuck filter — or worse, mask data the user should see.
+            <span class="label">Action:</span>
+            Verify no security-relevant view relies on the user seeing all rows by default; confirm filter state never affects what data the SERVER returns (filtering must always be server-side for security).
+          </div>
+        </div>
+        <div class="item" data-id="audit-cancel-path-routes-supporting">
+          <div class="item-header"><input type="checkbox">
+            <div class="item-text">Cancel path TODOs in routes-supporting.js — same auth pattern as Conflict A</div>
+            <span class="item-priority priority-medium">AUDIT</span></div>
+          <div class="test-detail">
+            <span class="label">Origin:</span>
+            Two TODO comments in routes-supporting.js about preserving pre-cancel SR/program status at cancel time. Cancel paths are exactly where authorization checks get forgotten ("we already checked at the surface, the cancel path is internal") — same shape that bit us on Pattern B.
+            <span class="label">Action:</span>
+            During audit, verify cancel endpoints have independent role checks, not just inheriting from the surface PATCH.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section major">
+      <div class="section-header">
+        <div class="section-title">🏛 Platform & Security Decisions (locked May 8)</div>
+        <div class="section-count">arch</div>
+      </div>
+      <div class="group">
+        <div class="group-label">Architecture</div>
+        <div class="item done" data-id="arch-platform">
+          <div class="item-header"><input type="checkbox" checked>
+            <div class="item-text">VCP is first of multiple platform apps (Finance, Operations next)</div></div>
+        </div>
+        <div class="item done" data-id="arch-data-ownership">
+          <div class="item-header"><input type="checkbox" checked>
+            <div class="item-text">VCP owns its data; cross-app reads via versioned HTTP API (/api/v1/...) only</div></div>
+        </div>
+        <div class="item done" data-id="arch-no-shared-db">
+          <div class="item-header"><input type="checkbox" checked>
+            <div class="item-text">No shared databases between apps; schema stays internal, API is the contract</div></div>
+        </div>
+      </div>
+      <div class="group">
+        <div class="group-label">Hosting & DB</div>
+        <div class="item done" data-id="hosting-azure">
+          <div class="item-header"><input type="checkbox" checked>
+            <div class="item-text">Production target: Azure (App Service likely; specific service TBD at migration time)</div></div>
+        </div>
+        <div class="item done" data-id="db-azure-sql">
+          <div class="item-header"><input type="checkbox" checked>
+            <div class="item-text">Azure SQL for prod; SQLite stays for dev; migration BEFORE Phase 3</div></div>
+        </div>
+      </div>
+      <div class="group">
+        <div class="group-label">Auth</div>
+        <div class="item done" data-id="auth-internal-sso">
+          <div class="item-header"><input type="checkbox" checked>
+            <div class="item-text">Internal users: Microsoft Entra SSO (corporate tenant)</div></div>
+        </div>
+        <div class="item done" data-id="auth-vendor-b2b">
+          <div class="item-header"><input type="checkbox" checked>
+            <div class="item-text">Vendors: Entra B2B guest accounts (Microsoft account required); OTP fallback documented but not enabled</div></div>
+        </div>
+        <div class="item done" data-id="auth-no-local">
+          <div class="item-header"><input type="checkbox" checked>
+            <div class="item-text">No local credentials in v1.0</div></div>
+        </div>
+      </div>
+      <div class="group">
+        <div class="group-label">Authorization</div>
+        <div class="item done" data-id="authz-table-shape">
+          <div class="item-header"><input type="checkbox" checked>
+            <div class="item-text">DB table shape: user_email → role → trading_company_id → department_id → active</div></div>
+        </div>
+        <div class="item done" data-id="authz-server-side">
+          <div class="item-header"><input type="checkbox" checked>
+            <div class="item-text">Server-side enforcement on every endpoint; never client-side filtering for security</div></div>
+        </div>
+        <div class="item done" data-id="authz-mirror-independence">
+          <div class="item-header"><input type="checkbox" checked>
+            <div class="item-text">Pattern B sync: independent role re-validation on BOTH writes (SR-side AND styles-side)</div></div>
+        </div>
+      </div>
+      <div class="group">
+        <div class="group-label">Threat model</div>
+        <div class="item done" data-id="threat-primary">
+          <div class="item-header"><input type="checkbox" checked>
+            <div class="item-text">Primary threat: authenticated insider with wrong role (not anonymous attackers)</div></div>
+        </div>
+        <div class="item done" data-id="threat-sso-vs-authz">
+          <div class="item-header"><input type="checkbox" checked>
+            <div class="item-text">SSO confirms identity; code enforces permissions (different concerns)</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div>
+    <div class="section">
+      <div class="section-header">
+        <div class="section-title">✨ Enhancement Queue</div>
+        <div class="section-count">staged</div>
+      </div>
+      <div class="group">
+        <div class="group-label">Stage tags — when each enhancement gets done</div>
+        <div style="font-size:12px; color:#4a5568; padding:0 0 8px 0; line-height:1.6;">
+          <span class="stage-tag stage-a">A</span> Stage A internal launch &nbsp;
+          <span class="stage-tag stage-b">B</span> Stage B vendor pilot &nbsp;
+          <span class="stage-tag stage-c">C</span> Stage C full rollout
+          <br>
+          <span class="stage-tag v11">v1.1</span> after C, first iteration polish &nbsp;
+          <span class="stage-tag v20">v2.0+</span> larger future work &nbsp;
+          <span class="stage-tag never">NEVER</span> explicitly out of scope
+          <br>
+          <span class="promote-flag">PROMOTE?</span> candidate for earlier stage — discuss before shipping &nbsp;
+          <span class="demote-flag">DEMOTE?</span> currently in stage but may not need to be
+        </div>
+      </div>
+      <div class="group">
+        <div class="group-label">Stage A enhancements (justify if added — A is supposed to be lean)</div>
+        <div class="item" data-id="enh-target-ldp-tooltip">
+          <div class="item-header"><input type="checkbox">
+            <div class="item-text"><span class="stage-tag stage-a">A</span>Tooltip on Target LDP column header — explains "requires Proj Sell Price + program margin"</div>
+            <span class="item-priority priority-low">UX</span></div>
+          <div class="test-detail">
+            From B6 investigation. Prevents future "is Target LDP a bug?" reports. Tiny change; ship opportunistically when other Cost Summary work touches the area. Could DEMOTE? to v1.1 if A is tight.
+          </div>
+        </div>
+      </div>
+      <div class="group">
+        <div class="group-label">Stage B enhancements (improve vendor experience for pilot)</div>
+        <div class="item" data-id="enh-vendor-acknowledge">
+          <div class="item-header"><input type="checkbox">
+            <div class="item-text"><span class="stage-tag stage-b">B</span>Vendor acknowledgment state — "mark change as seen" before re-costing</div>
+            <span class="item-priority priority-medium">DESIGN</span></div>
+          <div class="test-detail">
+            Phase 3 v1 has append-only changelog. Acknowledge state was originally tagged v1.1 — promoted to B because pilot vendors will want to track which changes they've seen. <span class="promote-flag">PROMOTE?</span> consider if pilot will benefit.
+          </div>
+        </div>
+      </div>
+      <div class="group">
+        <div class="group-label">Stage C enhancements (full-rollout scale features)</div>
+        <div class="item" data-id="enh-auto-release-digest">
+          <div class="item-header"><input type="checkbox">
+            <div class="item-text"><span class="stage-tag stage-c">C</span>Auto-release subsequent batches + PC email digest 2x/day</div>
+            <span class="item-priority priority-high">DESIGN</span></div>
+          <div class="test-detail">
+            Becomes important at scale. Internal pilot (A) and small vendor pilot (B) don't need it — manual coordination works. Required when 10+ vendors are active.
+          </div>
+        </div>
+      </div>
+      <div class="group">
+        <div class="group-label">v1.1 — first polish iteration after Stage C is stable</div>
+        <div class="item" data-id="enh-multi-source-notes">
+          <div class="item-header"><input type="checkbox">
+            <div class="item-text"><span class="stage-tag v11">v1.1</span>Multi-source Notes (Design + Sales + PC stacked; PC notes for vendor sharing)</div>
+            <span class="item-priority priority-medium">DESIGN</span></div>
+        </div>
+        <div class="item" data-id="enh-pc-approval-flow">
+          <div class="item-header"><input type="checkbox">
+            <div class="item-text"><span class="stage-tag v11">v1.1</span>PC approval flow for editing Sales-owned fields</div>
+            <span class="item-priority priority-medium">DESIGN</span></div>
+        </div>
+        <div class="item" data-id="enh-raise-issue">
+          <div class="item-header"><input type="checkbox">
+            <div class="item-text"><span class="stage-tag v11">v1.1</span>'Raise issue' mechanism — Sales flags Design data inconsistencies</div>
+            <span class="item-priority priority-medium">DESIGN</span></div>
+        </div>
+        <div class="item" data-id="enh-todo-style-added">
+          <div class="item-header"><input type="checkbox">
+            <div class="item-text"><span class="stage-tag v11">v1.1</span>To-do generation when Design adds style post-release</div>
+            <span class="item-priority priority-medium">DESIGN</span></div>
+        </div>
+        <div class="item" data-id="enh-test-harness-real">
+          <div class="item-header"><input type="checkbox">
+            <div class="item-text"><span class="stage-tag v11">v1.1</span>Real automated test harness (Jest/Mocha) — beyond minimal auth tests added at A</div>
+            <span class="item-priority priority-medium">QUALITY</span></div>
+          <div class="test-detail">
+            Stage A may add a minimal harness for auth-relevant tests only (open decision). Full harness with sync, migrations, X1 auto-advance, etc. is v1.1.
+          </div>
+        </div>
+      </div>
+      <div class="group">
+        <div class="group-label">v2.0+ / future</div>
+        <div class="item" data-id="enh-phase-2c">
+          <div class="item-header"><input type="checkbox">
+            <div class="item-text"><span class="stage-tag v20">v2.0+</span>Phase 2c — Handoff state panel on Cost Summary (only if needed after 2b)</div>
+            <span class="item-priority priority-low">DEFER</span></div>
+        </div>
+        <div class="item" data-id="enh-sr-enrichment">
+          <div class="item-header"><input type="checkbox">
+            <div class="item-text"><span class="stage-tag v20">v2.0+</span>SR view enrichment — decide after week of usage</div>
+            <span class="item-priority priority-low">DEFER</span></div>
+        </div>
+        <div class="item" data-id="enh-cross-app-finance">
+          <div class="item-header"><input type="checkbox">
+            <div class="item-text"><span class="stage-tag v20">v2.0+</span>Finance app integration — VCP exposes cost data via /api/v1 for Finance app consumption</div>
+            <span class="item-priority priority-medium">PLATFORM</span></div>
+          <div class="test-detail">
+            Part of the platform vision. Requires Finance app to exist as a consumer. Worth designing API contract early so VCP doesn't need refactoring later.
+          </div>
+        </div>
+        <div class="item" data-id="enh-cross-app-operations">
+          <div class="item-header"><input type="checkbox">
+            <div class="item-text"><span class="stage-tag v20">v2.0+</span>Operations app integration — VCP exposes placement data for Operations workflow</div>
+            <span class="item-priority priority-medium">PLATFORM</span></div>
+        </div>
+      </div>
+      <div class="group">
+        <div class="group-label">Recently Shipped + Verified</div>
+        <div class="item done" data-id="b7b8-shipped-may8">
+          <div class="item-header"><input type="checkbox" checked>
+            <div class="item-text">B7+B8 fix — Filter visibility banner (May 8) <span class="qa-badge qa-cc-done">CC ✓</span><span class="qa-badge qa-d-done">D ✓</span> <span class="test-result">6a04ee4 (v200)</span></div></div>
+        </div>
+        <div class="item done" data-id="b5-shipped-may8">
+          <div class="item-header"><input type="checkbox" checked>
+            <div class="item-text">B5 fix — SR# render gate (May 8) <span class="qa-badge qa-cc-done">CC ✓</span><span class="qa-badge qa-d-done">D ✓</span> <span class="test-result">7f77db0 (v199)</span></div></div>
+        </div>
+        <div class="item done" data-id="hot-patch-shipped-may8">
+          <div class="item-header"><input type="checkbox" checked>
+            <div class="item-text">Security hot patch v2 — SR_WRITE_PERMS + independent mirror gate + pre-validation (May 8) <span class="qa-badge qa-cc-done">CC ✓</span><span class="qa-badge qa-d-done">D ✓</span> <span class="test-result">f467c3b · tag: security-hotpatch-sr-patch</span></div></div>
+        </div>
+        <div class="item done" data-id="data-cleared-reseeded">
+          <div class="item-header"><input type="checkbox" checked>
+            <div class="item-text">Database cleared + reseeded with 9 realistic test files (May 6) <span class="qa-badge qa-d-done">D ✓</span></div></div>
+        </div>
+        <div class="item done" data-id="handoff-docs">
+          <div class="item-header"><input type="checkbox" checked>
+            <div class="item-text">Handoff docs generated for enterprise account migration (May 6) <span class="qa-badge qa-d-done">D ✓</span></div></div>
+        </div>
+        <div class="item done" data-id="2b1-tagged">
+          <div class="item-header"><input type="checkbox" checked>
+            <div class="item-text">Phase 2b.1 — VERIFIED + TAGGED <span class="qa-badge qa-cc-done">CC ✓</span><span class="qa-badge qa-d-done">D ✓</span> <span class="test-result">phase-2b-1-complete</span></div></div>
+        </div>
+        <div class="item done" data-id="phase2a-shipped">
+          <div class="item-header"><input type="checkbox" checked>
+            <div class="item-text">Phase 2a — VERIFIED + TAGGED <span class="qa-badge qa-cc-done">CC ✓</span><span class="qa-badge qa-d-done">D ✓</span> <span class="test-result">phase-2a-complete</span></div></div>
+        </div>
+        <div class="item done" data-id="phase15-shipped">
+          <div class="item-header"><input type="checkbox" checked>
+            <div class="item-text">Phase 1.5 — Pipeline section grouping (v195) <span class="qa-badge qa-cc-done">CC ✓</span><span class="qa-badge qa-d-done">D ✓</span></div></div>
+        </div>
+        <div class="item done" data-id="phase1-merger">
+          <div class="item-header"><input type="checkbox" checked>
+            <div class="item-text">Phase 1 — Pre-Costing Pipeline list (v194) <span class="qa-badge qa-cc-done">CC ✓</span><span class="qa-badge qa-d-done">D ✓</span></div></div>
+        </div>
+        <div class="item done" data-id="phase-a-shipped">
+          <div class="item-header"><input type="checkbox" checked>
+            <div class="item-text">Phase A — Programs Awaiting Vendor panel <span class="qa-badge qa-cc-done">CC ✓</span><span class="qa-badge qa-d-done">D ✓</span></div></div>
+        </div>
+        <div class="item done" data-id="role-leak-verified">
+          <div class="item-header"><input type="checkbox" checked>
+            <div class="item-text">Role-leak fix — verified <span class="qa-badge qa-cc-done">CC ✓</span><span class="qa-badge qa-d-done">D ✓</span></div></div>
+        </div>
+        <div class="item done" data-id="git-tag-pre-merger">
+          <div class="item-header"><input type="checkbox" checked>
+            <div class="item-text">git tag pre-merger pushed <span class="qa-badge qa-d-done">D ✓</span></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  // Storage schema:
+  //   STATE_KEY: { itemId: bool }     -- checkbox states
+  //   NOTES_KEY: { itemId: string }   -- notes per item
+  const STATE_KEY = 'vcp-tracker-state-v3';
+  const NOTES_KEY = 'vcp-tracker-notes-v1';
+
+  function getState() {
+    const stored = localStorage.getItem(STATE_KEY);
+    return stored ? JSON.parse(stored) : {};
+  }
+  function setState(state) { localStorage.setItem(STATE_KEY, JSON.stringify(state)); }
+
+  function getNotes() {
+    const stored = localStorage.getItem(NOTES_KEY);
+    return stored ? JSON.parse(stored) : {};
+  }
+  function setNotes(notes) { localStorage.setItem(NOTES_KEY, JSON.stringify(notes)); }
+
+  // Inject note UI into every item that has a data-id
+  function injectNoteUI() {
+    document.querySelectorAll('.item[data-id]').forEach(item => {
+      const id = item.dataset.id;
+      if (!id) return;
+      // Skip if already injected
+      if (item.querySelector('.note-toggle')) return;
+
+      const header = item.querySelector('.item-header');
+      if (!header) return;
+
+      // Add the toggle button to the header
+      const toggle = document.createElement('button');
+      toggle.className = 'note-toggle';
+      toggle.title = 'Add or view note';
+      toggle.textContent = '📝';
+      toggle.setAttribute('data-note-toggle', '');
+      header.appendChild(toggle);
+
+      // Add the note area after the header
+      const noteArea = document.createElement('div');
+      noteArea.className = 'note-area';
+      noteArea.innerHTML = `
+        <textarea placeholder="Add note for this item..." data-note-id="${id}"></textarea>
+        <div class="note-meta"><span class="note-status">No note yet</span></div>
+      `;
+      // Insert after the header (after any existing test-detail too — actually before test-detail is fine)
+      header.parentNode.insertBefore(noteArea, header.nextSibling);
+    });
+  }
+
+  function loadState() {
+    const state = getState();
+    const notes = getNotes();
+    document.querySelectorAll('.item[data-id]').forEach(item => {
+      const id = item.dataset.id;
+      const checkbox = item.querySelector('.item-header input[type="checkbox"]');
+      if (checkbox && state[id] !== undefined) checkbox.checked = state[id];
+      if (checkbox && checkbox.checked) item.classList.add('done');
+
+      const textarea = item.querySelector(`textarea[data-note-id="${id}"]`);
+      if (textarea && notes[id]) {
+        textarea.value = notes[id];
+        item.classList.add('has-note');
+        const status = item.querySelector('.note-status');
+        if (status) status.innerHTML = `<span class="note-saved">✓ saved</span>`;
+      }
+    });
+  }
+
+  function saveCheckboxState() {
+    const state = {};
+    document.querySelectorAll('.item[data-id]').forEach(item => {
+      const cb = item.querySelector('.item-header input[type="checkbox"]');
+      if (cb) state[item.dataset.id] = cb.checked;
+    });
+    setState(state);
+  }
+
+  function saveOneNote(id, value) {
+    const notes = getNotes();
+    if (value && value.trim()) {
+      notes[id] = value;
+    } else {
+      delete notes[id];
+    }
+    setNotes(notes);
+    // Update the has-note class
+    const item = document.querySelector(`.item[data-id="${id}"]`);
+    if (item) {
+      if (value && value.trim()) {
+        item.classList.add('has-note');
+      } else {
+        item.classList.remove('has-note');
+      }
+      const status = item.querySelector('.note-status');
+      if (status) {
+        status.innerHTML = (value && value.trim())
+          ? `<span class="note-saved">✓ saved · ${new Date().toLocaleTimeString()}</span>`
+          : 'No note yet';
+      }
+    }
+  }
+
+  // Wire up checkbox click handlers
+  document.querySelectorAll('.item-header').forEach(header => {
+    header.addEventListener('click', (e) => {
+      const item = header.closest('.item');
+      // Ignore clicks on the note toggle button or its child elements
+      if (e.target.closest('[data-note-toggle]')) return;
+      const isCheckbox = e.target.tagName === 'INPUT';
+      const checkbox = header.querySelector('input[type="checkbox"]');
+      if (!checkbox) return;
+      if (!isCheckbox) {
+        checkbox.checked = !checkbox.checked;
+      }
+      if (checkbox.checked) item.classList.add('done');
+      else item.classList.remove('done');
+      saveCheckboxState();
+    });
+  });
+
+  // Wire up note toggle buttons (after injection)
+  function wireNoteHandlers() {
+    document.querySelectorAll('[data-note-toggle]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const item = btn.closest('.item');
+        item.classList.toggle('note-open');
+        if (item.classList.contains('note-open')) {
+          const ta = item.querySelector('textarea[data-note-id]');
+          if (ta) setTimeout(() => ta.focus(), 50);
+        }
+      });
+    });
+    // Auto-save notes on input (debounced)
+    document.querySelectorAll('textarea[data-note-id]').forEach(ta => {
+      let t;
+      ta.addEventListener('input', (e) => {
+        clearTimeout(t);
+        const id = ta.dataset.noteId;
+        const status = ta.closest('.note-area').querySelector('.note-status');
+        if (status) status.textContent = 'Saving...';
+        t = setTimeout(() => {
+          saveOneNote(id, ta.value);
+        }, 350);
+      });
+    });
+  }
+
+  function resetAll() {
+    if (!confirm('Reset ALL checkboxes AND notes? This cannot be undone unless you have an export file.')) return;
+    localStorage.removeItem(STATE_KEY);
+    localStorage.removeItem(NOTES_KEY);
+    location.reload();
+  }
+
+  function exportData() {
+    const data = {
+      meta: {
+        exported_at: new Date().toISOString(),
+        tracker_version: 'vcp-tracker-v4',
+        note: 'Open vcp-tracker.html → click Import → select this file to restore.'
+      },
+      checkboxes: getState(),
+      notes: getNotes()
+    };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const stamp = new Date().toISOString().slice(0, 10);
+    a.href = url;
+    a.download = `vcp-tracker-export-${stamp}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    const statusEl = document.getElementById('import-status');
+    if (statusEl) {
+      statusEl.textContent = `Exported ${Object.keys(data.checkboxes).length} states + ${Object.keys(data.notes).length} notes`;
+      setTimeout(() => statusEl.textContent = '', 5000);
+    }
+  }
+
+  function importData(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    const statusEl = document.getElementById('import-status');
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const data = JSON.parse(e.target.result);
+        if (!data.checkboxes && !data.notes) {
+          if (statusEl) statusEl.textContent = 'Error: file does not look like a tracker export';
+          return;
+        }
+        const cbCount = Object.keys(data.checkboxes || {}).length;
+        const noteCount = Object.keys(data.notes || {}).length;
+        const confirmed = confirm(
+          `Import ${cbCount} checkbox states and ${noteCount} notes?\n\n` +
+          `This OVERWRITES your current local state. Export first if you want a backup.`
+        );
+        if (!confirmed) {
+          event.target.value = '';
+          return;
+        }
+        if (data.checkboxes) setState(data.checkboxes);
+        if (data.notes) setNotes(data.notes);
+        if (statusEl) statusEl.textContent = `Imported · reloading...`;
+        setTimeout(() => location.reload(), 600);
+      } catch (err) {
+        if (statusEl) statusEl.textContent = `Import failed: ${err.message}`;
+      }
+    };
+    reader.readAsText(file);
+    event.target.value = '';
+  }
+
+  // Boot sequence
+  injectNoteUI();
+  wireNoteHandlers();
+  loadState();
+</script>
+
+</body>
+</html>
