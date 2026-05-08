@@ -674,8 +674,9 @@ App = (() => {
     const TIERS  = ['Mass','Mid Tier','Off Price','Clubs','Specialty'];
     const GENDERS = ['Mens','Ladies','Boys','Girls','Infant/Toddler'];
     const linkedSR = id ? (API.SalesRequests.all().find(r => r.linkedProgramId === id) || null) : null;
+    const linkedSRNum = linkedSR?.sourceHandoffId ? API.DesignHandoffs.all().find(h => h.id === linkedSR.sourceHandoffId)?.supplierRequestNumber : null;
     const srDisplay = linkedSR
-      ? `<a href="#" style="font-family:monospace;font-size:0.88rem;color:var(--accent)" onclick="event.preventDefault();App.closeModal();App.viewSalesRequest('${linkedSR.id}')">${linkedSR.number || linkedSR.id}</a>`
+      ? `<a href="#" style="font-family:monospace;font-size:0.88rem;color:var(--accent)" onclick="event.preventDefault();App.closeModal();App.viewSalesRequest('${linkedSR.id}')">${linkedSRNum || linkedSR.id}</a>`
       : `<span class="text-muted">— No linked SR</span>`;
     showModal(`
     <div class="modal-header"><h2>${p ? 'Edit' : 'New'} Program</h2><button class="btn btn-ghost btn-icon" onclick="App.closeModal()">✕</button></div>

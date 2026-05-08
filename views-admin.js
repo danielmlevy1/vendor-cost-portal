@@ -1005,6 +1005,7 @@ const AdminViews = (() => {
       const srStage = r.status === 'draft' ? 'Draft'
         : r.status === 'cancelled' ? 'cancelled'
         : 'Sales Request';
+      const srcHandoff = r.sourceHandoffId ? API.DesignHandoffs.all().find(h => h.id === r.sourceHandoffId) : null;
       return `<tr style="background:rgba(245,158,11,0.03)"
         data-flt-season="${r.season || ''}"
         data-flt-year="${r.year || ''}"
@@ -1018,8 +1019,8 @@ const AdminViews = (() => {
         <td class="font-bold">${r.brand || dash}</td>
         <td>${r.retailer ? `<span class="tag" style="font-size:0.75rem">${r.retailer}</span>` : dash}</td>
         <td>${stageBadge(srStage)}</td>
-        <td>${r.number ? `<span class="tag" style="font-family:monospace;font-size:0.78rem">${r.number}</span>` : dash}</td>
-        <td>${batchStateCell(r.sourceHandoffId ? API.DesignHandoffs.all().find(h => h.id === r.sourceHandoffId) : null)}</td>
+        <td>${srcHandoff?.supplierRequestNumber ? `<span class="tag" style="font-family:monospace;font-size:0.78rem">${srcHandoff.supplierRequestNumber}</span>` : dash}</td>
+        <td>${batchStateCell(srcHandoff)}</td>
         <td style="text-align:center">${sc ? `<span class="tag">${sc}</span>` : dash}</td>
         <td style="text-align:center">${dash}</td>
         <td class="text-sm">${fmtDate(r.costDueDate || r.firstCRD)}</td>
@@ -3329,6 +3330,7 @@ const AdminViews = (() => {
     const statusMap = { submitted: 'badge-costing', converted: 'badge-placed', draft: 'badge-pending', 'batch-review': 'badge-amber' };
     const buildRow = r => {
       const d = new Date(r.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+      const srcHandoff = r.sourceHandoffId ? allHandoffs.find(h => h.id === r.sourceHandoffId) : null;
       const hasQtyPrice = (r.styles||[]).some(s => (s.projQty > 0) && (s.projSell > 0));
       const linkedBadge = r.status === 'cancelled'
         ? cancellationBadge(r, { cascaded: !!r.previousProgramName, inline: true })
@@ -3373,8 +3375,8 @@ const AdminViews = (() => {
         <td><span class="badge">${r.brand || '—'}</span></td>
         <td class="text-sm">${r.retailer || srDash}</td>
         <td>${stageBadge(srStage)}</td>
-        <td class="text-sm">${r.number ? `<span class="tag" style="font-family:monospace;font-size:0.78rem">${r.number}</span>` : srDash}</td>
-        <td>${batchStateCell(r.sourceHandoffId ? allHandoffs.find(h => h.id === r.sourceHandoffId) : null)}</td>
+        <td class="text-sm">${srcHandoff?.supplierRequestNumber ? `<span class="tag" style="font-family:monospace;font-size:0.78rem">${srcHandoff.supplierRequestNumber}</span>` : srDash}</td>
+        <td>${batchStateCell(srcHandoff)}</td>
         <td><span class="tag">${(r.styles || []).length}</span></td>
         <td style="text-align:center">${srCosted}</td>
         <td style="text-align:center">${srLinkedProg ? `<span class="tag ${(srLinkedProg.placedCount||0)>0?'tag-success':''}">${srLinkedProg.placedCount||0}</span>` : srDash}</td>
