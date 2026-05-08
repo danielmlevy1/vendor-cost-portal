@@ -8219,7 +8219,34 @@ App.initColumnFilters = function(table) {
     return [...vals].sort((a, b) => String(a).localeCompare(String(b), undefined, { numeric: true }));
   };
 
+  const renderBanner = (hiddenCount) => {
+    const bannerId = 'colf-banner-' + tableKey;
+    let banner = document.getElementById(bannerId);
+    if (hiddenCount === 0) { if (banner) banner.remove(); return; }
+    const insertTarget = table.closest('.table-wrap') || table;
+    if (!banner) {
+      banner = document.createElement('div');
+      banner.id = bannerId;
+      banner.className = 'alert alert-info';
+      banner.style.cssText = 'margin:0 0 8px;display:flex;align-items:center;gap:12px';
+      insertTarget.parentNode.insertBefore(banner, insertTarget);
+    }
+    banner.innerHTML =
+      '<span>🔍 <strong>' + hiddenCount + '</strong> row' + (hiddenCount === 1 ? '' : 's') + ' hidden by filters</span>' +
+      '<button type="button" class="col-flt-link" data-act="clear-all-filters" style="margin-left:auto">Clear all</button>';
+    banner.querySelector('[data-act="clear-all-filters"]').onclick = (e) => {
+      e.stopPropagation();
+      headers.forEach(th => {
+        const k = th.dataset.filterCol;
+        state[k] = new Set();
+        localStorage.removeItem(STORAGE_PREFIX + k);
+      });
+      applyFilters();
+    };
+  };
+
   const applyFilters = () => {
+    let hiddenCount = 0;
     table.querySelectorAll('tbody tr').forEach(tr => {
       let show = true;
       for (const th of headers) {
@@ -8229,12 +8256,14 @@ App.initColumnFilters = function(table) {
         if (!state[k].has(v)) { show = false; break; }
       }
       tr.style.display = show ? '' : 'none';
+      if (!show) hiddenCount++;
     });
     headers.forEach(th => {
       const k = th.dataset.filterCol;
       const btn = th.querySelector('.col-flt-btn');
       if (btn) btn.classList.toggle('col-flt-active', state[k] && state[k].size > 0);
     });
+    renderBanner(hiddenCount);
   };
 
   loadState();
