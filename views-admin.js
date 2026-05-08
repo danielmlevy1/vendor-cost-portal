@@ -76,7 +76,7 @@ const AdminViews = (() => {
     const allStylesDB   = API.Styles.all();
     const allSubs       = API.Submissions.all();
     const allFlags      = JSON.parse(localStorage.getItem('vcp_cell_flags') || '[]');
-    const allPlacements = JSON.parse(localStorage.getItem('vcp_placements') || '[]');
+    const allPlacements = Object.values(API.cache.placements).flat();
     const allRevs       = JSON.parse(localStorage.getItem('vcp_revisions') || '[]');
     const allHandoffs   = API.DesignHandoffs.all();
     const allSalesReqs  = API.SalesRequests.all();
@@ -1586,7 +1586,7 @@ const AdminViews = (() => {
     // ── Precompute repeat-style lookup ─────────────────────────
     const _allStylesGlobal   = API.Styles.all();
     const _allSubsGlobal     = API.Submissions.all();
-    const _allPlacements     = JSON.parse(localStorage.getItem('vcp_placements') || '[]');
+    const _allPlacements     = Object.values(API.cache.placements).flat();
     const _allPrograms       = API.cache.programs;
     // repeatHistory[styleNumber] = sorted array of {prog, tc, coo, fob, ldp}
     const repeatHistory = {};

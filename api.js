@@ -1495,6 +1495,12 @@ const API = (() => {
         DesignChanges.fetchByProgram(id).catch(() => {}),
       ]);
     },
+    async programWithRepeatContext(id) {
+      await preload.program(id);
+      await Programs.all();
+      const others = cache.programs.filter(p => p.id !== id && !cache.placements[p.id]);
+      await Promise.all(others.map(p => Placements.fetchByProgram(p.id).catch(() => {})));
+    },
     async staff() {
       await Promise.all([Users.all(), Departments.all(), PendingChanges.fetch()]);
     },

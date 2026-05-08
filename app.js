@@ -51,7 +51,10 @@ App = (() => {
     try {
       if (route === 'programs' || route === 'dashboard')
         await API.preload.programs();
-      else if (route === 'cost-summary' || route === 'styles' || route === 'buy-summary' || route === 'compare' || route === 'design-costing' || route === 'delivery-plan' || route === 'capacity-plan' || route === 'overview' || route === 'program-changes') {
+      else if (route === 'cost-summary') {
+        await API.preload.programWithRepeatContext(param);
+      }
+      else if (route === 'styles' || route === 'buy-summary' || route === 'compare' || route === 'design-costing' || route === 'delivery-plan' || route === 'capacity-plan' || route === 'overview' || route === 'program-changes') {
         await API.preload.program(param);
         if (route === 'delivery-plan') await API.DeliveryPlans.fetch(param).catch(() => {});
         if (route === 'capacity-plan') await API.CapacityPlans.fetch(param).catch(() => {});
@@ -2433,7 +2436,7 @@ App = (() => {
   function openRepeatStyleHistory(styleNum) {
     const allStyles  = API.Styles.all();
     const allSubs    = API.Submissions.all();
-    const allPlacements = JSON.parse(localStorage.getItem('vcp_placements') || '[]');
+    const allPlacements = Object.values(API.cache.placements).flat();
     const allPrograms   = API.cache.programs;
 
     // Collect all past styles (any program) matching styleNum
