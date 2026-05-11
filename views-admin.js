@@ -1522,7 +1522,7 @@ const AdminViews = (() => {
         <input type="checkbox" id="sel-all-chk" class="sel-col-chk" title="Select all" onchange="App.selectAllStyles('${programId}',this.checked)">
       </th>
       <th rowspan="2" class="sticky-col mat-hdr" style="width:28px;min-width:28px;padding:0;text-align:center" title="Design change history"></th>
-      <th rowspan="2" data-col="styleNum" class="sticky-col mat-hdr" style="width:60px;min-width:60px">Style #</th>
+      <th rowspan="2" data-col="styleNum" class="sticky-col mat-hdr" style="width:120px;min-width:110px;white-space:nowrap">Style #</th>
       <th rowspan="2" data-col="styleName" class="mat-hdr" style="width:72px;min-width:60px">Style Name</th>
       <th rowspan="2" data-col="cat" class="mat-hdr" style="width:68px;min-width:60px">Category</th>
       <th rowspan="2" data-col="fab" class="mat-hdr" style="width:72px;min-width:60px">Fabrication</th>
@@ -1725,7 +1725,7 @@ const AdminViews = (() => {
 
         let rowHtml = `
           <td class="sticky-col mat-cell-white" style="width:28px;min-width:28px;padding:2px 4px;text-align:center">${dcBadge}</td>
-          <td data-col="styleNum" class="sticky-col mat-cell-white">${s.styleNumber}${s._linkAnchorBadge||''}${hasManyBatches && s.releasedBatch ? `<span class="tag" style="font-size:0.6rem;margin-left:4px;background:rgba(99,102,241,0.12);color:#6366f1;vertical-align:middle">${s.releasedBatch}</span>` : ''}</td>
+          <td data-col="styleNum" class="sticky-col mat-cell-white" style="white-space:nowrap">${s.styleNumber}${s._linkAnchorBadge||''}${hasManyBatches && s.releasedBatch ? `<span class="tag" style="font-size:0.6rem;margin-left:4px;background:rgba(99,102,241,0.12);color:#6366f1;vertical-align:middle">${s.releasedBatch}</span>` : ''}</td>
           <td data-col="styleName" class="mat-cell-white mat-cell-normal">${styleNameInput}</td>
           <td data-col="cat" class="mat-cell-white mat-cell-normal">${catInput}</td>
           <td data-col="fab" class="mat-cell-white mat-cell-normal">${fabInput}</td>
@@ -1932,7 +1932,7 @@ const AdminViews = (() => {
       const tagCls     = onTarget ? 'tag-success' : targetLDP ? 'tag-danger' : '';
       const bestTcHtml = bestGroup ? `<span class="tag ${tagCls}">${bestGroup.tc.code} — ${bestGroup.coo}</span>` : '—';
       let rowHtml = `
-        <td data-col="styleNum" class="sticky-col mat-cell-white" style="border-left:3px solid ${color};padding-left:18px">
+        <td data-col="styleNum" class="sticky-col mat-cell-white" style="border-left:3px solid ${color};padding-left:18px;white-space:nowrap">
           <span style="color:${color};font-size:0.85em;margin-right:4px">↳</span>${s.styleNumber}${badge}${hasManyBatches && s.releasedBatch ? `<span class="tag" style="font-size:0.6rem;margin-left:4px;background:rgba(99,102,241,0.12);color:#6366f1;vertical-align:middle">${s.releasedBatch}</span>` : ''}
         </td>
         <td data-col="styleName" class="mat-cell-white mat-cell-normal">${styleNameInput}</td>
@@ -2022,7 +2022,7 @@ const AdminViews = (() => {
 
     // Build active rows — optionally grouped
     let activeRows = '';
-    const totalFixedCols = 12 + colGroups.length * 6 + 2; // +2 actual/wtd, +2 actions+repeat
+    const totalFixedCols = 14 + colGroups.length * 6 + 2; // 14 fixed pre-TC (sel, designHist, styleNum..best) + 6N TC sub-cols + actions + repeat = full table width
 
     // Unreleased handoff styles — ghost rows so production sees upcoming styles
     const unreleasedByFab = {};
@@ -2041,7 +2041,7 @@ const AdminViews = (() => {
       return handoffStyles.map(hs => `<tr style="opacity:0.35;pointer-events:none" title="Not yet released" data-batch-label="${(hs.batchLabel||'').replace(/"/g,'&quot;')}">
         <td class="sel-col sticky-col mat-cell-white" style="width:36px;min-width:36px"></td>
         <td class="sticky-col mat-cell-white" style="width:28px;min-width:28px;padding:0"></td>
-        <td data-col="styleNum" class="sticky-col mat-cell-white" style="color:#94a3b8;font-style:italic">${hs.styleNumber || '—'}</td>
+        <td data-col="styleNum" class="sticky-col mat-cell-white" style="color:#94a3b8;font-style:italic;white-space:nowrap">${hs.styleNumber || '—'}</td>
         <td colspan="${ghostColspan}" style="color:#94a3b8;font-size:0.8rem;padding:6px 8px">
           <span style="font-style:italic">${hs.styleName || ''}</span>
           ${hasManyBatches ? `<span class="tag" style="font-size:0.62rem;margin-left:6px;background:rgba(148,163,184,0.12);color:#94a3b8">⏳ ${hs.batchLabel || 'Batch 1'}</span>` : ''}
@@ -2138,7 +2138,7 @@ const AdminViews = (() => {
     const grandTotalRow = `
     <tfoot>
       <tr class="cs-grand-total-row">
-        <td data-col="styleNum" class="sticky-col" colspan="4">
+        <td data-col="styleNum" class="sticky-col" colspan="6">
           <span style="font-weight:700;letter-spacing:0.02em">PROGRAM TOTALS</span>
         </td>
         <td data-col="qty" class="text-center font-bold" title="Total Projected QTY">
@@ -2164,7 +2164,7 @@ const AdminViews = (() => {
     let cancelledSection = '';
     if (cancelledStyles.length > 0) {
       const cancelledRows = buildRows(cancelledStyles, true);
-      const totalCols = 12 + colGroups.length * 6 + 2; // fixed + TC cols + actions + repeat
+      const totalCols = 14 + colGroups.length * 6 + 2; // 14 fixed pre-TC + 6N TC sub-cols + actions + repeat = full table width
       cancelledSection = `
       <tr class="cancelled-toggle-row" id="cancelled-toggle" onclick="App.toggleCancelledRows()">
         <td colspan="${totalCols}">
