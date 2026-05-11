@@ -1105,6 +1105,19 @@ router.post('/submissions', requireAuth, (req, res) => {
   if (!styleId || !coo) return res.status(400).json({ error: 'styleId and coo required' });
   if (!tcId)            return res.status(400).json({ error: 'tcId required' });
 
+  // Vendor scope check: a vendor may only submit quotes for styles in
+  // programs they're actually assigned to. tcId is already pinned to
+  // req.user.tcId above, but that alone doesn't gate program access —
+  // without this check, a vendor could submit against any styleId they
+  // can enumerate. Matches the vendorAssignedTo pattern used elsewhere.
+  if (role === 'vendor') {
+    const styleRow = stmt.styleById.get(styleId);
+    if (!styleRow) return res.status(404).json({ error: 'Style not found' });
+    if (!vendorAssignedTo(styleRow.program_id, tcId)) {
+      return res.status(403).json({ error: 'Not assigned to this program' });
+    }
+  }
+
   const timestamp    = now();
   const submitterName = req.user.name || req.user.email;
 

@@ -1318,7 +1318,7 @@ router.get('/sales-requests/:id', requireAuth, (req, res) => {
   res.json(srFromRow(row));
 });
 
-router.post('/sales-requests', requireAuth, (req, res) => {
+router.post('/sales-requests', requireAuth, requireRole('admin','pc','sales','sales_mgmt','planning','design','tech_design'), (req, res) => {
   const b = req.body;
 
   // Idempotency: prevent duplicate costing SRs for the same handoff.
@@ -1616,7 +1616,7 @@ router.get('/programs/:id/design-changes', requireAuth, (req, res) => {
 });
 
 // POST /api/design-changes  — append-only log
-router.post('/design-changes', requireAuth, (req, res) => {
+router.post('/design-changes', requireAuth, requireRole('admin','pc','sales','sales_mgmt','planning','design','tech_design'), (req, res) => {
   const b = req.body;
   if (!b.styleId) return res.status(400).json({ error: 'styleId required' });
   const id = uid();
@@ -1699,7 +1699,7 @@ router.get('/recost-requests', requireAuth, (req, res) => {
 });
 
 // POST /api/recost-requests  — create
-router.post('/recost-requests', requireAuth, (req, res) => {
+router.post('/recost-requests', requireAuth, requireRole('admin','pc','sales','sales_mgmt','planning','design','tech_design'), (req, res) => {
   const b = req.body;
   if (!b.programId) return res.status(400).json({ error: 'programId required' });
   const id = 'rcr_' + uid();
@@ -2138,7 +2138,7 @@ router.get('/styles/:id/tech-pack-history', requireAuth, (req, res) => {
 });
 
 // POST /api/styles/:id/tech-pack-history
-router.post('/styles/:id/tech-pack-history', requireAuth, (req, res) => {
+router.post('/styles/:id/tech-pack-history', requireAuth, requireRole('admin','pc','sales','sales_mgmt','planning','design','tech_design'), (req, res) => {
   const b  = req.body;
   const id = uid();
   db.prepare(`
