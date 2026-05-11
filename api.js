@@ -1498,8 +1498,14 @@ const API = (() => {
     async programWithRepeatContext(id) {
       await preload.program(id);
       await Programs.all();
+      // Dedupe gate for the three-fetch bundle below (placements + styles + submissions).
+      // If you fetch any of these independently elsewhere, don't reuse this gate or repeat detection will silently miss data.
       const others = cache.programs.filter(p => p.id !== id && !cache.placements[p.id]);
-      await Promise.all(others.map(p => Placements.fetchByProgram(p.id).catch(() => {})));
+      await Promise.all(others.flatMap(p => [
+        Placements.fetchByProgram(p.id).catch(() => {}),
+        Styles.fetchByProgram(p.id).catch(() => {}),
+        Submissions.fetchByProgram(p.id).catch(() => {}),
+      ]));
     },
     async staff() {
       await Promise.all([Users.all(), Departments.all(), PendingChanges.fetch()]);
