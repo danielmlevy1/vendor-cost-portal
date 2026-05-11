@@ -207,7 +207,7 @@
 <body>
 
 <h1>Vendor Cost Portal — Tracker</h1>
-<div class="subtitle">May 8 · Staged go-live plan locked: A May 29 · B Jun 26 · C Aug 7 (flex) · 3 commits shipped today · B3 + audit pass tomorrow</div>
+<div class="subtitle">May 11 · 5 commits shipped (hot patch + B5 + B7+B8 + B3 + B3 follow-up) · B3 VERIFIED + pushed · next: B10, B11 (CSS), then audit pass</div>
 
 <div class="milestone-box">
   <strong>🎯 Go-Live Milestone — Staged Rollout (locked May 8)</strong>
@@ -265,42 +265,71 @@
 </div>
 
 <div class="ship-box">
-  <strong>🎯 What's done today (May 8)</strong>
+  <strong>🎯 What's done today (May 8 — full day)</strong>
   <br><br>
-  ✓ <strong>Security hot patch v2</strong> <span class="qa-badge qa-cc-done">CC ✓</span><span class="qa-badge qa-d-done">D ✓</span> — <code>f467c3b</code>, tagged <code>security-hotpatch-sr-patch</code>. PATCH /sales-requests/:id role gate via <code>SR_WRITE_PERMS</code> map + independent mirror gate + pre-validation. 10 curl tests + SQL verification on every write path.
-  <br>✓ <strong>B5 fix</strong> <span class="qa-badge qa-cc-done">CC ✓</span><span class="qa-badge qa-d-done">D ✓</span> — <code>7f77db0</code> (v199). SR# render gate at 3 sites. Visually verified by Daniel — SR006 displays correctly.
-  <br>✓ <strong>B7+B8 fix</strong> <span class="qa-badge qa-cc-done">CC ✓</span><span class="qa-badge qa-d-done">D ✓</span> — <code>6a04ee4</code> (v200). Filter visibility banner + per-table Clear all. All 5 visual smoke tests passed by Daniel.
-  <br>✓ <strong>B6 closed</strong> <span class="qa-badge qa-cc-done">CC ✓</span><span class="qa-badge qa-d-done">D ✓</span> — working as intended. Self-repair path verified end-to-end.
-  <br>✓ <strong>Platform architecture locked</strong> — service-oriented; VCP owns its data; cross-app reads via API only.
-  <br>✓ <strong>Auth approach locked</strong> — Entra SSO internal + Entra B2B vendors; no local credentials in v1.0.
-  <br>✓ <strong>DB trajectory locked</strong> — SQLite for dev; Azure SQL for prod; migration in A→B window per staged rollout.
-  <br>✓ <strong>Staged go-live plan locked</strong> — A May 29 · B Jun 26 · C Aug 7 (flex). See milestone box above.
-  <br>✓ <strong>CLAUDE.md updated</strong> with new "Deployment & security posture" section.
-  <br>✓ <strong>Verification protocol established:</strong> <code>git log --oneline -3</code> + <code>git status</code> + <code>grep "?v=" index.html</code> after every fix, before browser test.
-  <br>✓ All today's commits pushed to origin.
+  <strong>Code commits (4):</strong>
+  <br>✓ <strong>Security hot patch v2</strong> <span class="qa-badge qa-cc-done">CC ✓</span><span class="qa-badge qa-d-done">D ✓</span> — <code>f467c3b</code>, tagged. SR_WRITE_PERMS map + independent mirror gate + pre-validation. 10 curl tests + SQL on every write path.
+  <br>✓ <strong>B5 fix</strong> <span class="qa-badge qa-cc-done">CC ✓</span><span class="qa-badge qa-d-done">D ✓</span> — <code>7f77db0</code> (v199). SR# render gate at 3 sites. Visually verified.
+  <br>✓ <strong>B7+B8 fix</strong> <span class="qa-badge qa-cc-done">CC ✓</span><span class="qa-badge qa-d-done">D ✓</span> — <code>6a04ee4</code> (v200). Filter visibility banner + per-table Clear all. 5 visual tests passed.
+  <br>⚠️ <strong>B3 fix</strong> <span class="qa-badge qa-cc-done">CC ✓</span><span class="qa-badge qa-d-pending">D —</span> — <code>536cf93</code> (v201). Code shipped: 3 localStorage swaps + <code>programWithRepeatContext</code> preload + route handler update. <strong>Verification INCOMPLETE.</strong> Visual tests show repeat data populates ONLY after visiting source program first — visit-order dependency. Suggests cross-program fan-out isn't firing on cold-start. Network investigation in progress; mid-step when paused.
   <br><br>
-  <strong>QA legend:</strong> <span class="qa-badge qa-cc-done">CC ✓</span> = Claude Code reported done · <span class="qa-badge qa-d-done">D ✓</span> = Daniel verified · <span class="qa-badge qa-cc-pending">CC —</span> / <span class="qa-badge qa-d-pending">D —</span> = pending
+  <strong>Planning (committed in <code>2474fdf</code>):</strong>
+  <br>✓ Staged go-live plan locked — A May 29, B Jun 26, C Aug 7 (flex). See milestone box above.
+  <br>✓ Platform architecture locked — service-oriented; VCP owns its data; cross-app reads via API only.
+  <br>✓ Auth approach locked — Entra SSO internal + Entra B2B vendors; no local credentials in v1.0.
+  <br>✓ DB trajectory locked — SQLite for dev; Azure SQL for prod; migration in A→B window.
+  <br>✓ CLAUDE.md updated with new "Deployment & security posture" section.
+  <br>✓ Tracker rebuilt with stages, dual QA, working notes/export/import.
+  <br>✓ Verification protocol established: <code>git log --oneline -3</code> + <code>git status</code> + <code>grep "?v=" index.html</code> after every fix, BEFORE browser test.
+  <br>✓ All commits pushed to origin.
+  <br><br>
+  <strong>Closed (not bugs):</strong>
+  <br>✓ B6 — working as intended; self-repair via Edit Program + Save verified end-to-end.
+  <br><br>
+  <strong>Verification failures caught and learned from today:</strong>
+  <br>• B5 smoke tests were initially inferred not visual — pushed back, Daniel did visual checks, fix held up.
+  <br>• B7+B8: I (web Claude) falsely accused Claude Code of fabricating work; Claude Code held its ground correctly. Retracted. Lesson: verification protocol applies to my claims about Claude Code's behavior too, not just Claude Code's claims about its own work.
+  <br>• B3 cache-buster scare: cache buster is fragile; the workflow caught it but the friction is real (see v1.1 enhancement note).
+  <br><br>
+  <strong>QA legend:</strong> <span class="qa-badge qa-cc-done">CC ✓</span> = Claude Code reported done · <span class="qa-badge qa-d-done">D ✓</span> = Daniel verified visually · <span class="qa-badge qa-d-pending">D —</span> = NOT verified
 </div>
 
 <div class="todo-box">
-  <strong>📋 Tomorrow morning — resume here</strong>
+  <strong>📋 Tomorrow morning — RESUME HERE</strong>
   <br><br>
-  Stopping at a clean checkpoint. All today's work is committed, pushed, and verified. Resume protocol:
+  Stopping at end of long day. B3 fix is committed but verification incomplete. Resume protocol:
   <br>
   <ol>
-    <li><strong>Read this tracker first.</strong> Then verify codebase state: <code>git log --oneline -3</code> + <code>git status</code> + <code>grep "?v=" index.html</code>. Confirm HEAD is <code>6a04ee4</code> and v=200 across all 5 tags.</li>
-    <li><strong>B3 fix (option c) — ~2 hours of focused work.</strong>
+    <li><strong>Read this tracker first.</strong> Especially the "What's done today" box and this resume block.</li>
+    <li><strong>Run codebase verification:</strong>
       <ul>
-        <li>Replace 3 reads of <code>localStorage.getItem('vcp_placements')</code> with <code>Object.values(API.cache.placements).flat()</code> at views-admin.js:79, views-admin.js:1588, app.js:2435.</li>
-        <li>Add <code>programWithRepeatContext</code> preload variant in api.js (~12 lines).</li>
-        <li>Update app.js cost-summary route handler to call the new preload.</li>
-        <li><strong>Preconditions:</strong> verify <code>cache.programs</code> can't be partially populated by any path other than Programs.all()/Programs.create() (the <code>length &lt;= 1</code> guard depends on this).</li>
-        <li><strong>Smoke test must include real repeat scenario:</strong> style placed in prior Champion program → follow-up Champion program same style number → verify column populates with correct historical values, not just "non-empty."</li>
-        <li>Bump cache buster v200 → v201.</li>
+        <li><code>git log --oneline -5</code> — confirm HEAD is <code>536cf93</code> (B3 commit) on main</li>
+        <li><code>git status</code> — confirm working tree clean</li>
+        <li><code>grep "?v=" index.html</code> — confirm v=201 on all 5 tags</li>
       </ul>
     </li>
-    <li><strong>After B3 lands and is verified:</strong> begin authorization audit pass (the major next chunk of work — see v1.0 ship blockers below).</li>
+    <li><strong>Resume B3 verification (NOT a new fix — finish what's in flight):</strong>
+      <ul>
+        <li>Start server: <code>npm start</code> in project folder</li>
+        <li>Open browser at <code>http://localhost:3002</code></li>
+        <li>DevTools open → Network tab → "Disable cache" CHECKED</li>
+        <li>Filter Network for <code>api/programs</code></li>
+        <li>Clear network log (🚫 icon)</li>
+        <li>Cold-navigate to <code>http://localhost:3002/#cost-summary/moujbb9ik9kf9</code> (Q1 2027 Champion)</li>
+        <li><strong>Critical question:</strong> Does the Network tab show MULTIPLE <code>/api/programs/&lt;id&gt;/placements</code> requests during navigation? Or only one (for the current program)?
+          <ul>
+            <li><strong>If multiple:</strong> fan-out IS firing → real bug somewhere else (data not reaching cost matrix render). Investigate further.</li>
+            <li><strong>If only one:</strong> fan-out is NOT firing → either the route handler change didn't take effect, or <code>programWithRepeatContext</code> has a bug that exits before the fan-out.</li>
+          </ul>
+        </li>
+        <li>Once you know which case applies, send the answer to Claude Code along with the previously-paused diagnostic prompt (still pending Claude Code's response).</li>
+      </ul>
+    </li>
+    <li><strong>If B3 turns out to be unfixable in a reasonable window:</strong> revert <code>536cf93</code> with <code>git revert 536cf93</code>, push, document as deferred. Don't leave a non-working fix in production-track code without explicit deferral.</li>
+    <li><strong>After B3 lands and is verified:</strong> begin authorization audit pass (the major next chunk of work — see ship blockers below).</li>
   </ol>
+  <br>
+  <strong>Separate routing bug discovered during B3 testing:</strong> URL bar showed <code>moujbb9ik9kf9</code> but page rendered <code>Q3 2027 Champion Mid Tier Ladies</code> (different program). Direct hash-URL navigation may not work correctly — login flow appears to clobber deep-link hash. Probably unrelated to B3, but worth flagging during the routing review for Phase 2b.2. Tracker entry below.
 </div>
 
 <div class="blocker-box">
@@ -626,7 +655,7 @@
     <div class="section">
       <div class="section-header">
         <div class="section-title">🐛 Active Bugs</div>
-        <div class="section-count">5 open · 7 resolved/folded</div>
+        <div class="section-count">7 open · 8 resolved/folded</div>
       </div>
       <div class="group">
         <div class="group-label">Surfaced in seeded testing (May 6) — UPDATED May 8</div>
@@ -640,25 +669,75 @@
             <div class="item-text">B2: Open Programs SR "Open" button — folded into Phase 2b.2 scope (locked)</div>
             <span class="item-priority priority-medium">2b.2</span></div>
         </div>
-        <div class="item" data-id="b3-repeat-history">
-          <div class="item-header"><input type="checkbox">
-            <div class="item-text">B3: Repeat style — diagnosed (vcp_placements never written), option (c) approved, deferred to tomorrow morning</div>
-            <span class="item-priority priority-high">TOMORROW</span></div>
+        <div class="item done" data-id="b3-repeat-history">
+          <div class="item-header"><input type="checkbox" checked>
+            <div class="item-text">B3: Repeat style — VERIFIED + PUSHED <span class="test-result">ed2befe (v202)</span></div></div>
           <div class="test-detail">
-            <span class="label">Root cause:</span>
-            Three reads of <code>localStorage.getItem('vcp_placements')</code> at views-admin.js:79, views-admin.js:1588, app.js:2435. Key is never written anywhere in the codebase. All three always read <code>[]</code>.
-            <span class="label">Fix (option c):</span>
-            (1) Replace 3 localStorage reads with <code>Object.values(API.cache.placements).flat()</code>. (2) Add <code>programWithRepeatContext</code> preload variant in api.js (~12 lines). (3) Update cost-summary route handler.
-            <span class="label">Preconditions before implementing:</span>
-            Verify <code>cache.programs</code> can't be partially populated by any path other than Programs.all()/Programs.create().
-            <span class="label">Smoke test:</span>
-            Real repeat scenario required — style placed in prior Champion program → follow-up Champion program same style number → verify column populates with CORRECT historical values, not just non-empty. The detection logic at views-admin.js:1585-1613 has never run against real data.
+            <span class="label">Root cause (final):</span>
+            Two-layer bug. Layer 1: three reads of <code>localStorage.getItem('vcp_placements')</code> (views-admin.js:79, :1588, app.js:2435) where the key was never written. Layer 2 (found during verification): repeat detection at views-admin.js:1593 also depends on <code>_allStylesGlobal</code> having cross-program styles, but the initial fan-out only fetched placements — not styles or submissions for those programs.
+            <span class="label">Fix shipped — 2 commits:</span>
+            (1) <code>536cf93</code> (v201, May 8) — replaced 3 localStorage reads with <code>Object.values(API.cache.placements).flat()</code>; added <code>programWithRepeatContext</code> preload; route handler updated. (2) <code>ed2befe</code> (v202, May 10) — extended fan-out from placements-only to placements + styles + submissions via <code>Promise.all(others.flatMap(...))</code>; added inline comment at filter line noting it's the dedupe gate for the three-fetch bundle.
+            <span class="label">Verification result (May 10):</span>
+            FULL PASS. Cold-start to Q1 2027 Champion populates Repeat Style column immediately. Network tab shows expected 3×N fan-out (placements + styles + submissions) all parallel, status 200. Console clean. Visit-order dependency eliminated.
+            <span class="label">Pushed to origin:</span>
+            May 11 (<code>2474fdf..ed2befe</code>). Both B3 commits now on origin/main.
+            <span class="label">Diagnosis note:</span>
+            Initial race-condition hypothesis was wrong — <code>Promise.all</code> was correctly awaited. Real bug was incomplete fan-out scope. Claude Code traced this correctly via views-admin.js:1593 inspection.
           </div>
         </div>
         <div class="item" data-id="b4-sortable-cols">
           <div class="item-header"><input type="checkbox">
             <div class="item-text">B4: Sortable columns missing from Open Programs</div>
             <span class="item-priority priority-medium">MED</span></div>
+        </div>
+        <div class="item" data-id="b9-deep-link-routing">
+          <div class="item-header"><input type="checkbox">
+            <div class="item-text">B9 (NEW): Direct hash-URL navigation broken — login flow appears to clobber deep-link hash, sending user to Programs page or rendering wrong program</div>
+            <span class="item-priority priority-medium">MED</span></div>
+          <div class="test-detail">
+            <span class="label">Discovered:</span>
+            May 8 evening, during B3 testing.
+            <span class="label">Symptom 1:</span>
+            Pasting <code>http://localhost:3002/#cost-summary/&lt;id&gt;</code> on a fresh tab takes user to Open Programs page instead.
+            <span class="label">Symptom 2:</span>
+            URL bar shows program ID <code>moujbb9ik9kf9</code> but page renders a different program (Q3 2027 Mid Tier Ladies). URL ≠ rendered content.
+            <span class="label">Likely cause (Claude Code observation):</span>
+            SPA uses hash-based routing. On initial load, navigate flow is gated by login first (<code>app.js:36 await navigate(landingRoute)</code>). The hash is processed AFTER login, but if the login flow forces <code>landingRoute = 'programs'</code>, any deep-link hash gets clobbered.
+            <span class="label">Why it matters:</span>
+            Will surface as a real problem at Stage A — internal users sharing links to specific programs will hit a broken flow. Worth fixing before Stage A.
+            <span class="label">Tag:</span>
+            Stage A (per staged rollout — internal users will share program URLs).
+          </div>
+        </div>
+        <div class="item" data-id="b10-stylenum-column-width">
+          <div class="item-header"><input type="checkbox">
+            <div class="item-text">B10 (NEW): Cost Summary Style# column wraps multi-line — should auto-size to fit longest style number on one line</div>
+            <span class="item-priority priority-medium">MED</span></div>
+          <div class="test-detail">
+            <span class="label">Discovered:</span>
+            May 10, during B3 cold-start verification on Q1 2027 Champion Cost Summary.
+            <span class="label">Symptom:</span>
+            "CHM-Q4-LE-01" and similar 12-char style numbers wrap to 3 lines in the Style# column, making rows visually tall and table harder to scan. All style numbers in a program share the same prefix (CHM-Q4- or CHM-Q1-) and have predictable max length.
+            <span class="label">Fix scope (CSS-only, est ~10 LOC):</span>
+            Either (a) <code>white-space: nowrap</code> on Style# column cell with sufficient min-width, or (b) compute the max style# length per render and set column width via JS once. Option a is simpler and avoids JS layout cost.
+            <span class="label">Tag:</span>
+            Stage A (visual quality bar — internal users will be looking at this table all day).
+          </div>
+        </div>
+        <div class="item" data-id="b11-phantom-blank-column">
+          <div class="item-header"><input type="checkbox">
+            <div class="item-text">B11 (NEW): Cost Summary horizontal scroll reveals phantom blank column past Repeat Style column</div>
+            <span class="item-priority priority-medium">MED</span></div>
+          <div class="test-detail">
+            <span class="label">Discovered:</span>
+            May 10, during B3 cold-start verification on Q1 2027 Champion Cost Summary.
+            <span class="label">Symptom:</span>
+            Scrolling right past the Repeat Style column reveals an empty column at the end of the table. No header text, no cell content — just extra width. Likely a stray <code>&lt;th&gt;</code>/<code>&lt;td&gt;</code> pair in buildCostMatrix or a colspan miscount.
+            <span class="label">Fix scope:</span>
+            Inspect cost matrix render in views-admin.js / app.js for trailing column emit; remove or fix. Likely &lt;20 LOC.
+            <span class="label">Tag:</span>
+            Stage A (visual quality; not data-corrupting but unprofessional).
+          </div>
         </div>
         <div class="item done" data-id="b5-sr-col-hidden">
           <div class="item-header"><input type="checkbox" checked>
@@ -732,10 +811,27 @@
     <div class="section urgent">
       <div class="section-header">
         <div class="section-title">🔒 AUDIT-NOTEs — for authorization audit pass</div>
-        <div class="section-count">4 items</div>
+        <div class="section-count">5 items</div>
       </div>
       <div class="group">
         <div class="group-label">Captured during today's triage — apply during audit pass, not before</div>
+        <div class="item" data-id="audit-stylemap-coupling">
+          <div class="item-header"><input type="checkbox">
+            <div class="item-text">Repeat detection coupling on _allStylesGlobal — single point of truth is now programWithRepeatContext</div>
+            <span class="item-priority priority-high">AUDIT</span></div>
+          <div class="test-detail">
+            <span class="label">Origin:</span>
+            B3 verification (May 10). Repeat detection at <code>views-admin.js:1593</code> short-circuits silently when <code>_allStylesGlobal.find(s =&gt; s.id === pl.styleId)</code> returns undefined. <code>_allStylesGlobal</code> reads from <code>cache.styleMap</code>, which is populated only by <code>Styles.fetchByProgram(pid)</code>.
+            <span class="label">Current state (post-ed2befe):</span>
+            <code>programWithRepeatContext</code> in api.js is the single function that ensures cross-program <code>styleMap</code>, <code>placements</code>, AND <code>submissions</code> caches are all populated before render. Filter <code>!cache.placements[p.id]</code> is the dedupe gate for the whole three-fetch bundle.
+            <span class="label">Risk:</span>
+            If a future code path populates <code>cache.placements[p.id]</code> independently of styles/submissions (e.g., a dashboard widget that lazy-loads placements alone), the filter will silently skip those programs in subsequent <code>programWithRepeatContext</code> calls — and repeat detection breaks without any error.
+            <span class="label">Action:</span>
+            During audit, grep all writes to <code>cache.placements</code> (and the corresponding <code>API.cache.placements[...] = ...</code> assignments) and confirm none happen outside the three-fetch bundle. If a legitimate case is found, either move it inside <code>programWithRepeatContext</code> or change the filter to gate on a separate flag.
+            <span class="label">Related deferred bug:</span>
+            Dashboard placed-style count (<code>bug-dashboard-vcp-placements</code>) has the same shape — fixing it requires loading placements for ALL programs every dashboard render, which is the exact pattern that would trip this audit note. Resolve coupling design before fixing.
+          </div>
+        </div>
         <div class="item" data-id="audit-localstorage-parity">
           <div class="item-header"><input type="checkbox">
             <div class="item-text">Client-side localStorage read/write parity: grep all getItem calls, verify each has matching setItem</div>
@@ -948,6 +1044,17 @@
             Stage A may add a minimal harness for auth-relevant tests only (open decision). Full harness with sync, migrations, X1 auto-advance, etc. is v1.1.
           </div>
         </div>
+        <div class="item" data-id="enh-cache-buster-robust">
+          <div class="item-header"><input type="checkbox">
+            <div class="item-text"><span class="stage-tag v11">v1.1</span>Replace <code>?v=NNN</code> cache busting with robust mechanism (content-hash filenames, HTTP cache-control, or build-time fingerprinting)</div>
+            <span class="item-priority priority-low">QUALITY</span></div>
+          <div class="test-detail">
+            <span class="label">Origin:</span>
+            Multiple cache-buster scares during May 8 fix work — once a false alarm (browser holding stale page), once a real concern about mixed-version files. Manual <code>?v=NNN</code> bumps work but are fragile and depend on humans remembering across all tags.
+            <span class="label">Why v1.1 not now:</span>
+            Current mechanism is functional with discipline. Replacing it before Stage A adds risk for marginal gain. After Stage A is live and we have real users, the friction will be more visible and more annoying — better motivation for getting the replacement right.
+          </div>
+        </div>
       </div>
       <div class="group">
         <div class="group-label">v2.0+ / future</div>
@@ -977,6 +1084,10 @@
       </div>
       <div class="group">
         <div class="group-label">Recently Shipped + Verified</div>
+        <div class="item" data-id="b3-shipped-may8">
+          <div class="item-header"><input type="checkbox">
+            <div class="item-text">⚠️ B3 fix — Repeat style data flow (May 8) <span class="qa-badge qa-cc-done">CC ✓</span><span class="qa-badge qa-d-pending">D —</span> <span class="test-result">536cf93 (v201) — verification incomplete, see bugs section</span></div></div>
+        </div>
         <div class="item done" data-id="b7b8-shipped-may8">
           <div class="item-header"><input type="checkbox" checked>
             <div class="item-text">B7+B8 fix — Filter visibility banner (May 8) <span class="qa-badge qa-cc-done">CC ✓</span><span class="qa-badge qa-d-done">D ✓</span> <span class="test-result">6a04ee4 (v200)</span></div></div>
