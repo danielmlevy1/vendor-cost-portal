@@ -879,9 +879,10 @@ App = (() => {
       const tcCoos      = tc.coos || [];
       const cooChips    = tcCoos.length
         ? tcCoos.map(coo => {
-            // Default: if this TC wasn't previously assigned, pre-check all its COOs.
+            // Default: if this TC wasn't previously assigned, leave its COOs unchecked.
             // Otherwise, use what the existing assignment had selected.
-            const checked = isAssigned ? selectedSet.has(coo) : true;
+            // (Clicking the parent TC box auto-checks all COOs via _syncTcRowCoos.)
+            const checked = isAssigned ? selectedSet.has(coo) : false;
             return `<label class="coo-chip" style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border:1px solid var(--border);border-radius:14px;font-size:0.75rem;cursor:pointer;background:${checked ? 'rgba(99,102,241,0.12)' : 'transparent'}">
               <input type="checkbox" class="assign-coo-chk" data-tcid="${tc.id}" value="${coo}" ${checked ? 'checked' : ''}
                      onclick="event.stopPropagation()"
