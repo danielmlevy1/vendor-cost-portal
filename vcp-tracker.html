@@ -207,7 +207,7 @@
 <body>
 
 <h1>Vendor Cost Portal — Tracker</h1>
-<div class="subtitle">May 11 · 5 commits shipped (hot patch + B5 + B7+B8 + B3 + B3 follow-up) · B3 VERIFIED + pushed · next: B10, B11 (CSS), then audit pass</div>
+<div class="subtitle">May 11 EOD · 8 commits shipped · Auth audit Stage A COMPLETE + pushed (5 endpoints verified via curl) · DB cleaned + backed up · ready for next Stage A item tomorrow (A3/A4/A5/A6)</div>
 
 <div class="milestone-box">
   <strong>🎯 Go-Live Milestone — Staged Rollout (locked May 8)</strong>
@@ -294,42 +294,75 @@
   <strong>QA legend:</strong> <span class="qa-badge qa-cc-done">CC ✓</span> = Claude Code reported done · <span class="qa-badge qa-d-done">D ✓</span> = Daniel verified visually · <span class="qa-badge qa-d-pending">D —</span> = NOT verified
 </div>
 
-<div class="todo-box">
-  <strong>📋 Tomorrow morning — RESUME HERE</strong>
+<div class="ship-box">
+  <strong>🎯 What's done today (May 11)</strong>
   <br><br>
-  Stopping at end of long day. B3 fix is committed but verification incomplete. Resume protocol:
+  <strong>Code commits (4, all pushed to origin):</strong>
+  <br>✓ <strong>B3 follow-up</strong> <span class="qa-badge qa-cc-done">CC ✓</span><span class="qa-badge qa-d-done">D ✓</span> — <code>ed2befe</code> (v202). Extended <code>programWithRepeatContext</code> fan-out from placements-only to placements + styles + submissions via <code>Promise.all(others.flatMap(...))</code>. Network tab confirmed expected 3×N fan-out on cold-start. Repeat Style column populates immediately. Visit-order dependency eliminated.
+  <br>✓ <strong>B10 + B11 fix</strong> <span class="qa-badge qa-cc-done">CC ✓</span><span class="qa-badge qa-d-done">D ✓</span> — <code>ca7240f</code> (v203). B10: Style # column auto-width — <code>width:120px;min-width:110px;white-space:nowrap</code> on header + 3 body cell variants. B11: <code>totalFixedCols</code> off-by-2 fix at 4 sites (constant + grand-total colspan bump 4→6). PROGRAM TOTALS row verified extending to right edge.
+  <br>✓ <strong>Tracker updates</strong> — <code>f12aff5</code>. May 8 evening resume protocol + May 11 B3 verification + B10/B11 additions + audit-stylemap-coupling note.
+  <br>✓ <strong>Auth audit Stage A fix</strong> <span class="qa-badge qa-cc-done">CC ✓</span><span class="qa-badge qa-d-done">D ✓</span> — <code>b6d0818</code> (v204). C1-C4 vendor-block middleware + B1 vendor-scope check via existing helper. 8 curl tests pass (4 C-endpoints × 2 roles + 4 B1 scenarios). Closes Stage A ship blocker #2.
+  <br><br>
+  <strong>Authorization audit Stage A — exploitable-scope COMPLETE:</strong>
+  <br>✓ <strong>Endpoint inventory built</strong> — 90 mutation endpoints across <code>routes.js</code> + <code>routes-supporting.js</code>.
+  <br>✓ <strong>Bucketing</strong>: 85 A (properly guarded · 94.4%) · 1 B (partial · 1.1%) · 4 C (bare requireAuth · 4.4%).
+  <br>✓ <strong>5-endpoint fix shipped + pushed</strong> — <code>b6d0818</code> (v204). C1-C4 vendor-block via <code>requireRole('admin','pc','sales','sales_mgmt','planning','design','tech_design')</code>. B1 scope check via existing <code>vendorAssignedTo</code> helper, gated on <code>req.user.role === 'vendor'</code>.
+  <br>✓ <strong>Curl verification — all 8 tests pass:</strong>
+  <br>&nbsp;&nbsp;• C1-C4 (4 endpoints × 2 roles): vendor=403 · admin=201 — all four endpoints correctly block vendor, all four allow admin
+  <br>&nbsp;&nbsp;• B1 Test #1 (vendor + assigned program): 200 ✓
+  <br>&nbsp;&nbsp;• B1 Test #2 (vendor + UNassigned program): 403 "Not assigned to this program" ✓
+  <br>&nbsp;&nbsp;• B1 Test #3 (vendor + nonexistent styleId): 404 "Style not found" ✓
+  <br>&nbsp;&nbsp;• B1 Test #4 (admin + UNassigned-program styleId): 200 — admin path unblocked ✓
+  <br>✓ <strong>DB cleanup</strong> — 14 test rows deleted via transactional SQL, BEFORE/AFTER counts confirmed all zero.
+  <br>✓ <strong>EOD backup</strong> — <code>portal.db.backup_2026-05-11_eod</code> created against fully checkpointed DB (WAL=0 bytes).
+  <br><br>
+  <strong>Working observations:</strong>
+  <br>• Codebase auth shape much better than the audit framing implied. 94.4% properly guarded — not a sprawling weeks-of-sweep job, just 5 targeted fixes.
+  <br>• Real "8 endpoints" survey did not exist as a documented artifact — built it ourselves via grep through Claude Code. Now it does.
+  <br>• Claude Code's recon work was excellent — three-pattern recognition (requireRole+applyPatch · bare+inline allowedFields · bare+inline role-keyed constant), correctly distinguished bare-requireAuth-but-still-A from true C. Worth repeating this style of recon prompt going forward.
+  <br>• First curl run returned 201 across all C-endpoints — fix appeared broken. Cause: server wasn't restarted; Node ran stale in-memory code. <strong>Lesson: restart server before any security curl test. Old process in memory = old behavior on the wire.</strong>
+  <br>• <code>bug-tcs-preselected</code> hit in real use during B1 setup (assigning SHK to a program). The buggy modal shows ALL TCs preselected; nearly clobbered the existing AZ/EG/FHD/GU assignments. Workaround: assigned via curl directly through <code>PUT /api/programs/:id/assignments</code> — also surfaced that endpoint's delete-all-reinsert behavior (see audit notes).
+  <br>• DB safety: skipped a backup verification step mid-flow but caught the missing-WAL issue before it mattered. SQLite WAL mode requires backing up both <code>.db</code> AND <code>.db-wal</code> together, or stopping the server first so WAL checkpoints into the main file. <strong>Lesson: WAL-aware backup discipline for any future DB work; checkpoint-then-copy or copy both files.</strong>
+  <br><br>
+  <strong>QA legend:</strong> <span class="qa-badge qa-cc-done">CC ✓</span> = Claude Code reported done · <span class="qa-badge qa-d-done">D ✓</span> = Daniel verified visually · <span class="qa-badge qa-d-pending">D —</span> = NOT verified
+</div>
+
+<div class="todo-box">
+  <strong>📋 Tomorrow (May 12) — RESUME HERE</strong>
+  <br><br>
+  Stage A ship blocker #2 (auth audit) closed yesterday. Fresh start. Resume protocol:
   <br>
   <ol>
-    <li><strong>Read this tracker first.</strong> Especially the "What's done today" box and this resume block.</li>
+    <li><strong>Read this tracker first.</strong> Especially the May 11 "What's done today" box, the EOD summary in the subtitle, and this resume block.</li>
     <li><strong>Run codebase verification:</strong>
       <ul>
-        <li><code>git log --oneline -5</code> — confirm HEAD is <code>536cf93</code> (B3 commit) on main</li>
+        <li><code>git log --oneline -5</code> — confirm HEAD is <code>b6d0818</code> (auth audit Stage A) on main</li>
         <li><code>git status</code> — confirm working tree clean</li>
-        <li><code>grep "?v=" index.html</code> — confirm v=201 on all 5 tags</li>
+        <li><code>grep "?v=" index.html</code> — confirm v=204 on all 5 tags</li>
       </ul>
     </li>
-    <li><strong>Resume B3 verification (NOT a new fix — finish what's in flight):</strong>
+    <li><strong>Start server:</strong> <code>cd ~/Desktop/Projects/Github/vendor-cost-portal && npm start</code></li>
+    <li><strong>Pick next Stage A item</strong> from the ship blockers list below. Options in rough order of suggested sequence:
       <ul>
-        <li>Start server: <code>npm start</code> in project folder</li>
-        <li>Open browser at <code>http://localhost:3002</code></li>
-        <li>DevTools open → Network tab → "Disable cache" CHECKED</li>
-        <li>Filter Network for <code>api/programs</code></li>
-        <li>Clear network log (🚫 icon)</li>
-        <li>Cold-navigate to <code>http://localhost:3002/#cost-summary/moujbb9ik9kf9</code> (Q1 2027 Champion)</li>
-        <li><strong>Critical question:</strong> Does the Network tab show MULTIPLE <code>/api/programs/&lt;id&gt;/placements</code> requests during navigation? Or only one (for the current program)?
-          <ul>
-            <li><strong>If multiple:</strong> fan-out IS firing → real bug somewhere else (data not reaching cost matrix render). Investigate further.</li>
-            <li><strong>If only one:</strong> fan-out is NOT firing → either the route handler change didn't take effect, or <code>programWithRepeatContext</code> has a bug that exits before the fan-out.</li>
-          </ul>
-        </li>
-        <li>Once you know which case applies, send the answer to Claude Code along with the previously-paused diagnostic prompt (still pending Claude Code's response).</li>
+        <li><strong>A3 Roles/permissions table</strong> — design + integrate DB-backed table for <code>user_email → role → trading_company_id → department_id → active</code>. Sequenced before A4 because Phase 2b.2 routing changes may want to hook role checks against the new table.</li>
+        <li><strong>A4 Phase 2b.2</strong> — Filtered Cost Summary + routing change. <em>Was parked pending audit completion; now unparked.</em> Folds B1+B2 in. Build prompt was drafted earlier — locate and re-validate before sending.</li>
+        <li><strong>A5 Phase 2b.3</strong> — Edit gating + Notes column. ~70 LOC. Smaller and self-contained; good if you want a focused win.</li>
+        <li><strong>A6 Entra SSO</strong> — replaces JWT-only auth for production. Heavier; could be split across multiple days.</li>
       </ul>
     </li>
-    <li><strong>If B3 turns out to be unfixable in a reasonable window:</strong> revert <code>536cf93</code> with <code>git revert 536cf93</code>, push, document as deferred. Don't leave a non-working fix in production-track code without explicit deferral.</li>
-    <li><strong>After B3 lands and is verified:</strong> begin authorization audit pass (the major next chunk of work — see ship blockers below).</li>
+    <li><strong>Open observation queue (not blocking, knock out when convenient):</strong>
+      <ul>
+        <li>B12 — Sticky-column extension (Fabric, Proj Qty, Actual Qty). ~30 min CSS.</li>
+        <li><code>bug-tcs-preselected</code> — HIGH priority, hit in real use yesterday. Modal preselects ALL TCs; nearly clobbered legitimate assignments. Fix before any PC user touches the modal in real workflows.</li>
+        <li>Audit follow-ups (see AUDIT-NOTES section): orphan-on-bad-styleId on admin /submissions path; PUT /assignments delete-all-reinsert behavior.</li>
+      </ul>
+    </li>
   </ol>
   <br>
-  <strong>Separate routing bug discovered during B3 testing:</strong> URL bar showed <code>moujbb9ik9kf9</code> but page rendered <code>Q3 2027 Champion Mid Tier Ladies</code> (different program). Direct hash-URL navigation may not work correctly — login flow appears to clobber deep-link hash. Probably unrelated to B3, but worth flagging during the routing review for Phase 2b.2. Tracker entry below.
+  <strong>Standing pattern reminders:</strong>
+  <br>• Restart server before any security curl test (caught us yesterday — stale Node process = old code on the wire).
+  <br>• WAL-aware DB backups (checkpoint-then-copy, or stop server before copy).
+  <br>• Recon-style prompts to Claude Code before approving fixes — produces structured inventories that close framing in one day instead of multiple.
 </div>
 
 <div class="blocker-box">
@@ -340,9 +373,9 @@
   &nbsp; <span class="stage-tag stage-c">C</span> = required for Stage C (full rollout)
   &nbsp; <span class="stage-tag post-launch">POST</span> = post-launch, not blocking
   <br><br>
-  <strong><span class="stage-tag stage-a">A</span> 1. B3 fix</strong> — repeat style data populating in Cost Summary. ~2 hrs. Tomorrow.
+  <strong><span class="stage-tag stage-a">A</span> 1. B3 fix</strong> ✅ <strong>DONE May 11</strong> — repeat style data populates correctly on cold-start. Shipped via <code>536cf93</code> + <code>ed2befe</code> (v202), pushed.
   <br>
-  <strong><span class="stage-tag stage-a">A</span> 2. Authorization audit pass — exploitable-scope only</strong> — the ~8 requireAuth-only mutation endpoints from the survey + obvious-on-grep issues. Defer deeper class-of-bug audit to A→B window.
+  <strong><span class="stage-tag stage-a">A</span> 2. Authorization audit pass — exploitable-scope only</strong> ✅ <strong>DONE May 11</strong> — Inventory of 90 endpoints (85 A / 1 B / 4 C); 5-endpoint fix shipped via <code>b6d0818</code> (v204) and curl-verified end-to-end. Deeper systematic audit deferred to A→B per plan.
   <br>
   <strong><span class="stage-tag stage-a">A</span> 3. Roles/permissions table</strong> — design + integrate <code>user_email → role → trading_company_id → department_id → active</code> table. Internal roles only at A; vendor scoping deeper-tested at B.
   <br>
@@ -400,7 +433,7 @@
   <div>
     <div class="section in-progress">
       <div class="section-header">
-        <div class="section-title">🚧 Now: Stopped at clean checkpoint · B3 + audit pass tomorrow</div>
+        <div class="section-title">🚧 Now: Stage A blocker #2 (audit) DONE · pick next item tomorrow (A3/A4/A5/A6)</div>
         <div class="section-count">paused</div>
       </div>
       <div class="group">
@@ -655,7 +688,7 @@
     <div class="section">
       <div class="section-header">
         <div class="section-title">🐛 Active Bugs</div>
-        <div class="section-count">7 open · 8 resolved/folded</div>
+        <div class="section-count">6 open · 10 resolved/folded</div>
       </div>
       <div class="group">
         <div class="group-label">Surfaced in seeded testing (May 6) — UPDATED May 8</div>
@@ -709,34 +742,45 @@
             Stage A (per staged rollout — internal users will share program URLs).
           </div>
         </div>
-        <div class="item" data-id="b10-stylenum-column-width">
-          <div class="item-header"><input type="checkbox">
-            <div class="item-text">B10 (NEW): Cost Summary Style# column wraps multi-line — should auto-size to fit longest style number on one line</div>
-            <span class="item-priority priority-medium">MED</span></div>
+        <div class="item done" data-id="b10-stylenum-column-width">
+          <div class="item-header"><input type="checkbox" checked>
+            <div class="item-text">B10: Style # column auto-width — SHIPPED <span class="test-result">ca7240f (v203)</span></div></div>
           <div class="test-detail">
-            <span class="label">Discovered:</span>
-            May 10, during B3 cold-start verification on Q1 2027 Champion Cost Summary.
-            <span class="label">Symptom:</span>
-            "CHM-Q4-LE-01" and similar 12-char style numbers wrap to 3 lines in the Style# column, making rows visually tall and table harder to scan. All style numbers in a program share the same prefix (CHM-Q4- or CHM-Q1-) and have predictable max length.
-            <span class="label">Fix scope (CSS-only, est ~10 LOC):</span>
-            Either (a) <code>white-space: nowrap</code> on Style# column cell with sufficient min-width, or (b) compute the max style# length per render and set column width via JS once. Option a is simpler and avoids JS layout cost.
-            <span class="label">Tag:</span>
-            Stage A (visual quality bar — internal users will be looking at this table all day).
+            <span class="label">Root cause:</span>
+            Inline <code>width:60px; min-width:60px</code> on header at views-admin.js:1525. With <code>thead th { padding: 11px 14px }</code> eating 28px, only ~32px remained for text. 12-char prefixes like CHM-Q4-LE-01 need ~90-100px → wrapped to 3 lines.
+            <span class="label">Fix (Option A):</span>
+            Header width bumped to <code>width:120px; min-width:110px</code>; <code>white-space:nowrap</code> added to header + 3 body cell variants (regular, link-anchor, ghost). Cache buster bumped to v=203.
+            <span class="label">Verification:</span>
+            Visually confirmed May 11 — all style numbers render on single line, row heights uniform. Pushed to origin.
           </div>
         </div>
-        <div class="item" data-id="b11-phantom-blank-column">
+        <div class="item done" data-id="b11-phantom-blank-column">
+          <div class="item-header"><input type="checkbox" checked>
+            <div class="item-text">B11: Phantom column past Repeat Style — SHIPPED <span class="test-result">ca7240f (v203)</span></div></div>
+          <div class="test-detail">
+            <span class="label">Root cause:</span>
+            Off-by-2 in <code>totalFixedCols</code> at views-admin.js:2025 — formula was <code>12 + colGroups.length * 6 + 2</code> but actual count is <code>14 + 6N + 2 = 16 + 6N</code>. Whoever added the Actual QTY / Wtd Sell columns updated the comment but not the integer. Same broken formula at line 2167 (<code>totalCols</code>). Grand total tfoot at line 2138-2160 had matching 2-column deficit. Fabric group rows (📁) used the short colspan, leaving 2 empty column-slots at the right — which is what the user perceived as a "phantom column."
+            <span class="label">Fix (3 sites):</span>
+            <code>totalFixedCols</code> and <code>totalCols</code> constants both bumped to <code>14 + ...</code>; grand total tfoot leading <code>colspan</code> bumped from 4 to 6. Cache buster v=203.
+            <span class="label">Verification:</span>
+            PROGRAM TOTALS row visually confirmed extending to right edge May 11. Fabric group row case (📁 rows) NOT visually verified — Q1 2027 Champion test program had no fabric group headers (styles missing fabric data). Same constant feeds both row types, so fixing once fixes both. Pushed to origin.
+          </div>
+        </div>
+        <div class="item" data-id="b12-sticky-cols-extension">
           <div class="item-header"><input type="checkbox">
-            <div class="item-text">B11 (NEW): Cost Summary horizontal scroll reveals phantom blank column past Repeat Style column</div>
+            <div class="item-text">B12 (NEW): Cost Summary sticky columns — Fabric, Proj Qty, Actual Qty should stick when scrolling right (currently only Style # sticks)</div>
             <span class="item-priority priority-medium">MED</span></div>
           <div class="test-detail">
             <span class="label">Discovered:</span>
-            May 10, during B3 cold-start verification on Q1 2027 Champion Cost Summary.
+            May 11, during B11 verification on Q1 2027 Champion Cost Summary.
             <span class="label">Symptom:</span>
-            Scrolling right past the Repeat Style column reveals an empty column at the end of the table. No header text, no cell content — just extra width. Likely a stray <code>&lt;th&gt;</code>/<code>&lt;td&gt;</code> pair in buildCostMatrix or a colspan miscount.
-            <span class="label">Fix scope:</span>
-            Inspect cost matrix render in views-admin.js / app.js for trailing column emit; remove or fix. Likely &lt;20 LOC.
+            Scrolling horizontally to view TC vendor columns loses sight of Fabric, Proj Qty, and Actual Qty — making it hard to correlate vendor pricing to expected volume. Style # is correctly sticky already (per per-cell <code>.sticky-col</code> class with <code>left: 0</code>).
+            <span class="label">Fix scope (CSS-only, est ~20 LOC):</span>
+            Add <code>.sticky-col</code> class to Fabric / Proj Qty / Actual Qty header + body cells. Use chained <code>left</code> offsets (or CSS custom properties) so cells stack horizontally instead of all anchoring to <code>left: 0</code> like the current single-column sticky.
+            <span class="label">Risk:</span>
+            Sticky stacking with mixed column widths is subtle. Width math must be correct or columns overlap. Z-index ordering for sticky + sticky-row (column headers) intersection also needs care.
             <span class="label">Tag:</span>
-            Stage A (visual quality; not data-corrupting but unprofessional).
+            Stage A (UX quality for internal users; not blocking but visibly annoying for the daily workflow).
           </div>
         </div>
         <div class="item done" data-id="b5-sr-col-hidden">
@@ -776,10 +820,17 @@
         <div class="group-label">Pre-existing</div>
         <div class="item" data-id="bug-tcs-preselected">
           <div class="item-header"><input type="checkbox">
-            <div class="item-text">openAssignTCs modal pre-selects ALL TCs for unassigned programs</div>
+            <div class="item-text">openAssignTCs modal pre-selects ALL TCs — also affects programs that already have some assignments</div>
             <span class="item-priority priority-high">HIGH</span></div>
           <div class="test-detail">
-            Risk: PC could accidentally save and assign program to every TC.
+            <span class="label">Original risk:</span>
+            PC could accidentally save and assign program to every TC.
+            <span class="label">Hit in real use May 11:</span>
+            During B1 curl-test setup, opening the modal for Q1 2027 Champion (4 existing TC assignments) showed ALL 17 TCs checked, including the 4 legit ones AND 13 that shouldn't be. Saving would have clobbered the legitimate set. Worked around by assigning SHK via direct curl to <code>PUT /api/programs/:id/assignments</code>. Confirms the bug applies to mixed-state programs (some assigned, some not), not just fully-unassigned ones — so the modal is unsafe to use on any program right now.
+            <span class="label">Fix scope:</span>
+            Modal should load the program's current assignments first, then pre-check only those TCs. Likely &lt;30 LOC in views-admin.js openAssignTCs handler.
+            <span class="label">Tag:</span>
+            Stage A. Should not ship Stage A with this active — internal PC users will hit it.
           </div>
         </div>
         <div class="item" data-id="bug-tier-dropdown">
@@ -811,10 +862,40 @@
     <div class="section urgent">
       <div class="section-header">
         <div class="section-title">🔒 AUDIT-NOTEs — for authorization audit pass</div>
-        <div class="section-count">5 items</div>
+        <div class="section-count">7 items</div>
       </div>
       <div class="group">
         <div class="group-label">Captured during today's triage — apply during audit pass, not before</div>
+        <div class="item" data-id="audit-submissions-orphan-on-bad-styleid">
+          <div class="item-header"><input type="checkbox">
+            <div class="item-text">POST /api/submissions — admin/PC path inserts orphan row on invalid styleId (no existence check before INSERT)</div>
+            <span class="item-priority priority-high">AUDIT</span></div>
+          <div class="test-detail">
+            <span class="label">Origin:</span>
+            Surfaced May 11 during B1 fix review by Claude Code. The new vendor-scope check added a <code>styleById</code> lookup that returns 404 if the style doesn't exist — but that lookup only fires on the vendor code path. Admin and PC POSTs skip straight to the INSERT.
+            <span class="label">Impact:</span>
+            Stage A: data integrity risk, not security. An admin fat-fingering a styleId in a curl/script context would silently create an orphan submission row. UI flow doesn't expose the case.
+            <span class="label">Fix scope:</span>
+            One-line: move the <code>styleRow = stmt.styleById.get(styleId)</code> + 404 check to the top of the handler, before role branching. ~3 LOC change.
+            <span class="label">Why not now:</span>
+            Out of scope for the B1 fix (vendor-scope was the security ask). Not blocking. Track for next routine pass through routes.js.
+          </div>
+        </div>
+        <div class="item" data-id="audit-assignments-delete-all-reinsert">
+          <div class="item-header"><input type="checkbox">
+            <div class="item-text">PUT /api/programs/:id/assignments uses delete-all-then-reinsert (not incremental upsert)</div>
+            <span class="item-priority priority-medium">AUDIT</span></div>
+          <div class="test-detail">
+            <span class="label">Origin:</span>
+            Observed May 11 during B1 setup via direct curl. PUT request with full assignment list returned new IDs for ALL rows (not just the newly-added SHK row) — confirming the endpoint deletes everything and reinserts rather than reconciling diffs.
+            <span class="label">Impact:</span>
+            (a) Any future FK from another table referencing <code>assignments.id</code> would orphan on every PUT. Currently FK enforcement is OFF, so this is latent — but flipping FK enforcement ON during Azure SQL migration without addressing this could break assignment writes silently. (b) Any historical audit trail tied to assignment IDs is lost on every save. (c) Performance: scales as O(N) on N TCs per program — fine at current scale, but worth noting.
+            <span class="label">Fix scope:</span>
+            Refactor to UPSERT pattern: compute diff between existing and incoming, INSERT new + UPDATE changed + DELETE removed. Heavier change (~50-80 LOC) and would benefit from test coverage before shipping.
+            <span class="label">Why not now:</span>
+            Not Stage A blocker; current scale and lack of FK enforcement mean no user-visible symptom. Track for Azure SQL migration window where FK enforcement decision happens.
+          </div>
+        </div>
         <div class="item" data-id="audit-stylemap-coupling">
           <div class="item-header"><input type="checkbox">
             <div class="item-text">Repeat detection coupling on _allStylesGlobal — single point of truth is now programWithRepeatContext</div>
