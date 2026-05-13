@@ -1914,6 +1914,7 @@ th {
 
 #cost-summary-table .sticky-col {
   position: sticky;
+  left: 0;
   z-index: 1;
   background: var(--bg-surface);
   border-right: 1px solid var(--border);
@@ -1989,12 +1990,10 @@ th {
   border-spacing: 0;
 }
 
-/* B12: Chained sticky columns. Six cells stack at the left edge: sel-col,
-   design-history, styleNum, fab, qty, actualQty. Each anchors at its own
-   `left` offset (declared below) so they don't overlap. Non-sticky columns
-   between them (styleName, cat, sell) scroll under the sticky cluster. */
+/* Sticky style# column */
 #cost-summary-table .sticky-col {
   position: sticky;
+  left: 0;
   z-index: 2;
   background: var(--bg-surface);
   border-right: 2px solid var(--border);
@@ -2003,37 +2002,6 @@ th {
 #cost-summary-table thead .sticky-col {
   z-index: 3;
 }
-
-/* Per-column left offsets for the three cells already marked .sticky-col.
-   Widths: sel-col=36, design-history=28, styleNum=120. */
-#cost-summary-table .sel-col.sticky-col                       { left: 0; }
-#cost-summary-table .sticky-col:not(.sel-col):not([data-col]) { left: 36px; }  /* design-history cell — no data-col attr */
-#cost-summary-table [data-col="styleNum"].sticky-col          { left: 64px; }
-
-/* New sticky cells: fab, qty, actualQty. These don't carry .sticky-col
-   class in markup, so recreate the sticky behavior via [data-col]. */
-#cost-summary-table th[data-col="fab"],
-#cost-summary-table td[data-col="fab"],
-#cost-summary-table th[data-col="qty"],
-#cost-summary-table td[data-col="qty"],
-#cost-summary-table th[data-col="actualQty"],
-#cost-summary-table td[data-col="actualQty"] {
-  position: sticky;
-  z-index: 2;
-  background: var(--bg-surface);
-}
-#cost-summary-table thead th[data-col="fab"],
-#cost-summary-table thead th[data-col="qty"],
-#cost-summary-table thead th[data-col="actualQty"] {
-  z-index: 3;
-}
-
-/* Chain offsets for new sticky cells. fab anchors right after styleNum
-   (64+120=184); qty after fab (184+72=256); actualQty after qty (256+60=316).
-   Non-sticky styleName/cat/sell scroll under this cluster. */
-#cost-summary-table [data-col="fab"]       { left: 184px; }
-#cost-summary-table [data-col="qty"]       { left: 256px; }
-#cost-summary-table [data-col="actualQty"] { left: 316px; }
 
 /* Shared header style */
 .mat-hdr {
@@ -3049,15 +3017,8 @@ td[data-col="best"] .tag-danger {
 
 /* Placed FOB cell — strong highlight */
 
-/* Sticky col right shadow — applied to every sticky cell so each retains a
-   subtle right-edge shadow consistent with the existing styleNum cluster. */
-td.sticky-col, th.sticky-col,
-#cost-summary-table td[data-col="fab"],
-#cost-summary-table th[data-col="fab"],
-#cost-summary-table td[data-col="qty"],
-#cost-summary-table th[data-col="qty"],
-#cost-summary-table td[data-col="actualQty"],
-#cost-summary-table th[data-col="actualQty"] {
+/* Sticky col right shadow */
+td.sticky-col, th.sticky-col {
   box-shadow: 3px 0 8px rgba(0,0,0,0.4);
 }
 
@@ -3557,15 +3518,6 @@ body.printing-fabric-matrix #content > *:not(#fabric-matrix-print-area):not(.tex
   }
   #fabric-matrix-print-area thead th { background: #f3f4f6 !important; font-weight: 700 !important; }
   #fabric-matrix-print-area .badge { background: transparent !important; color: #555 !important; border: 1px solid #ccc !important; }
-  /* B12: drop sticky positioning on cost-summary's sticky cluster for print
-     (the chained sticky cells would otherwise overlap on paper). */
-  #cost-summary-table .sticky-col,
-  #cost-summary-table [data-col="fab"],
-  #cost-summary-table [data-col="qty"],
-  #cost-summary-table [data-col="actualQty"] {
-    position: static !important;
-    box-shadow: none !important;
-  }
   @page { size: landscape; margin: 12mm; }
 }
 
