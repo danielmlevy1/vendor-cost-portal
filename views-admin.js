@@ -2651,10 +2651,10 @@ const AdminViews = (() => {
     </div>
     <div class="card" style="padding:0"><div class="table-wrap"><table>
       <thead><tr><th>Code</th><th>Name</th><th>Actions</th></tr></thead>
-      <tbody>${custs.length ? custs.map(c => `<tr>
+      <tbody>${custs.length ? custs.map(c => `<tr style="cursor:pointer" onclick="App.openCustomerModal('${c.id}')">
         <td class="font-bold">${c.code}</td>
         <td>${c.name}</td>
-        <td><div style="display:flex;gap:6px">
+        <td onclick="event.stopPropagation()"><div style="display:flex;gap:6px">
           <button class="btn btn-secondary btn-sm" onclick="App.openCustomerModal('${c.id}')">✏</button>
           <button class="btn btn-danger btn-sm" onclick="App.deleteCustomer('${c.id}')">🗑</button>
         </div></td>
@@ -2673,13 +2673,13 @@ const AdminViews = (() => {
     </div>
     <div class="card"><div class="table-wrap"><table>
       <thead><tr><th>Code</th><th>Name</th><th>COOs</th><th>Terms</th><th>Login Email</th><th>Actions</th></tr></thead>
-      <tbody>${tcs.length ? tcs.map(tc => `<tr>
+      <tbody>${tcs.length ? tcs.map(tc => `<tr style="cursor:pointer" onclick="App.openTCModal('${tc.id}')">
         <td class="primary font-bold">${tc.code}</td>
         <td>${tc.name}</td>
         <td>${(tc.coos || []).map(c => `<span class="badge badge-pending" style="margin:2px">${c}</span>`).join('')}</td>
         <td><span class="badge badge-costing">${tc.paymentTerms || 'FOB'}</span></td>
         <td class="text-sm text-muted">${tc.email}</td>
-        <td><div style="display:flex;gap:6px">
+        <td onclick="event.stopPropagation()"><div style="display:flex;gap:6px">
           <button class="btn btn-secondary btn-sm" onclick="App.openTCModal('${tc.id}')">✏</button>
           <button class="btn btn-danger btn-sm" onclick="App.deleteTC('${tc.id}')">🗑</button>
         </div></td>
@@ -2702,12 +2702,12 @@ const AdminViews = (() => {
       const marginCell = ip.targetMargin != null
         ? `${(ip.targetMargin * 100).toFixed(1)}% ${isAuto ? '<span class="badge badge-costing" style="font-size:0.65rem">auto</span>' : '<span class="badge badge-pending" style="font-size:0.65rem">override</span>'}`
         : '<span class="text-muted">—</span>';
-      return `<tr>
+      return `<tr style="cursor:pointer" onclick="App.openInternalProgramModal('${ip.id}')">
         <td><span class="badge">${ip.brand || '—'}</span></td>
         <td class="text-sm">${ip.tier || '—'}</td>
         <td class="text-sm">${ip.gender || '—'}</td>
         <td class="font-bold">${marginCell}</td>
-        <td><div style="display:flex;gap:6px">
+        <td onclick="event.stopPropagation()"><div style="display:flex;gap:6px">
           <button class="btn btn-secondary btn-sm" onclick="App.openInternalProgramModal('${ip.id}')">✏</button>
           <button class="btn btn-danger btn-sm" onclick="App.deleteInternalProgram('${ip.id}')">🗑</button>
         </div></td>
@@ -2762,13 +2762,13 @@ const AdminViews = (() => {
     <div class="alert alert-info mb-3">Freight values = total container cost (÷ Proj Qty to get per-unit freight in LDP)</div>
     <div class="card"><div class="table-wrap"><table>
       <thead><tr><th>Code</th><th>Country</th><th>Addl Duty %</th><th>USA NY</th><th>USA LA</th><th>CA Toronto</th><th>CA Vancouver</th><th title="Sea transit days used by Delivery Plan to project in-whse from Production Cargo Ready (Sales)">Sea Lead (days)</th><th>Actions</th></tr></thead>
-      <tbody>${rates.map(r => `<tr>
+      <tbody>${rates.map(r => `<tr style="cursor:pointer" onclick="App.openCooModal('${r.id}')">
         <td class="primary font-bold">${r.code}</td><td>${r.country}</td>
         <td>${(r.addlDuty * 100).toFixed(1)}%</td>
         <td>$${Number(r.usaNY).toLocaleString()}</td><td>$${Number(r.usaLA).toLocaleString()}</td>
         <td>$${Number(r.caToronto).toLocaleString()}</td><td>$${Number(r.caVancouver).toLocaleString()}</td>
         <td class="text-center">${r.seaLeadDays != null ? r.seaLeadDays + 'd' : '—'}</td>
-        <td><div style="display:flex;gap:6px">
+        <td onclick="event.stopPropagation()"><div style="display:flex;gap:6px">
           <button class="btn btn-secondary btn-sm" onclick="App.openCooModal('${r.id}')">✏</button>
           <button class="btn btn-danger btn-sm" onclick="App.deleteCoo('${r.id}')">🗑</button>
         </div></td>
@@ -2860,7 +2860,11 @@ const AdminViews = (() => {
         <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Department</th><th>Actions</th></tr></thead>
         <tbody>${staff.length ? staff.map(u => {
           const dept = u.departmentId ? deptMap[u.departmentId] : null;
-          return `<tr>
+          // Row-click opens edit for non-admin users only; admin rows are protected (no modal).
+          const rowAttrs = u.role !== 'admin'
+            ? ` style="cursor:pointer" onclick="App.openStaffModal('${u.id}')"`
+            : '';
+          return `<tr${rowAttrs}>
             <td class="font-bold">${u.name}</td>
             <td class="text-sm text-muted">${u.email}</td>
             <td>${u.role === 'admin'
@@ -2869,7 +2873,7 @@ const AdminViews = (() => {
             <td>${dept
               ? `<span class="badge" style="background:rgba(99,102,241,0.15);color:#818cf8">${dept.name}</span>`
               : '<span class="text-muted text-sm">—</span>'}</td>
-            <td><div style="display:flex;gap:6px">
+            <td onclick="event.stopPropagation()"><div style="display:flex;gap:6px">
               ${u.role !== 'admin' ? `
                 <button class="btn btn-secondary btn-sm" onclick="App.openStaffModal('${u.id}')">✏</button>
                 <button class="btn btn-danger btn-sm" onclick="App.deleteStaff('${u.id}')">🗑</button>`
@@ -2889,7 +2893,7 @@ const AdminViews = (() => {
       const memberCount = staff.filter(u => u.departmentId === d.id).length;
       const brands = d.brandFilter?.length ? d.brandFilter.join(', ') : '<span class="text-muted">All</span>';
       const tiers  = d.tierFilter?.length  ? d.tierFilter.join(', ')  : '<span class="text-muted">All</span>';
-      return `<tr>
+      return `<tr style="cursor:pointer" onclick="App.openDepartmentModal('${d.id}')">
         <td><div class="font-bold" style="font-size:0.9rem">${d.name}</div>
             ${d.description ? `<div class="text-sm text-muted">${d.description}</div>` : ''}</td>
         <td><div style="display:flex;gap:4px;flex-wrap:wrap">
@@ -2899,8 +2903,8 @@ const AdminViews = (() => {
         </div></td>
         <td class="text-sm">${brands}</td>
         <td class="text-sm">${tiers}</td>
-        <td><span class="tag" style="cursor:pointer" onclick="App.navigate('staff')" title="Switch to staff tab">${memberCount}</span></td>
-        <td><div style="display:flex;gap:6px">
+        <td><span class="tag" style="cursor:pointer" onclick="event.stopPropagation();App.navigate('staff')" title="Switch to staff tab">${memberCount}</span></td>
+        <td onclick="event.stopPropagation()"><div style="display:flex;gap:6px">
           <button class="btn btn-secondary btn-sm" onclick="App.openDepartmentModal('${d.id}')">✏ Edit</button>
           <button class="btn btn-danger btn-sm" onclick="App.deleteDepartment('${d.id}')">🗑</button>
         </div></td>
