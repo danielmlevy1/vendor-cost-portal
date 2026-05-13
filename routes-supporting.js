@@ -20,6 +20,7 @@
 const express = require('express');
 const router  = express.Router();
 const bcrypt  = require('bcrypt');
+const crypto  = require('crypto');
 const db      = require('./database');
 const { requireAuth, requireRole } = require('./auth');
 
@@ -1844,13 +1845,22 @@ router.post('/pending-changes/:id/approve', requireAuth, requireRole('admin'), (
   const d  = JSON.parse(row.data || '{}');
   const ts = now();
 
-  db.transaction(() => {
-    _applyPendingChange(row.type, row.action, d);
+  const artifacts = db.transaction(() => {
+    const a = _applyPendingChange(row.type, row.action, d);
     db.prepare('UPDATE pending_changes SET status=?, reviewed_by=?, reviewed_at=? WHERE id=?')
       .run('approved', req.user.id, ts, req.params.id);
+    return a;
   })();
 
-  res.json(pcFromRow(db.prepare('SELECT * FROM pending_changes WHERE id = ?').get(req.params.id)));
+  const response = pcFromRow(db.prepare('SELECT * FROM pending_changes WHERE id = ?').get(req.params.id));
+  // If the approval generated a password (TC or user create with no explicit
+  // password in the change request), surface it ONCE in the response. The
+  // plaintext is never stored — admin must capture it now.
+  if (artifacts && artifacts.generatedPassword) {
+    response.generatedPassword = artifacts.generatedPassword;
+    response.passwordNotice = 'This password is shown ONCE — copy it now and share with the new account via secure channel. Cannot be retrieved later.';
+  }
+  res.json(response);
 });
 
 // POST /api/pending-changes/:id/reject
@@ -1864,10 +1874,23 @@ router.post('/pending-changes/:id/reject', requireAuth, requireRole('admin'), (r
 });
 
 function _applyPendingChange(type, action, d) {
+  // `artifacts` bubbles up side-effects worth showing the admin once.
+  // Single field rather than {tc: ..., user: ...}: this function is called
+  // with exactly one `type` per pending-change row, so at most one branch
+  // generates a password. The structure mirrors the call constraint.
+  const artifacts = {};
   if (type === 'tc') {
     if (action === 'create') {
       const id = d.id || uid();
-      const hash = bcrypt.hashSync(d.password || 'vendor123', SALT);
+      // Generate a strong random password when none supplied. Plaintext
+      // surfaces via artifacts so the approving admin can capture it ONCE;
+      // only the hash is persisted.
+      let password = d.password;
+      if (!password) {
+        password = crypto.randomBytes(18).toString('base64url'); // 24 chars, 144 bits
+        artifacts.generatedPassword = password;
+      }
+      const hash = bcrypt.hashSync(password, SALT);
       db.prepare('INSERT OR IGNORE INTO trading_companies (id,code,name,email,password_hash,payment_terms) VALUES (?,?,?,?,?,?)')
         .run(id, d.code, d.name, d.email, hash, d.paymentTerms || 'FOB');
       if (Array.isArray(d.coos)) {
@@ -1918,7 +1941,13 @@ function _applyPendingChange(type, action, d) {
   } else if (type === 'pc-user') {
     if (action === 'create') {
       const id = d.id || uid();
-      const hash = bcrypt.hashSync(d.password || 'changeme', SALT);
+      // Same generate-or-use pattern as TC create above. Same artifact field.
+      let password = d.password;
+      if (!password) {
+        password = crypto.randomBytes(18).toString('base64url'); // 24 chars, 144 bits
+        artifacts.generatedPassword = password;
+      }
+      const hash = bcrypt.hashSync(password, SALT);
       db.prepare('INSERT OR IGNORE INTO users (id,name,email,password_hash,role,department_id) VALUES (?,?,?,?,?,?)')
         .run(id, d.name, d.email, hash, d.role || 'pc', d.departmentId || null);
     } else if (action === 'update') {
@@ -1931,6 +1960,7 @@ function _applyPendingChange(type, action, d) {
       db.prepare('DELETE FROM users WHERE id=?').run(d.id);
     }
   }
+  return artifacts;
 }
 
 // =============================================================
