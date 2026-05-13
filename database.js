@@ -559,24 +559,38 @@ function importLegacyFabricRequests() {
 }
 
 function backfillAssignmentCoos() {
+  // Only select assignments that are (a) missing assignment_coos children
+  // AND (b) belong to a TC that has at least one tc_coos entry to copy from.
+  // Without (b), the predicate matches an assignment whose TC has no COOs;
+  // the inner loop no-ops; the predicate matches again on every boot;
+  // the log message lies on every boot.
   const rows = db.prepare(`
     SELECT a.id AS assignment_id, a.tc_id
     FROM assignments a
     WHERE NOT EXISTS (
       SELECT 1 FROM assignment_coos ac WHERE ac.assignment_id = a.id
     )
+    AND EXISTS (
+      SELECT 1 FROM tc_coos tc WHERE tc.tc_id = a.tc_id
+    )
   `).all();
   if (!rows.length) return;
 
   const tcCoos = db.prepare('SELECT coo FROM tc_coos WHERE tc_id = ?');
   const insert = db.prepare('INSERT OR IGNORE INTO assignment_coos (assignment_id, coo) VALUES (?, ?)');
+  let inserted = 0;
   const tx = db.transaction(() => {
     for (const r of rows) {
-      for (const { coo } of tcCoos.all(r.tc_id)) insert.run(r.assignment_id, coo);
+      for (const { coo } of tcCoos.all(r.tc_id)) {
+        const info = insert.run(r.assignment_id, coo);
+        if (info.changes > 0) inserted++;
+      }
     }
   });
   tx();
-  console.log(`[db] Backfilled assignment_coos for ${rows.length} legacy assignments`);
+  if (inserted > 0) {
+    console.log(`[db] Backfilled assignment_coos for ${rows.length} legacy assignments`);
+  }
 }
 
 // ── Backfill: recost_requests → design_changes ─────────────────
