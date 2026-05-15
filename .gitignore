@@ -25,3 +25,4 @@ data/
 # Docs — always commit, even if a future ignore rule would catch them
 !docs/
 !docs/**
+**/.DS_Store

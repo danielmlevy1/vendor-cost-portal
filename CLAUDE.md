@@ -179,6 +179,42 @@ git push origin phase-X-Y-complete
 
 For latest tag list and phase-by-phase status, see latest session handoff.
 
+### Commit verification trio — MANDATORY
+
+After any Claude Code session reports a commit, ALWAYS run all three of these commands before declaring work shipped or pushing:
+
+```bash
+git log --oneline -3        # confirm HEAD is the expected new commit
+git status                  # confirm working tree is clean (no leftover stages)
+grep "?v=" index.html       # confirm cache buster bumped on all 5 tags
+```
+
+Claude Code has reported "committed successfully" multiple times without actually having committed. The trio catches this every time. Never push without seeing all three outputs.
+
+Shortcut: the `vcp-status` shell alias (in `~/.zshrc`) runs all three + checks port 3002 in one command.
+
+### Recon-first protocol
+
+For any non-trivial change (schema modifications, auth-layer edits, multi-file refactors, anything touching `routes.js` security middleware), Claude Code MUST run a recon pass first:
+
+1. Search for related code (grep for the function/endpoint/table being touched)
+2. Check existing conventions (how similar patterns are handled elsewhere)
+3. Identify the minimal change set
+4. Report findings + planned changes BEFORE writing code
+5. Wait for user approval
+
+Web Claude should structure prompts to Claude Code with this expectation explicit. Skip the recon-first protocol only for: simple bug fixes with obvious one-line fixes, pure typo/formatting changes, documentation edits.
+
+### Terminal tab discipline
+
+The terminal tab running `npm start` (in the foreground) is the server tab. It cannot accept commands — anything typed there is silently discarded by Node's stdin. All shell commands must run in a different tab.
+
+When web Claude or Claude Code generates shell commands, the recommended tab MUST be labeled explicitly:
+- "In your server tab" (rare — only for restarting via Ctrl-C → up-arrow → enter)
+- "In any non-server tab where env vars are loaded" (for commands using `$ADMIN_TOKEN` etc.)
+- "In any non-server tab" (everything else)
+
+If a command depends on shell environment variables, flag that they may need to be re-set in the target tab.
 ---
 
 ## Known infrastructure gaps (read before suggesting changes that depend on them)
