@@ -196,8 +196,8 @@ App = (() => {
       const internalUsers = API.cache.users;
       const allTCs        = API.cache.tradingCompanies;
 
-      const roleLabelMap = { admin: 'Admin', pc: 'Production', planning: 'Planning', sales: 'Sales', design: 'Design', tech_design: 'Tech Design', prod_dev: 'Product Development' };
-      const roleOrder    = ['admin', 'pc', 'planning', 'sales', 'design', 'tech_design', 'prod_dev'];
+      const roleLabelMap = { admin: 'Admin', pc: 'Production', pc_readonly: 'PC (Read-Only)', planning: 'Planning', sales: 'Sales', design: 'Design', tech_design: 'Tech Design', prod_dev: 'Product Development' };
+      const roleOrder    = ['admin', 'pc', 'pc_readonly', 'planning', 'sales', 'design', 'tech_design', 'prod_dev'];
 
       // Group internal users by role for visual sections
       const grouped = roleOrder.map(role => ({
@@ -409,7 +409,7 @@ App = (() => {
     if (userEl) userEl.innerHTML = `
       <div class="user-info" onclick="App.logout()" title="Sign out">
         <div class="user-avatar">${state.user.name.charAt(0).toUpperCase()}</div>
-        <div><div class="user-name">${state.user.name}</div><div class="user-role">${isAdmin ? 'Admin' : isPC ? 'Production Coordinator' : isPlanning ? 'Planning' : isSales ? 'Sales' : isDesign ? 'Design' : isTechDesign ? 'Tech Design' : isProdDev ? 'Product Development' : 'Trading Co.'}</div></div>
+        <div><div class="user-name">${state.user.name}</div><div class="user-role">${isAdmin ? 'Admin' : isPC ? 'Production Coordinator' : state.user.role === 'pc_readonly' ? 'PC (Read-Only)' : isPlanning ? 'Planning' : isSales ? 'Sales' : isDesign ? 'Design' : isTechDesign ? 'Tech Design' : isProdDev ? 'Product Development' : 'Trading Co.'}</div></div>
       </div>`;
 
     renderRoute();
@@ -2182,6 +2182,7 @@ App = (() => {
           <select id="staff-role" class="form-select">
             <option value="admin"      ${u?.role==='admin'      ?'selected':''}>Admin</option>
             <option value="pc"         ${(!u||u?.role==='pc')   ?'selected':''}>Production</option>
+            <option value="pc_readonly" ${u?.role==='pc_readonly'?'selected':''}>PC (Read-Only)</option>
             <option value="planning"   ${u?.role==='planning'   ?'selected':''}>Planning</option>
             <option value="sales"      ${u?.role==='sales'      ?'selected':''}>Sales</option>
             <option value="design"     ${u?.role==='design'     ?'selected':''}>Design</option>

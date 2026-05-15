@@ -36,12 +36,13 @@ function seedUsers() {
   if (count('users') > 0) return;
 
   const SEED = [
-    { id: 'admin',     name: 'Admin Team',       email: 'admin@company.com',      password: 'admin123',  role: 'admin'    },
-    { id: 'pc1',       name: 'Production Team',  email: 'pc@company.com',         password: 'pc123',     role: 'pc'       },
-    { id: 'planning1', name: 'Planning & Sales', email: 'planning@company.com',   password: 'plan123',   role: 'planning' },
-    { id: 'sales1',    name: 'Sales',            email: 'sales@company.com',      password: 'sales123',  role: 'sales'    },
-    { id: 'design1',   name: 'Design Team',      email: 'design@company.com',     password: 'design123', role: 'design'   },
-    { id: 'techdes1',  name: 'Tech Design',      email: 'techdesign@company.com', password: 'tech123',   role: 'design'   },
+    { id: 'admin',     name: 'Admin Team',       email: 'admin@company.com',      password: 'admin123',  role: 'admin'       },
+    { id: 'pc1',       name: 'Production Team',  email: 'pc@company.com',         password: 'pc123',     role: 'pc'          },
+    { id: 'pcro1',     name: 'PC Read-Only',     email: 'pc-readonly@company.com',password: 'pcro123',   role: 'pc_readonly' },
+    { id: 'planning1', name: 'Planning & Sales', email: 'planning@company.com',   password: 'plan123',   role: 'planning'    },
+    { id: 'sales1',    name: 'Sales',            email: 'sales@company.com',      password: 'sales123',  role: 'sales'       },
+    { id: 'design1',   name: 'Design Team',      email: 'design@company.com',     password: 'design123', role: 'design'      },
+    { id: 'techdes1',  name: 'Tech Design',      email: 'techdesign@company.com', password: 'tech123',   role: 'tech_design' },
   ];
 
   const insert = db.prepare(
@@ -449,6 +450,13 @@ function runMigrations() {
     "UPDATE users SET role = 'sales' WHERE role = 'planning' AND (department_id = 'dept-sales-price' OR id = 'sales1')"
   ).run();
   if (migrated.changes > 0) console.log(`[db] v17: migrated ${migrated.changes} user(s) planning→sales`);
+
+  // v23 (A12.1): correct seed user techdes1 role — was 'design', should be 'tech_design'
+  // to match the role enum. Idempotent: WHERE clause matches zero rows after first run.
+  const techDesignMigrated = db.prepare(
+    "UPDATE users SET role = 'tech_design' WHERE email = 'techdesign@company.com' AND role = 'design'"
+  ).run();
+  if (techDesignMigrated.changes > 0) console.log(`[db] v23: migrated ${techDesignMigrated.changes} techdesign user(s) design→tech_design`);
 
   // v18: backfill null requested_by on draft SRs — assign to the first sales user found.
   // Drafts with no owner were created before req.user.id was stamped server-side.

@@ -51,7 +51,11 @@ CREATE TABLE IF NOT EXISTS users (
   name                TEXT NOT NULL,
   email               TEXT NOT NULL UNIQUE,
   password_hash       TEXT NOT NULL,        -- bcrypt hash; never store plaintext
-  role                TEXT NOT NULL,        -- admin | pc | planning | sales | design | tech_design | prod_dev | vendor
+  -- Valid roles: admin | pc | pc_readonly | planning | sales | sales_mgmt | design | tech_design | prod_dev | vendor
+  -- CHECK constraint enforces this for NEW databases. Pre-existing DBs created
+  -- before A12.1 do not carry this constraint (SQLite cannot ALTER TABLE ADD
+  -- CHECK); revisit during the Azure SQL migration where it can be enforced uniformly.
+  role                TEXT NOT NULL CHECK(role IN ('admin','pc','pc_readonly','planning','sales','sales_mgmt','design','tech_design','prod_dev','vendor')),
   department_id       TEXT,                 -- FK → departments.id
   internal_program_id TEXT,                 -- FK → internal_programs.id (legacy field)
   created_at          TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
