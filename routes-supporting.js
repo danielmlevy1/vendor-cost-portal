@@ -1811,8 +1811,8 @@ function pcFromRow(r) {
   };
 }
 
-// GET /api/pending-changes
-router.get('/pending-changes', requireAuth, requireRole('admin', 'pc'), (req, res) => {
+// GET /api/pending-changes  (admin/pc/pc_readonly — pc_readonly reads only)
+router.get('/pending-changes', requireAuth, requireRole('admin', 'pc', 'pc_readonly'), (req, res) => {
   const status = req.query.status;
   const rows = status
     ? db.prepare('SELECT * FROM pending_changes WHERE status = ? ORDER BY proposed_at DESC').all(status)
@@ -3082,7 +3082,7 @@ router.delete('/programs/:id/capacity-plan', requireAuth, requireRole('admin'), 
 
 // GET /api/performance/seasons — distinct (season, year) tuples on
 // placed-style programs, sorted newest first.
-router.get('/performance/seasons', requireAuth, requireRole('admin', 'pc'), (req, res) => {
+router.get('/performance/seasons', requireAuth, requireRole('admin', 'pc', 'pc_readonly'), (req, res) => {
   const rows = db.prepare(`
     SELECT DISTINCT p.season, p.year
     FROM programs p
@@ -3101,7 +3101,7 @@ router.get('/performance/seasons', requireAuth, requireRole('admin', 'pc'), (req
 
 // GET /api/performance/rows?seasons=SS25,FW24&years=2025,2024
 // Returns one row per placed style.
-router.get('/performance/rows', requireAuth, requireRole('admin', 'pc'), (req, res) => {
+router.get('/performance/rows', requireAuth, requireRole('admin', 'pc', 'pc_readonly'), (req, res) => {
   const seasonList = (req.query.seasons || '').split(',').map(s => s.trim()).filter(Boolean);
   const yearList   = (req.query.years   || '').split(',').map(s => s.trim()).filter(Boolean);
 

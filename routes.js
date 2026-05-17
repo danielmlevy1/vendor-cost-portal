@@ -483,8 +483,8 @@ router.get('/departments', requireAuth, (req, res) => {
   res.json(stmt.allDepartments.all().map(deptFromRow));
 });
 
-// GET /api/users  (admin/pc only — staff management)
-router.get('/users', requireAuth, requireRole('admin', 'pc'), (req, res) => {
+// GET /api/users  (admin/pc/pc_readonly — staff management; pc_readonly reads only)
+router.get('/users', requireAuth, requireRole('admin', 'pc', 'pc_readonly'), (req, res) => {
   res.json(stmt.allUsers.all().map(r => ({
     id: r.id, name: r.name, email: r.email, role: r.role,
     departmentId: r.department_id, createdAt: r.created_at,
@@ -922,13 +922,16 @@ router.patch('/styles/:id', requireAuth, (req, res) => {
   const row = stmt.styleById.get(req.params.id);
   if (!row) return res.status(404).json({ error: 'Not found' });
 
-  // Vendors can't edit styles; design can edit tech fields; admin/pc can edit anything
+  // Per-role allow-list. Explicit allow-or-deny — adding a new role (e.g.
+  // pc_readonly, prod_dev) without an entry here results in 403, not
+  // silent inheritance of admin/pc's full STYLE_FIELDS access.
   const role = req.user.role;
   if (role === 'vendor') return res.status(403).json({ error: 'Vendors cannot edit styles' });
 
-  // Design role: only tech_pack_status and tech_design_notes
-  let allowedFields = STYLE_FIELDS;
-  if (role === 'design') {
+  let allowedFields;
+  if (role === 'admin' || role === 'pc') {
+    allowedFields = STYLE_FIELDS;
+  } else if (role === 'design' || role === 'tech_design') {
     allowedFields = {
       techPackStatus:  'tech_pack_status',
       techDesignNotes: 'tech_design_notes',
@@ -940,6 +943,8 @@ router.patch('/styles/:id', requireAuth, (req, res) => {
       sellStatus:     'sell_status',
       sellStatusNote: 'sell_status_note',
     };
+  } else {
+    return res.status(403).json({ error: 'Insufficient permissions' });
   }
 
   db.transaction(() => {
