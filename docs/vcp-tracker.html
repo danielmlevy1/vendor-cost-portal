@@ -207,7 +207,7 @@
 <body>
 
 <h1>Vendor Cost Portal — Tracker</h1>
-<div class="subtitle">May 11 EOD · 8 commits shipped · Auth audit Stage A COMPLETE + pushed (5 endpoints verified via curl) · DB cleaned + backed up · ready for next Stage A item tomorrow (A3/A4/A5/A6)</div>
+<div class="subtitle">May 18 · A12 Phase A12.1 + A12.2 + orphan propose-flow fix shipped (v211→v213) · pc_readonly role backend complete · A12.3 UI gating refactor next · GitHub token rotated to fresh keychain entry · 11 days to Stage A go-live (May 29)</div>
 
 <div class="milestone-box">
   <strong>🎯 Go-Live Milestone — Staged Rollout (locked May 8)</strong>
@@ -327,42 +327,90 @@
   <strong>QA legend:</strong> <span class="qa-badge qa-cc-done">CC ✓</span> = Claude Code reported done · <span class="qa-badge qa-d-done">D ✓</span> = Daniel verified visually · <span class="qa-badge qa-d-pending">D —</span> = NOT verified
 </div>
 
-<div class="todo-box">
-  <strong>📋 Tomorrow (May 12) — RESUME HERE</strong>
+<div class="ship-box">
+  <strong>🎯 What's done May 12-18 (multi-day catch-up)</strong>
   <br><br>
-  Stage A ship blocker #2 (auth audit) closed yesterday. Fresh start. Resume protocol:
+  <strong>Code commits (4 shipped to origin):</strong>
+  <br>✓ <strong>v210</strong> <span class="qa-badge qa-cc-done">CC ✓</span><span class="qa-badge qa-d-done">D ✓</span> — May 13. Background polish; backfill log silent on boot confirmed May 15 morning.
+  <br>✓ <strong>A12 Phase A12.1</strong> <span class="qa-badge qa-cc-done">CC ✓</span><span class="qa-badge qa-d-done">D ✓</span> — <code>39155ee</code> (v211). May 17. Schema role enum updated to 10 roles + CHECK constraint (email lowercase + role ∈ enum). New seed user <code>pc-readonly@company.com</code> / <code>pcro123</code>, role <code>pc_readonly</code>. v23 migration fixed existing <code>techdesign</code> user (was silently <code>role='design'</code>) → <code>role='tech_design'</code>. app.js roleLabelMap + roleOrder + display ternary + staff modal select updated. Visual verification: login works, badge shows "PC (Read-Only)", staff dropdown includes option in correct position.
+  <br>✓ <strong>A12 Phase A12.2</strong> <span class="qa-badge qa-cc-done">CC ✓</span><span class="qa-badge qa-d-done">D ✓</span> — <code>48b4eb4</code> (v212). May 17. Backend gating: pc_readonly added to 4 GET allowlists (<code>/users</code>, <code>/pending-changes</code>, <code>/performance/seasons</code>, <code>/performance/rows</code>). 8 of 9 inline-check endpoints already deny pc_readonly via deny-by-default. The 9th (PATCH /styles) had an allowlist-by-omission default-allow flaw — closed structurally by inverting to explicit allow-or-deny. tech_design retained tech-pack write access via design branch addition. 14-test verification suite passed with non-destructive round-trip protocol.
+  <br>✓ <strong>Bug fix: orphan propose-flow functions</strong> <span class="qa-badge qa-cc-done">CC ✓</span><span class="qa-badge qa-d-done">D ✓</span> — <code>b67d7dd</code> (v213). May 17. Site testing surfaced pre-existing TypeError when PC clicked Propose Edit on TC settings. Six propose-flow functions (TC/IP/COO modal openers + submit handlers) were defined in app.js but never exposed on App's return statement. Added all 6 to return block. PC propose-flow now functional end-to-end on TC, IP, COO settings.
+  <br><br>
+  <strong>Process / planning (no commits but real work):</strong>
+  <br>✓ <strong>A3 design v1 → v2 pivot (May 14)</strong> — Original CSV-based roles/permissions table replaced by Entra security groups design. A3.1 prototype built and reverted. v1 docs archived with <code>_DEPRECATED</code> suffix. Multi-tenancy decision: Pattern 1 (separate instances per company).
+  <br>✓ <strong>IT prep doc (May 14)</strong> — <code>/docs/IT-prep.md</code> + <code>.docx</code>. 8 Entra security groups defined (<code>VCP-Highlife-Admin</code>, <code>VCP-Highlife-Production</code>, <code>VCP-Highlife-PC-ReadOnly</code> — newest, etc.). Group naming convention locked: <code>VCP-Highlife-&lt;Role&gt;</code>. Outstanding P0 questions documented for IT.
+  <br>✓ <strong>CLAUDE.md upgrade (May 14)</strong> — Verification trio formalized (mandatory after Claude Code commits). Recon-first protocol formalized. Terminal tab discipline formalized. <code>.gitignore</code> updated for <code>.DS_Store</code>. Shell aliases <code>vcp-status</code> and <code>vcp-start</code> added to <code>~/.zshrc</code>.
+  <br>✓ <strong>Memory-edit updates (May 14-17)</strong> — Cross-session preferences captured: stepped instructions in linear order; Claude Code prompts wrapped in start/end markers; terminal commands flagged with target tab; verification trio mandatory.
+  <br>✓ <strong>GitHub token rotated (May 17 evening)</strong> — Old token (would have expired May 23) replaced with new keychain-stored token (1-year expiration). Multiple paste-mode failure modes encountered and resolved. History scrubbed of token artifacts. Audit-note captured: tokens were in shell history for weeks before rotation — pre-existing security exposure.
+  <br><br>
+  <strong>Site testing — May 17-18:</strong>
+  <br>✓ <strong>Test 1 (admin baseline)</strong> — all checks passed. No regressions from A12.
+  <br>✓ <strong>Test 2 (PC baseline)</strong> — all checks passed. Propose-flow orphan surfaced here, fixed, retested.
+  <br>✓ <strong>Test 3 (design)</strong> — works. Surfaced separate observation: design handoff view has no indicator that pending style changes exist (data captured in Style Changes view but no breadcrumb back to handoff). Captured as feature item.
+  <br>✓ <strong>Test 4 (tech_design)</strong> — works. Badge correctly shows "Tech Design" (v23 migration verified). Tech-pack write access retained per A12.2.
+  <br>⚠️ <strong>Test 5 (pc_readonly)</strong> — documentation test. Sidebar renders but pages don't populate with programs/styles. Backend read-path endpoints still gate on bare-PC <code>requireRole</code>; pc_readonly silently denied. <strong>This expands A12.3 scope — must include backend read-path gating expansion.</strong>
+  <br>✓ <strong>Test 6 (vendor)</strong> — unchanged. Vendor flow unaffected by A12 (as expected).
+  <br><br>
+  <strong>Decisions locked May 17-18:</strong>
+  <br>✓ <strong>Q1 (A12 CHECK constraint)</strong>: YES — added.
+  <br>✓ <strong>Q3 (A3.1 reintroduce)</strong>: NO — A12 works against legacy <code>users.role</code> column.
+  <br>✓ <strong>Q4 (pc_readonly sees pending-changes)</strong>: YES — read-only view.
+  <br>✓ <strong>Style edit access for tech_design</strong>: retain tech-pack writes (same fields as <code>design</code>); other fields filtered. prod_dev incidentally tightened to deny entirely.
+  <br>✓ <strong>Modal drift triage (May 18)</strong>: PC propose TC modal differs from admin Edit modal — single column, no labels, no Payment Terms field, no Password field. Decision: PC needs Payment Terms field (Stage A blocker); UX clunkiness acceptable for May 29 soft launch.
+  <br>✓ <strong>mouedkzymvttk proj_qty</strong>: original value unrecoverable (Daniel did it by hand, doesn't remember). Leave NULL, capture as data-hygiene item, re-enter through UI flow when needed.
+  <br><br>
+  <strong>Lessons / process improvements:</strong>
+  <br>• <strong>Verification PATCHes must be non-destructive</strong> — May 14 incident: Claude Code's PATCH /styles/{realStyleId} with <code>{"projQty":99999}</code> ran against stale server code and wrote real data. Now: empty bodies for deny tests, round-trip restoration for allow tests, captured originals.
+  <br>• <strong>Server restart discipline</strong> — Multiple stale-server cycles in A12.2 work. Pattern: server start time must be AFTER routes.js mtime before verification runs. Captured in CLAUDE.md.
+  <br>• <strong>Recon-first protocol pays off</strong> — A12.2 inline endpoint audit (9 endpoints, not 8) caught real PATCH /styles bug that the minimum-scope curl test would have missed (the test PATCHed a non-existent ID; 404 fires before role check).
+  <br>• <strong>Scope right-sizing vs scope creep</strong> — orphan fix: "fix the bug class, not just the symptom" is correct scope discipline when the fix mechanic is identical across siblings. 6 functions, 3 lines, all-or-nothing.
+  <br>• <strong>Bracketed-paste in terminal</strong> is genuinely hostile to security workflows. macOS Terminal paste mode wraps content with <code>[200~</code>/<code>~</code> markers that confuse zsh. Token rotation took 3 attempts before finding a paste-safe method (file-based credential helper input).
+  <br><br>
+  <strong>QA legend:</strong> <span class="qa-badge qa-cc-done">CC ✓</span> = Claude Code reported done · <span class="qa-badge qa-d-done">D ✓</span> = Daniel verified visually · <span class="qa-badge qa-d-pending">D —</span> = NOT verified
+</div>
+
+<div class="todo-box">
+  <strong>📋 Tomorrow (May 19+) — RESUME HERE</strong>
+  <br><br>
+  A12 Phase A12.1 + A12.2 shipped May 17. Orphan propose-flow fix shipped May 17 (bug surfaced during site testing). GitHub token rotated May 17 evening. Site testing 4/6 done — Tests 1-4 + 6 pass; Test 5 (pc_readonly) confirms broken UI/data state expected pre-A12.3. Resume protocol:
   <br>
   <ol>
-    <li><strong>Read this tracker first.</strong> Especially the May 11 "What's done today" box, the EOD summary in the subtitle, and this resume block.</li>
+    <li><strong>Read this tracker first.</strong> Especially the subtitle, the "Just shipped May 14-18" section, and this resume block.</li>
     <li><strong>Run codebase verification:</strong>
       <ul>
-        <li><code>git log --oneline -5</code> — confirm HEAD is <code>b6d0818</code> (auth audit Stage A) on main</li>
-        <li><code>git status</code> — confirm working tree clean</li>
-        <li><code>grep "?v=" index.html</code> — confirm v=204 on all 5 tags</li>
+        <li><code>vcp-status</code> alias — confirms HEAD = <code>b67d7dd</code> (orphan fix) on main, working tree clean, v=213 on all 5 tags, server status</li>
+        <li>If server not running: <code>vcp-start</code> in a fresh tab</li>
       </ul>
     </li>
-    <li><strong>Start server:</strong> <code>cd ~/Desktop/Projects/Github/vendor-cost-portal && npm start</code></li>
-    <li><strong>Pick next Stage A item</strong> from the ship blockers list below. Options in rough order of suggested sequence:
+    <li><strong>Next work — pick one:</strong>
       <ul>
-        <li><strong>A3 Roles/permissions table</strong> — design + integrate DB-backed table for <code>user_email → role → trading_company_id → department_id → active</code>. Sequenced before A4 because Phase 2b.2 routing changes may want to hook role checks against the new table.</li>
-        <li><strong>A4 Phase 2b.2</strong> — Filtered Cost Summary + routing change. <em>Was parked pending audit completion; now unparked.</em> Folds B1+B2 in. Build prompt was drafted earlier — locate and re-validate before sending.</li>
-        <li><strong>A5 Phase 2b.3</strong> — Edit gating + Notes column. ~70 LOC. Smaller and self-contained; good if you want a focused win.</li>
-        <li><strong>A6 Entra SSO</strong> — replaces JWT-only auth for production. Heavier; could be split across multiple days.</li>
+        <li><strong>A12.3 UI gating refactor</strong> — split <code>isPC</code> → <code>isPCRead</code> / <code>isPCWrite</code> across ~30 UI sites in app.js + views-admin.js. <strong>Scope expanded May 18:</strong> Test 5 revealed pc_readonly users see sidebar nav but pages don't populate. Backend read-path endpoints (GET /programs, GET /styles, etc.) still gate on bare-PC <code>requireRole</code> and silently deny pc_readonly. A12.3 must include backend read-path gating expansion in addition to UI sites. ~4-6 hrs frontend + ~30 min backend audit. <strong>This is the big swing remaining for A12.</strong></li>
+        <li><strong>A12.4 verification</strong> — after A12.3 lands, full smoke pass: pc_readonly can see all read views, no write affordances appear, every PC nav item works as read-only equivalent</li>
+        <li><strong>bug-pc-propose-tc-modal-missing-payment-terms</strong> — Stage A blocker. Add Default Payment Terms field to PC propose TC modal. PC needs to propose payment terms changes per user decision (May 17). Same fix may be needed on Propose IP and Propose COO modals — audit during fix. ~30-60 min.</li>
+        <li><strong>feature-design-handoff-pending-change-indicator</strong> — Stage A scope. Add KPI tile to Design Handoff view (similar to Style Changes KPI), shows count of pending changes for the program. Clicking takes user to Style Changes view. ~30-60 min.</li>
+      </ul>
+    </li>
+    <li><strong>IT-blocked items (still waiting on response):</strong>
+      <ul>
+        <li>A3 v2 design (Entra groups → roles/permissions); needs IT response to P0 questions in <code>/docs/IT-prep.md</code></li>
+        <li>A6 Entra SSO for internal; same blocker</li>
+        <li>A12 group integration (<code>VCP-Highlife-PC-ReadOnly</code> wire-up); same blocker</li>
       </ul>
     </li>
     <li><strong>Open observation queue (not blocking, knock out when convenient):</strong>
       <ul>
-        <li>B12 — Sticky-column extension (Fabric, Proj Qty, Actual Qty). ~30 min CSS.</li>
-        <li><code>bug-tcs-preselected</code> — HIGH priority, hit in real use yesterday. Modal preselects ALL TCs; nearly clobbered legitimate assignments. Fix before any PC user touches the modal in real workflows.</li>
-        <li>Audit follow-ups (see AUDIT-NOTES section): orphan-on-bad-styleId on admin /submissions path; PUT /assignments delete-all-reinsert behavior.</li>
+        <li><code>data-pollution-mouedkzymvttk-proj-qty-unknown</code> — style CHM-Q4-LE-01 has NULL proj_qty since May 14 verification incident. Re-enter through UI workflow when convenient.</li>
+        <li>10+ new audit-notes captured May 14-18 (see AUDIT-NOTEs section)</li>
       </ul>
     </li>
   </ol>
   <br>
-  <strong>Standing pattern reminders:</strong>
-  <br>• Restart server before any security curl test (caught us yesterday — stale Node process = old code on the wire).
-  <br>• WAL-aware DB backups (checkpoint-then-copy, or stop server before copy).
-  <br>• Recon-style prompts to Claude Code before approving fixes — produces structured inventories that close framing in one day instead of multiple.
+  <strong>Standing pattern reminders (locked into CLAUDE.md May 14):</strong>
+  <br>• Verification trio after every Claude Code commit: <code>git log --oneline -3</code> + <code>git status</code> + <code>grep "?v=" index.html</code>
+  <br>• Recon-first protocol for non-trivial changes (Claude Code investigates before editing)
+  <br>• Terminal tab discipline — server tab is read-only for commands; new tab for everything else
+  <br>• Verification PATCHes use empty body OR round-trip restoration to avoid data pollution (locked May 17)
+  <br>• Restart server before any test that exercises new code (route handlers register at server boot)
 </div>
 
 <div class="blocker-box">
@@ -377,13 +425,24 @@
   <br>
   <strong><span class="stage-tag stage-a">A</span> 2. Authorization audit pass — exploitable-scope only</strong> ✅ <strong>DONE May 11</strong> — Inventory of 90 endpoints (85 A / 1 B / 4 C); 5-endpoint fix shipped via <code>b6d0818</code> (v204) and curl-verified end-to-end. Deeper systematic audit deferred to A→B per plan.
   <br>
-  <strong><span class="stage-tag stage-a">A</span> 3. Roles/permissions table</strong> — design + integrate <code>user_email → role → trading_company_id → department_id → active</code> table. Internal roles only at A; vendor scoping deeper-tested at B.
+  <strong><span class="stage-tag stage-a">A</span> 3. Roles/permissions design v2 — Entra security groups</strong> ⛔ <strong>IT-BLOCKED</strong> — Original v1 design (CSV-based <code>user_email → role → trading_company_id → department_id → active</code>) was archived May 14. v2 pivots to Entra security groups: 8 groups defined (<code>VCP-Highlife-&lt;Role&gt;</code> naming), IT prep doc shipped (<code>/docs/IT-prep.md</code>). Waiting on IT response to P0 questions before implementing the group-claim → role mapping handler.
   <br>
   <strong><span class="stage-tag stage-a">A</span> 4. Phase 2b.2</strong> — Filtered Cost Summary + routing change. Folds B1+B2 in.
   <br>
   <strong><span class="stage-tag stage-a">A</span> 5. Phase 2b.3</strong> — Edit gating + Notes column. ~70 LOC.
   <br>
-  <strong><span class="stage-tag stage-a">A</span> 6. Entra SSO for internal users</strong> — replace JWT-only auth for production. Internal team signs in via corporate tenant.
+  <strong><span class="stage-tag stage-a">A</span> 6. Entra SSO for internal users</strong> ⛔ <strong>IT-BLOCKED</strong> — replace JWT-only auth for production. Internal team signs in via corporate tenant. Same IT response dependency as A3 v2.
+  <br>
+  <strong><span class="stage-tag stage-a">A</span> 12. pc_readonly role (new Stage A blocker — captured May 14)</strong>
+  <br>&nbsp;&nbsp;✅ <strong>A12.1 DONE May 17</strong> — Schema + CHECK constraint + seed user + tech_design migration. <code>39155ee</code> (v211).
+  <br>&nbsp;&nbsp;✅ <strong>A12.2 DONE May 17</strong> — Backend gating: 4 GET allowlists + close PATCH /styles default-allow gap + tech_design tech-pack write retained. <code>48b4eb4</code> (v212).
+  <br>&nbsp;&nbsp;⏭️ <strong>A12.3 NEXT</strong> — UI gating refactor: split <code>isPC</code> → <code>isPCRead</code> / <code>isPCWrite</code> across ~30 sites (app.js role permissions block at lines 3037-3053 + sidebar nav + view dispatchers + every action button). <strong>Scope expanded May 18:</strong> Test 5 showed pc_readonly sees sidebar but pages don't populate — A12.3 must also expand backend read-path gating (GET /programs, GET /styles, etc.) to include pc_readonly. ~4-6 hrs frontend + ~30 min backend audit.
+  <br>&nbsp;&nbsp;⏭️ <strong>A12.4</strong> — Verification + smoke pass after A12.3. Confirm pc_readonly sees full read views, zero write affordances.
+  <br>&nbsp;&nbsp;⛔ <strong>A12.5 (IT-blocked)</strong> — Wire up <code>VCP-Highlife-PC-ReadOnly</code> Entra group → <code>pc_readonly</code> role mapping in the group-claim handler. Bundled with A3 v2 implementation.
+  <br>
+  <strong><span class="stage-tag stage-a">A</span> 22. Bug fix: PC Propose TC modal missing Payment Terms field (captured May 18)</strong> — PC's Propose TC modal lacks Default Payment Terms field; admin Edit modal has it. PC needs to propose payment terms changes per locked business workflow. Same drift likely exists for Propose IP and Propose COO modals — audit during fix. ~30-60 min implementation, ~30 min audit.
+  <br>
+  <strong><span class="stage-tag stage-a">A</span> 23. Design Handoff pending-change indicator (captured May 18)</strong> — When design logs a style change via the lock icon → "Log New Change" modal, the Design Handoff list view shows no indicator that pending changes exist. Add KPI tile to Design Handoff (similar to Style Changes' "Total Changes" tile) showing pending change count per program; clicking takes user to Style Changes view filtered to that program. ~30-60 min.
   <br><br>
   <strong><span class="stage-tag stage-b">B</span> 7. Azure SQL migration</strong> — sync→async refactor, T-SQL translation, driver swap. ~3-5 days focused. <strong>HARD DEADLINE: must land before any vendor touches the system.</strong>
   <br>
@@ -433,98 +492,113 @@
   <div>
     <div class="section in-progress">
       <div class="section-header">
-        <div class="section-title">🚧 Now: Stage A blocker #2 (audit) DONE · pick next item tomorrow (A3/A4/A5/A6)</div>
-        <div class="section-count">paused</div>
+        <div class="section-title">🚧 Now: A12 Phase A12.3 next · 4-6 hrs UI gating + backend read-path expansion · payment terms + handoff KPI on deck</div>
+        <div class="section-count">May 18 EOD</div>
       </div>
       <div class="group">
-        <div class="group-label">Test seeded data</div>
-        <div class="item" data-id="test-handoff-uploads">
-          <div class="item-header"><input type="checkbox">
-            <div class="item-text">All 7 handoffs uploaded successfully (verify Pre-Costing Pipeline)</div>
-            <span class="item-priority priority-now">NOW</span></div>
+        <div class="group-label">Site testing — May 17-18 results</div>
+        <div class="item done" data-id="site-test-1-admin">
+          <div class="item-header"><input type="checkbox" checked>
+            <div class="item-text">Test 1: admin baseline — all checks pass, no regressions from A12</div></div>
         </div>
-        <div class="item" data-id="walk-02-lifecycle">
+        <div class="item done" data-id="site-test-2-pc">
+          <div class="item-header"><input type="checkbox" checked>
+            <div class="item-text">Test 2: PC baseline — all checks pass (propose-flow orphan surfaced here, fixed in <code>b67d7dd</code>)</div></div>
+        </div>
+        <div class="item done" data-id="site-test-3-design">
+          <div class="item-header"><input type="checkbox" checked>
+            <div class="item-text">Test 3: design — works. Surfaced design handoff missing pending-change indicator (now a Stage A item)</div></div>
+        </div>
+        <div class="item done" data-id="site-test-4-techdesign">
+          <div class="item-header"><input type="checkbox" checked>
+            <div class="item-text">Test 4: tech_design — works. Badge correctly shows "Tech Design" post-v23 migration; tech-pack write access retained</div></div>
+        </div>
+        <div class="item done" data-id="site-test-5-pcreadonly">
+          <div class="item-header"><input type="checkbox" checked>
+            <div class="item-text">Test 5: pc_readonly — sidebar renders BUT pages empty (data not populating). Expands A12.3 scope to include backend read-path</div></div>
+        </div>
+        <div class="item done" data-id="site-test-6-vendor">
+          <div class="item-header"><input type="checkbox" checked>
+            <div class="item-text">Test 6: vendor — unchanged, as expected (vendor flow untouched by A12)</div></div>
+        </div>
+      </div>
+      <div class="group">
+        <div class="group-label">A12.3 — UI gating refactor + backend read-path expansion (next session)</div>
+        <div class="item" data-id="a12.3-recon">
           <div class="item-header"><input type="checkbox">
-            <div class="item-text">Walk #02 Champion Q4 2026 through full lifecycle (handoff → batch approved → SR filled → TCs assigned → FOBs submitted → styles placed)</div>
+            <div class="item-text">Recon prompt to Claude Code: enumerate all <code>isPC</code> sites and bare-PC <code>requireRole</code> GET endpoints</div>
             <span class="item-priority priority-now">NOW</span></div>
           <div class="test-detail">
-            <span class="label">Why:</span>
-            For repeat styles to populate in Cost Summary on #06/#07, the original styles in #02 need PLACEMENTS, not just handoff records.
-            <span class="label">Steps:</span>
-            <ol>
-              <li>Login as PC, approve the batch</li>
-              <li>Login as Sales, fill qty/sell on the batch-review SR</li>
-              <li>Login as PC, assign TCs to the program</li>
-              <li>Login as Vendor (each assigned TC), submit FOBs</li>
-              <li>Login as PC/Admin, place styles by selecting best FOB</li>
-            </ol>
-          </div>
-        </div>
-        <div class="item" data-id="investigate-b3">
-          <div class="item-header"><input type="checkbox">
-            <div class="item-text">Investigate B3 (repeat history not showing)</div>
-            <span class="item-priority priority-now">NOW</span></div>
-          <div class="test-detail">
-            <span class="label">Diagnose:</span>
-            <ol>
-              <li>Hard refresh (Cmd+Shift+R) on Cost Summary for #06</li>
-              <li>Click "≡ Columns" — is "🔁 Repeat Style" listed? Is it checked?</li>
-              <li>Check browser console (F12) for errors when page loads</li>
-              <li>Confirm you actually placed styles in #02 (not just stopped at FOB submission)</li>
-            </ol>
-            <span class="label">If still not showing:</span>
-            Real bug. May block 2b.2. Investigate <code>_allPlacements</code> and <code>_allStylesGlobal</code> state.
-          </div>
-        </div>
-        <div class="item" data-id="test-repeat-styles">
-          <div class="item-header"><input type="checkbox">
-            <div class="item-text">After #02 fully placed: open Cost Summary on #06 + #07, verify repeat history appears</div>
-            <span class="item-priority priority-test">TEST</span></div>
-          <div class="test-detail">
-            <span class="label">Repeats to verify:</span>
+            <span class="label">Scope:</span>
             <ul>
-              <li>#06 CHM-Q4-LE-01 (Compression Legging) — should show #02 history</li>
-              <li>#06 CHM-Q4-SB-02 (Sports Bra High Support) — should show #02 history</li>
-              <li>#07 CHM-Q4-CR-01 (Crew Sweatshirt) — should show #02 history (cross-gender)</li>
+              <li>Frontend: every <code>isPC</code> usage in app.js + views-admin.js + (anywhere else). Categorize as "read context" or "write context". Read context → add pc_readonly. Write context → keep PC-only.</li>
+              <li>Backend: every <code>requireRole(..., 'pc', ...)</code> on GET methods that PC currently sees. Add pc_readonly where PC reads are allowed.</li>
+              <li>Special attention to: sidebar nav (<code>(isAdmin || isPC)</code> gate at app.js:343), route dispatcher (<code>(isAdmin || isPC)</code> at app.js:438), per-action button visibility (~30 sites), per-role permission profile (app.js:3037-3053 — needs pc_readonly entry).</li>
             </ul>
+            <span class="label">Effort estimate:</span>
+            Recon ~30 min · implementation ~4-6 hrs · verification ~1 hr · total ~6-8 hrs (one focused day)
+            <span class="label">Risk:</span>
+            Missing a site means pc_readonly users see a write button that 403s silently. UI looks broken without clear cause.
           </div>
         </div>
-        <div class="item" data-id="test-sales-initiated">
+        <div class="item" data-id="a12.3-implement">
           <div class="item-header"><input type="checkbox">
-            <div class="item-text">Test sales-initiated SR path — upload #08 + #09</div>
-            <span class="item-priority priority-test">TEST</span></div>
-        </div>
-        <div class="item" data-id="test-2b1-realistic-data">
-          <div class="item-header"><input type="checkbox">
-            <div class="item-text">Re-verify Phase 2b.1 sync against realistic seeded data</div>
-            <span class="item-priority priority-test">TEST</span></div>
-        </div>
-        <div class="item" data-id="characterize-b7">
-          <div class="item-header"><input type="checkbox">
-            <div class="item-text">Characterize B7 (window shrinks) — find reproducer</div>
-            <span class="item-priority priority-test">TEST</span></div>
-        </div>
-      </div>
-      <div class="group">
-        <div class="group-label">After data testing clean → next step</div>
-        <div class="item" data-id="2b2-build-prompt">
-          <div class="item-header"><input type="checkbox">
-            <div class="item-text">Send Phase 2b.2 build prompt to Claude</div>
+            <div class="item-text">A12.3 implementation prompt + sequential 2-3 commit shipping</div>
             <span class="item-priority priority-major">BUILD</span></div>
+        </div>
+        <div class="item" data-id="a12.4-verify">
+          <div class="item-header"><input type="checkbox">
+            <div class="item-text">A12.4 verification — full smoke pass as pc_readonly across all views</div>
+            <span class="item-priority priority-test">TEST</span></div>
+        </div>
+      </div>
+      <div class="group">
+        <div class="group-label">Smaller Stage A items (can slot in between A12 phases)</div>
+        <div class="item" data-id="bug-pc-propose-tc-payment-terms">
+          <div class="item-header"><input type="checkbox">
+            <div class="item-text">Bug fix: add Default Payment Terms field to PC Propose TC modal (+ audit IP and COO modals)</div>
+            <span class="item-priority priority-blocker">BLOCKER</span></div>
           <div class="test-detail">
-            <span class="label">Scope locked:</span>
+            <span class="label">Issue:</span>
+            PC propose TC modal at <code>app.js:2233</code> has 4 fields (code, name, email, coos). Admin Edit modal has 6 (those + Default Payment Terms + Password). PC needs to propose Payment Terms changes per locked decision May 18. Password absence is acceptable (admin-only for security).
+            <span class="label">Fix:</span>
+            Add <code>&lt;input id="ptc-payment-terms"&gt;</code> to modal body + thread <code>paymentTerms</code> through <code>submitProposeTC</code> + <code>proposeSetting</code>. Verify the pending_changes backend accepts the field.
+            <span class="label">Companion audits during fix:</span>
             <ul>
-              <li>Add role parameter to buildCostMatrix and renderCostSummary (3 call sites in app.js)</li>
-              <li>Hide columns for Sales/Planning/Design/TechDesign: TC info, FOB, Target LDP, Duty Rate, Est Freight, Best TC, Category, Repeat Style, all TC×COO groups</li>
-              <li>Sales Mgmt: full view but read-only on all editors</li>
-              <li>Revert Phase 2a Option A: batch-review SRs route to Cost Summary instead of modal</li>
-              <li><strong>EXPANDED: Also fix Open Programs view routing</strong> (B1, B2)</li>
-              <li><strong>NEW micro-task: Add defensive comment block at sync mirror code</strong> in routes.js + routes-supporting.js reinforcing notes ↔ sell_status_note name mapping</li>
+              <li>Check <code>openProposeIPModal</code> (app.js:2264) for similar missing fields vs admin Edit IP modal</li>
+              <li>Check <code>openProposeCOOModal</code> (app.js:2323) for similar missing fields vs admin Edit COO modal</li>
             </ul>
-            <span class="label">LOC:</span>
-            ~115 client-side + small comment additions
-            <span class="label">Files:</span>
-            views-admin.js (heavy), app.js (light), routes.js + routes-supporting.js (comment), index.html (cache buster)
+            <span class="label">Effort:</span>
+            ~30-60 min implementation + audit. v213 → v214 cache bust.
+          </div>
+        </div>
+        <div class="item" data-id="feature-design-handoff-pending-indicator">
+          <div class="item-header"><input type="checkbox">
+            <div class="item-text">Feature: Design Handoff pending-change KPI tile (linking to Style Changes view)</div>
+            <span class="item-priority priority-high">FEATURE</span></div>
+          <div class="test-detail">
+            <span class="label">Issue:</span>
+            When design logs a style change via "Log New Change" modal (lock icon), the Design Handoff list view shows no indicator that pending changes exist. Data IS captured (visible in Style Changes view's "5 Total Changes" KPI), just not breadcrumbed back to Handoff.
+            <span class="label">Approach:</span>
+            Add KPI tile to Design Handoff (similar to Style Changes' tile pattern). Shows count of pending changes for current program. Clicking takes user to Style Changes view filtered to that program.
+            <span class="label">Effort:</span>
+            ~30-60 min. Existing KPI tile pattern should be reusable.
+          </div>
+        </div>
+      </div>
+      <div class="group">
+        <div class="group-label">Data hygiene (deferred)</div>
+        <div class="item" data-id="data-pollution-mouedkzymvttk">
+          <div class="item-header"><input type="checkbox">
+            <div class="item-text">Style <code>mouedkzymvttk</code> (CHM-Q4-LE-01) proj_qty is NULL since May 14 verification incident</div>
+            <span class="item-priority priority-cleanup">CLEANUP</span></div>
+          <div class="test-detail">
+            <span class="label">Context:</span>
+            May 14 A12.2 verification: Claude Code's PATCH /styles test ran against stale server code; pc_readonly was incorrectly allowed and wrote <code>projQty=99999</code> over a real value. Reverted to NULL because original was unrecoverable (Daniel did entry by hand, doesn't remember).
+            <span class="label">Sibling styles in program <code>mouedkzyv1k8v</code>:</span>
+            12000, 20000, 15000, 15000, 30000 — original likely 15-25k range.
+            <span class="label">Resolution:</span>
+            Re-enter through normal UI flow during regular workflow. No urgent action needed.
           </div>
         </div>
       </div>
@@ -862,7 +936,7 @@
     <div class="section urgent">
       <div class="section-header">
         <div class="section-title">🔒 AUDIT-NOTEs — for authorization audit pass</div>
-        <div class="section-count">7 items</div>
+        <div class="section-count">17 items</div>
       </div>
       <div class="group">
         <div class="group-label">Captured during today's triage — apply during audit pass, not before</div>
@@ -962,6 +1036,146 @@
             <span class="label">Action:</span>
             During audit, verify cancel endpoints have independent role checks, not just inheriting from the surface PATCH.
           </div>
+        </div>
+      </div>
+      <div class="group">
+        <div class="group-label">Captured May 14-18 (A12 work + token rotation)</div>
+        <div class="item" data-id="audit-claude-code-data-pollution">
+          <div class="item-header"><input type="checkbox">
+            <div class="item-text">Claude Code verification tests must use non-destructive PATCH patterns against real records</div>
+            <span class="item-priority priority-high">AUDIT</span></div>
+          <div class="test-detail">
+            <span class="label">Origin:</span>
+            May 14 A12.2 verification: Claude Code's PATCH /styles/{realStyleId} with body <code>{"projQty":99999}</code> ran against stale server code (server started before the structural fix was saved). PATCH returned 200, actually wrote 99999 to real style <code>mouedkzymvttk</code> (CHM-Q4-LE-01). Original value unrecoverable.
+            <span class="label">Locked discipline (now in CLAUDE.md):</span>
+            <ul>
+              <li>For deny-test PATCHes: use empty body <code>{}</code>. Role check fires before DB write.</li>
+              <li>For allow-test PATCHes: capture original value first, set test marker, restore to original.</li>
+              <li>Use a style ID OTHER than known-polluted records.</li>
+              <li>All test writes MUST round-trip using captured originals — no fabricated numeric values for required fields.</li>
+            </ul>
+            <span class="label">Action during audit:</span>
+            Review CLAUDE.md text for clarity. Consider linting at prompt-time — flag any Claude Code verification suite that PATCHes a numeric field without a captured restore value.
+          </div>
+        </div>
+        <div class="item" data-id="audit-allowlist-by-omission-pattern">
+          <div class="item-header"><input type="checkbox">
+            <div class="item-text">Review other inline-check endpoints for allowlist-by-omission pattern (PATCH /styles fix retrospective)</div>
+            <span class="item-priority priority-high">AUDIT</span></div>
+          <div class="test-detail">
+            <span class="label">Origin:</span>
+            A12.2 surfaced a default-allow flaw on PATCH /styles: the original logic was <code>let allowedFields = STYLE_FIELDS; if (role === 'design') ... else if (role === 'planning' || ...) ...</code> with no explicit else. Any role not explicitly named (pc_readonly, tech_design, prod_dev, future roles) fell through to STYLE_FIELDS (full set). Closed structurally May 17 by inverting to explicit allow-or-deny.
+            <span class="label">Risk:</span>
+            Same pattern may exist on the other 8 inline-check endpoints audited in A12.2. They CURRENTLY deny pc_readonly correctly, but verify the deny is structural (explicit else 403) and not accidental.
+            <span class="label">Action during audit:</span>
+            Re-read all 8 endpoints (POST /submissions, PATCH /placements/:styleId/factory, PATCH /sales-requests, POST /factories, PATCH /factories/:id, PATCH /delivery-plan-lines, PATCH /capacity-plan-lines, POST /capacity-plans/submit). For each, confirm: deny is from an explicit allowlist check, not from falling through to a default-allow. If any are default-allow, restructure to match the PATCH /styles pattern.
+          </div>
+        </div>
+        <div class="item" data-id="audit-prod-dev-tech-design-incidental-tightening">
+          <div class="item-header"><input type="checkbox">
+            <div class="item-text">tech_design and prod_dev incidentally lost full style edit access via A12.2 — document intent</div>
+            <span class="item-priority priority-medium">AUDIT</span></div>
+          <div class="test-detail">
+            <span class="label">Origin:</span>
+            Before A12.2: tech_design and prod_dev silently inherited admin/pc's full STYLE_FIELDS via the allowlist-by-omission default. After A12.2: tech_design retained tech-pack writes (<code>techPackStatus</code> + <code>techDesignNotes</code>) by being added to the design branch. prod_dev was tightened to deny entirely.
+            <span class="label">prod_dev status:</span>
+            Not seeded in dev DB. No active production usage to break. Tightening was safe.
+            <span class="label">Action:</span>
+            (a) Confirm with product team that prod_dev should have zero style write access. If wrong, decide what fields they should write and add a branch. (b) Document the tech_design → design field parity in CLAUDE.md "role field ownership" section.
+          </div>
+        </div>
+        <div class="item" data-id="audit-batch-vendor-checkbox-default">
+          <div class="item-header"><input type="checkbox">
+            <div class="item-text">Design handoff batch flow: vendor checkboxes default to all-checked — intentional or bug?</div>
+            <span class="item-priority priority-medium">AUDIT</span></div>
+          <div class="test-detail">
+            <span class="label">Origin:</span>
+            Observed May 18 by Daniel during PC pending-action review on design handoffs. When PC selects vendors to share a batch with, all assigned vendors are pre-checked. Question: is this intentional (opt-out, share by default) or unintentional (should be opt-in)?
+            <span class="label">Risk:</span>
+            If unintentional, PC might inadvertently share batches with vendors who shouldn't see them — same shape as <code>bug-tcs-preselected</code> on TC assignment modal from May 11.
+            <span class="label">Action:</span>
+            Trace the code path. If intentional, document the rationale in CLAUDE.md. If bug, fix similar to TC assignment modal.
+          </div>
+        </div>
+        <div class="item" data-id="audit-pc-propose-modal-ux-drift">
+          <div class="item-header"><input type="checkbox">
+            <div class="item-text">PC propose modals (TC/IP/COO) have significant UX drift from admin Edit modals</div>
+            <span class="item-priority priority-medium">AUDIT</span></div>
+          <div class="test-detail">
+            <span class="label">Origin:</span>
+            May 18 site testing as PC. PC's Propose TC modal: single column, no field labels, no required markers, COOs require manual comma-separated typing. Admin Edit modal: two-column grid, labels, asterisks, COO checkbox grid. PC modal also MISSING Default Payment Terms (Stage A blocker — captured separately) and Password (acceptable — admin-only security).
+            <span class="label">Stage A decision:</span>
+            UX clunkiness acceptable for May 29 soft launch. Real fix is modal feature parity refactor across TC/IP/COO — ~4-8 hrs total.
+            <span class="label">Post-launch action:</span>
+            Refactor PC propose modals to use shared form components with admin modals. Different submit handlers (propose vs edit), shared field rendering.
+          </div>
+        </div>
+        <div class="item" data-id="audit-pc-propose-ip-coo-parity-check">
+          <div class="item-header"><input type="checkbox">
+            <div class="item-text">Audit Propose IP and Propose COO modals for similar missing-field drift</div>
+            <span class="item-priority priority-medium">AUDIT</span></div>
+          <div class="test-detail">
+            <span class="label">Origin:</span>
+            Propose TC modal missing Default Payment Terms field surfaced May 18. Same drift likely exists for Propose IP and Propose COO modals — TC missing 2 fields, others probably similar.
+            <span class="label">Action:</span>
+            ~30 min audit before or during the Stage A payment-terms-field fix. Compare each propose modal to its corresponding admin Edit modal. Any missing fields that PC needs to be able to propose get added in the same commit.
+          </div>
+        </div>
+        <div class="item" data-id="audit-tokens-in-zsh-history">
+          <div class="item-header"><input type="checkbox">
+            <div class="item-text">Pre-rotation token exposure: GitHub PATs sat in zsh history for weeks before May 17 rotation</div>
+            <span class="item-priority priority-high">AUDIT</span></div>
+          <div class="test-detail">
+            <span class="label">Origin:</span>
+            May 17 token rotation revealed both the current token AND an older token (<code>ghp_5c2y8...</code>) in <code>~/.zsh_history</code> from initial repo setup (curl auth, embedded URL setup, security add-generic-password call). Both tokens were live for weeks until rotated/revoked May 17.
+            <span class="label">Risk:</span>
+            <code>.zsh_history</code> is plaintext, world-readable on macOS by default. Any process with read access to user home (including some npm packages with broad permissions) could exfiltrate.
+            <span class="label">Action:</span>
+            (a) Document in CLAUDE.md: any future token operations use the file-based credential helper input method, never curl with embedded tokens, never <code>security add-generic-password -w &lt;token&gt;</code>. (b) Add a pre-commit hook or git hook that grep's commit messages for token patterns. (c) Audit history.zsh for any other historical secrets (API keys, etc.).
+          </div>
+        </div>
+        <div class="item" data-id="audit-tc-coo-added-after-assignment">
+          <div class="item-header"><input type="checkbox">
+            <div class="item-text">TC with new COO added after assignment: existing program assignments don't get backfilled with the new COO</div>
+            <span class="item-priority priority-medium">AUDIT</span></div>
+          <div class="test-detail">
+            <span class="label">Origin:</span>
+            Surfaced May 14 during A3 design v1 work (now archived). When admin adds a COO to a TC (or admin approves PC's propose-add-COO), existing program-level TC assignments don't automatically include the new COO. PC has to manually re-edit every assignment.
+            <span class="label">Action:</span>
+            Trace whether this is intentional (admin opt-in to backfill) or bug. If bug, add an option in the TC edit flow: "Apply this new COO to all existing program assignments?" with default opt-out.
+          </div>
+        </div>
+        <div class="item" data-id="workflow-pc-batch-assignment-intuitive">
+          <div class="item-header"><input type="checkbox">
+            <div class="item-text">PC batch assignment workflow not intuitive — investigate post-A12</div>
+            <span class="item-priority priority-low">WORKFLOW</span></div>
+          <div class="test-detail">
+            <span class="label">Origin:</span>
+            Daniel observation May 18: PC currently has to navigate between Design Handoffs and Sales Requests to manage batch assignment workflow. Not blocking but not intuitive.
+            <span class="label">Action:</span>
+            Post-A12 workflow trace. See if there's a natural way to consolidate without rebuilding existing views. May overlap with the PC to-do inbox feature.
+          </div>
+        </div>
+        <div class="item" data-id="feature-pc-todo-inbox">
+          <div class="item-header"><input type="checkbox">
+            <div class="item-text">PC unified to-do inbox — extend existing top-of-view task pattern</div>
+            <span class="item-priority priority-medium">FEATURE</span></div>
+          <div class="test-detail">
+            <span class="label">Origin:</span>
+            Daniel observation May 18. Existing pattern: top-of-view task spaces on Design Handoffs and Sales Requests. Extension: give PC a unified inbox view that aggregates all pending work across handoffs/SRs/proposals.
+            <span class="label">Options:</span>
+            <ul>
+              <li>(a) Make existing Dashboard KPIs clickable → drill into a list of items behind each KPI. Minimal change, ships fast.</li>
+              <li>(b) Build a dedicated PC inbox page. Bigger, more design needed.</li>
+            </ul>
+            <span class="label">Stage A vs post-launch:</span>
+            (a) could fit Stage A scope if A12 finishes early. (b) is a Stage B+ project.
+          </div>
+        </div>
+        <div class="item" done data-id="audit-orphan-propose-flow-functions">
+          <div class="item-header"><input type="checkbox" checked>
+            <div class="item-text">✓ RESOLVED May 17 (<code>b67d7dd</code>): 6 propose-flow functions defined but never exposed on App's return — TC/IP/COO openers + submit handlers. Pre-existing bug, fixed during A12 site testing.</div>
+            <span class="item-priority priority-debt">DONE</span></div>
         </div>
       </div>
     </div>
