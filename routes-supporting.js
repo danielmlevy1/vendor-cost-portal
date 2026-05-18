@@ -1897,8 +1897,16 @@ function _applyPendingChange(type, action, d) {
         for (const coo of d.coos) db.prepare('INSERT OR IGNORE INTO tc_coos (tc_id,coo) VALUES (?,?)').run(id, coo);
       }
     } else if (action === 'update') {
-      const setClauses = ['name=?', 'code=?', 'email=?', 'payment_terms=?'];
-      const vals = [d.name, d.code, d.email, d.paymentTerms || 'FOB'];
+      // Only include fields the proposal payload actually carries. Previously
+      // payment_terms=? was unconditional with `d.paymentTerms || 'FOB'`, which
+      // silently overwrote existing values to 'FOB' whenever a propose-flow
+      // payload omitted the field (the live bug PC's Propose TC modal triggered
+      // before paymentTerms was added to it).
+      const setClauses = ['name=?', 'code=?', 'email=?'];
+      const vals = [d.name, d.code, d.email];
+      if (d.paymentTerms !== undefined) {
+        setClauses.push('payment_terms=?'); vals.push(d.paymentTerms);
+      }
       if (d.password) { setClauses.push('password_hash=?'); vals.push(bcrypt.hashSync(d.password, SALT)); }
       vals.push(d.id);
       db.prepare(`UPDATE trading_companies SET ${setClauses.join(',')} WHERE id=?`).run(...vals);
@@ -1913,13 +1921,29 @@ function _applyPendingChange(type, action, d) {
 
   } else if (type === 'coo') {
     if (action === 'create' || action === 'update') {
-      db.prepare(`
-        INSERT INTO coo_rates (id,code,country,addl_duty,usa_mult,canada_mult)
-        VALUES (?,?,?,?,?,?)
-        ON CONFLICT(code) DO UPDATE SET
-          country=excluded.country, addl_duty=excluded.addl_duty,
-          usa_mult=excluded.usa_mult, canada_mult=excluded.canada_mult
-      `).run(d.id || d.code, d.code, d.country, d.addlDuty ?? 0, d.usaMult ?? 0, d.canadaMult ?? 0);
+      // seaLeadDays is conditionally included so a propose payload that omits
+      // it preserves the existing column value on UPDATE (same defect-avoidance
+      // pattern as the TC update branch above). CREATE falls through to the
+      // schema-level DEFAULT of 30.
+      const hasSeaLead = d.seaLeadDays !== undefined;
+      if (hasSeaLead) {
+        db.prepare(`
+          INSERT INTO coo_rates (id,code,country,addl_duty,usa_mult,canada_mult,sea_lead_days)
+          VALUES (?,?,?,?,?,?,?)
+          ON CONFLICT(code) DO UPDATE SET
+            country=excluded.country, addl_duty=excluded.addl_duty,
+            usa_mult=excluded.usa_mult, canada_mult=excluded.canada_mult,
+            sea_lead_days=excluded.sea_lead_days
+        `).run(d.id || d.code, d.code, d.country, d.addlDuty ?? 0, d.usaMult ?? 0, d.canadaMult ?? 0, d.seaLeadDays);
+      } else {
+        db.prepare(`
+          INSERT INTO coo_rates (id,code,country,addl_duty,usa_mult,canada_mult)
+          VALUES (?,?,?,?,?,?)
+          ON CONFLICT(code) DO UPDATE SET
+            country=excluded.country, addl_duty=excluded.addl_duty,
+            usa_mult=excluded.usa_mult, canada_mult=excluded.canada_mult
+        `).run(d.id || d.code, d.code, d.country, d.addlDuty ?? 0, d.usaMult ?? 0, d.canadaMult ?? 0);
+      }
     } else if (action === 'delete') {
       db.prepare('DELETE FROM coo_rates WHERE code=? OR id=?').run(d.code, d.code);
     }

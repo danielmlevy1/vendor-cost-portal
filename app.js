@@ -955,10 +955,13 @@ App = (() => {
   }
 
   // ── Trading Company CRUD ────────────────────────────────────
+  // Shared between admin openTCModal and PC openProposeTCModal — single source
+  // of truth for valid TC default-payment-terms values.
+  const TC_PAYMENT_TERMS = ['FOB', 'CIF', 'First Sale', 'FCA', 'Duty Free', 'CPTPP'];
+
   function openTCModal(id) {
     const tc = id ? API.TradingCompanies.get(id) : null;
     const cooRates = API.cache.cooRates;
-    const TERMS_LIST = ['FOB', 'CIF', 'First Sale', 'FCA', 'Duty Free', 'CPTPP'];
     showModal(`
     <div class="modal-header"><h2>${tc ? 'Edit' : 'Add'} Trading Company</h2><button class="btn btn-ghost btn-icon" onclick="App.closeModal()">✕</button></div>
     <form onsubmit="App.saveTC(event,'${id || ''}')">
@@ -974,7 +977,7 @@ App = (() => {
         </div>
       </div>
       <div class="form-group"><label class="form-label">Default Payment Terms</label>
-        <select class="form-select" id="tc-terms">${TERMS_LIST.map(t => `<option${(tc?.paymentTerms || 'FOB') === t ? ' selected' : ''}>${t}</option>`).join('')}</select>
+        <select class="form-select" id="tc-terms">${TC_PAYMENT_TERMS.map(t => `<option${(tc?.paymentTerms || 'FOB') === t ? ' selected' : ''}>${t}</option>`).join('')}</select>
         <div class="text-sm text-muted mt-1">Applied to all styles for this trading company in the cost matrix</div>
       </div>
       <div class="form-row form-row-2">
@@ -2236,10 +2239,27 @@ App = (() => {
       <div class="modal-header"><h2>${tc ? 'Propose Edit: ' + tc.code : 'Propose New Trading Company'}</h2>
         <button class="btn btn-ghost btn-icon" onclick="App.closeModal()">✕</button></div>
       <div class="modal-body" style="display:flex;flex-direction:column;gap:14px">
-        <input id="ptc-code"  class="input" placeholder="Code (e.g. ABC)"  value="${tc?.code  || ''}">
-        <input id="ptc-name"  class="input" placeholder="Company Name"     value="${tc?.name  || ''}">
-        <input id="ptc-email" class="input" placeholder="Login Email"       value="${tc?.email || ''}">
-        <input id="ptc-coos"  class="input" placeholder="COOs (comma-separated: VN,KH)" value="${(tc?.coos||[]).join(', ')}">
+        <div>
+          <label class="form-label" style="margin-bottom:4px">Code <span style="color:red">*</span></label>
+          <input id="ptc-code" class="input" placeholder="e.g. ABC" value="${tc?.code || ''}">
+        </div>
+        <div>
+          <label class="form-label" style="margin-bottom:4px">Company Name <span style="color:red">*</span></label>
+          <input id="ptc-name" class="input" placeholder="Full company name" value="${tc?.name || ''}">
+        </div>
+        <div>
+          <label class="form-label" style="margin-bottom:4px">Login Email</label>
+          <input id="ptc-email" class="input" placeholder="email@vendor.com" value="${tc?.email || ''}">
+        </div>
+        <div>
+          <label class="form-label" style="margin-bottom:4px">COOs</label>
+          <input id="ptc-coos" class="input" placeholder="CN, KH, VN" value="${(tc?.coos||[]).join(', ')}">
+          <div class="text-sm text-muted">Comma-separated country codes (e.g. CN, KH, VN)</div>
+        </div>
+        <div>
+          <label class="form-label" style="margin-bottom:4px">Default Payment Terms</label>
+          <select id="ptc-payment-terms" class="form-select">${TC_PAYMENT_TERMS.map(t => `<option${(tc?.paymentTerms || 'FOB') === t ? ' selected' : ''}>${t}</option>`).join('')}</select>
+        </div>
         <p class="text-muted text-sm">Your proposal will be sent to Admin for approval.</p>
       </div>
       <div class="modal-footer">
@@ -2253,8 +2273,11 @@ App = (() => {
     const name  = (document.getElementById('ptc-name')?.value  || '').trim();
     const email = (document.getElementById('ptc-email')?.value || '').trim();
     const coos  = (document.getElementById('ptc-coos')?.value  || '').split(',').map(c => c.trim().toUpperCase()).filter(Boolean);
+    const paymentTerms = document.getElementById('ptc-payment-terms')?.value || 'FOB';
     if (!code || !name) return alert('Code and name are required.');
-    const data = tcId ? { id: tcId, code, name, email, coos } : { code, name, email, coos };
+    const data = tcId
+      ? { id: tcId, code, name, email, coos, paymentTerms }
+      : { code, name, email, coos, paymentTerms };
     proposeSetting('tc', tcId ? 'update' : 'create', data, tcId ? API.TradingCompanies.get(tcId) : null);
     closeModal();
     alert('✅ Proposal submitted for Admin review.');
@@ -2326,11 +2349,31 @@ App = (() => {
       <div class="modal-header"><h2>${r ? 'Propose Edit: ' + r.code : 'Propose New COO Rate'}</h2>
         <button class="btn btn-ghost btn-icon" onclick="App.closeModal()">✕</button></div>
       <div class="modal-body" style="display:flex;flex-direction:column;gap:14px">
-        <input id="pcoo-code"     class="input" placeholder="Code (e.g. VN)"    value="${r?.code     || ''}">
-        <input id="pcoo-country"  class="input" placeholder="Country Name"       value="${r?.country  || ''}">
-        <input id="pcoo-duty"     class="input" type="number" step="0.001" placeholder="Addl Duty (e.g. 0.19)" value="${r?.addlDuty  ?? ''}">
-        <input id="pcoo-usamult"  class="input" type="number" step="0.01"  placeholder="USA Freight ×"          value="${r?.usaMult   ?? ''}">
-        <input id="pcoo-camult"   class="input" type="number" step="0.01"  placeholder="Canada Freight ×"        value="${r?.canadaMult ?? ''}">
+        <div>
+          <label class="form-label" style="margin-bottom:4px">Code <span style="color:red">*</span></label>
+          <input id="pcoo-code" class="input" placeholder="e.g. VN" value="${r?.code || ''}">
+        </div>
+        <div>
+          <label class="form-label" style="margin-bottom:4px">Country <span style="color:red">*</span></label>
+          <input id="pcoo-country" class="input" placeholder="Country name" value="${r?.country || ''}">
+        </div>
+        <div>
+          <label class="form-label" style="margin-bottom:4px">Additional Duty</label>
+          <input id="pcoo-duty" class="input" type="number" step="0.001" placeholder="0.19" value="${r?.addlDuty ?? ''}">
+          <div class="text-sm text-muted">Decimal, e.g. 0.19 for 19%</div>
+        </div>
+        <div>
+          <label class="form-label" style="margin-bottom:4px">USA Freight Multiplier</label>
+          <input id="pcoo-usamult" class="input" type="number" step="0.01" placeholder="e.g. 1.5" value="${r?.usaMult ?? ''}">
+        </div>
+        <div>
+          <label class="form-label" style="margin-bottom:4px">Canada Freight Multiplier</label>
+          <input id="pcoo-camult" class="input" type="number" step="0.01" placeholder="e.g. 1.5714" value="${r?.canadaMult ?? ''}">
+        </div>
+        <div>
+          <label class="form-label" style="margin-bottom:4px">Sea Lead Time (days)</label>
+          <input id="pcoo-sealead" class="input" type="number" step="1" min="0" placeholder="30" value="${r?.seaLeadDays ?? 30}">
+        </div>
         <p class="text-muted text-sm">Your proposal will be sent to Admin for approval.</p>
       </div>
       <div class="modal-footer">
@@ -2345,8 +2388,10 @@ App = (() => {
     const addlDuty = parseFloat(document.getElementById('pcoo-duty')?.value    || '');
     const usaMult  = parseFloat(document.getElementById('pcoo-usamult')?.value || '');
     const canadaMult = parseFloat(document.getElementById('pcoo-camult')?.value || '');
+    const seaLeadRaw = parseInt(document.getElementById('pcoo-sealead')?.value || '', 10);
     if (!code || !country) return alert('Code and country are required.');
     const data = { code, country, addlDuty, usaMult, canadaMult };
+    if (!isNaN(seaLeadRaw)) data.seaLeadDays = Math.max(0, seaLeadRaw);
     if (cooId) data.id = cooId;
     proposeSetting('coo', cooId ? 'update' : 'create', data, cooId ? API.CooRates.get(cooId) : null);
     closeModal();
