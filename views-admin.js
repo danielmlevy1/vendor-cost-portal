@@ -2955,14 +2955,18 @@ const AdminViews = (() => {
   function renderTradingCompaniesPC() {
     const tcs = API.cache.tradingCompanies;
     const pending = API.PendingChanges.pending().filter(c => c.type === 'tc');
+    // pc_readonly hits this view via the same dispatcher branch as PC (A12.3a)
+    // but cannot propose changes — strip the propose buttons + the propose-edit column.
+    const isPCReadonly = (typeof App !== 'undefined' && App._getState) ? App._getState()?.user?.role === 'pc_readonly' : false;
+    const subtitle = isPCReadonly ? 'Read-only view' : 'Read-only — propose changes for Admin approval';
     return `
     <div class="page-header">
-      <div><h1 class="page-title">Trading Companies</h1><p class="page-subtitle">Read-only — propose changes for Admin approval</p></div>
-      <button class="btn btn-primary" onclick="App.openProposeTCModal()">＋ Propose New TC</button>
+      <div><h1 class="page-title">Trading Companies</h1><p class="page-subtitle">${subtitle}</p></div>
+      ${!isPCReadonly ? `<button class="btn btn-primary" onclick="App.openProposeTCModal()">＋ Propose New TC</button>` : ''}
     </div>
     ${pending.length ? `<div class="alert alert-info mb-3">⏳ You have ${pending.filter(c=>c.action!=='delete').length} pending proposal(s) awaiting admin approval.</div>` : ''}
     <div class="card"><div class="table-wrap"><table>
-      <thead><tr><th>Code</th><th>Name</th><th>COOs</th><th>Terms</th><th>Email</th><th>Propose Edit</th></tr></thead>
+      <thead><tr><th>Code</th><th>Name</th><th>COOs</th><th>Terms</th><th>Email</th>${!isPCReadonly ? '<th>Propose Edit</th>' : ''}</tr></thead>
       <tbody>${tcs.map(tc => {
         const hasPending = pending.some(c => c.data?.id === tc.id);
         return `<tr class="${hasPending ? 'proposal-row' : ''}">
@@ -2971,7 +2975,7 @@ const AdminViews = (() => {
           <td>${(tc.coos||[]).map(c=>`<span class="badge badge-pending" style="margin:2px">${c}</span>`).join('')}</td>
           <td><span class="badge badge-costing">${tc.paymentTerms||'FOB'}</span></td>
           <td class="text-sm text-muted">${tc.email}</td>
-          <td><button class="btn btn-secondary btn-sm" onclick="App.openProposeTCModal('${tc.id}')">✏ Propose Edit</button></td>
+          ${!isPCReadonly ? `<td><button class="btn btn-secondary btn-sm" onclick="App.openProposeTCModal('${tc.id}')">✏ Propose Edit</button></td>` : ''}
         </tr>`;
       }).join('')}
       </tbody>
@@ -2981,14 +2985,16 @@ const AdminViews = (() => {
   function renderInternalProgramsPC() {
     const ips = API.cache.internalPrograms;
     const pending = API.PendingChanges.pending().filter(c => c.type === 'internal-program');
+    const isPCReadonly = (typeof App !== 'undefined' && App._getState) ? App._getState()?.user?.role === 'pc_readonly' : false;
+    const subtitle = isPCReadonly ? 'Read-only view' : 'Read-only — propose changes for Admin approval';
     return `
     <div class="page-header">
-      <div><h1 class="page-title">Internal Programs</h1><p class="page-subtitle">Read-only — propose changes for Admin approval</p></div>
-      <button class="btn btn-primary" onclick="App.openProposeIPModal()">＋ Propose New Internal Program</button>
+      <div><h1 class="page-title">Internal Programs</h1><p class="page-subtitle">${subtitle}</p></div>
+      ${!isPCReadonly ? `<button class="btn btn-primary" onclick="App.openProposeIPModal()">＋ Propose New Internal Program</button>` : ''}
     </div>
     ${pending.length ? `<div class="alert alert-info mb-3">⏳ ${pending.length} pending proposal(s) awaiting admin approval.</div>` : ''}
     <div class="card"><div class="table-wrap"><table>
-      <thead><tr><th>Brand</th><th>Tier</th><th>Gender</th><th>Target Margin</th><th>Propose Edit</th></tr></thead>
+      <thead><tr><th>Brand</th><th>Tier</th><th>Gender</th><th>Target Margin</th>${!isPCReadonly ? '<th>Propose Edit</th>' : ''}</tr></thead>
       <tbody>${ips.map(ip => {
         const hasPending = pending.some(c => c.data?.id === ip.id);
         return `<tr class="${hasPending ? 'proposal-row' : ''}">
@@ -2996,7 +3002,7 @@ const AdminViews = (() => {
           <td class="text-sm">${ip.tier || '—'}</td>
           <td class="text-sm">${ip.gender || '—'}</td>
           <td>${ip.targetMargin ? (ip.targetMargin*100).toFixed(1)+'%' : '—'}</td>
-          <td><button class="btn btn-secondary btn-sm" onclick="App.openProposeIPModal('${ip.id}')">✏ Propose Edit</button></td>
+          ${!isPCReadonly ? `<td><button class="btn btn-secondary btn-sm" onclick="App.openProposeIPModal('${ip.id}')">✏ Propose Edit</button></td>` : ''}
         </tr>`;
       }).join('')}
       </tbody>
@@ -3006,14 +3012,16 @@ const AdminViews = (() => {
   function renderCOOPC() {
     const rates = API.cache.cooRates;
     const pending = API.PendingChanges.pending().filter(c => c.type === 'coo');
+    const isPCReadonly = (typeof App !== 'undefined' && App._getState) ? App._getState()?.user?.role === 'pc_readonly' : false;
+    const subtitle = isPCReadonly ? 'Read-only view' : 'Read-only — propose changes for Admin approval';
     return `
     <div class="page-header">
-      <div><h1 class="page-title">COO Rate Table</h1><p class="page-subtitle">Read-only — propose changes for Admin approval</p></div>
-      <button class="btn btn-primary" onclick="App.openProposeCOOModal()">＋ Propose New COO</button>
+      <div><h1 class="page-title">COO Rate Table</h1><p class="page-subtitle">${subtitle}</p></div>
+      ${!isPCReadonly ? `<button class="btn btn-primary" onclick="App.openProposeCOOModal()">＋ Propose New COO</button>` : ''}
     </div>
     ${pending.length ? `<div class="alert alert-info mb-3">⏳ ${pending.length} pending proposal(s) awaiting admin approval.</div>` : ''}
     <div class="card"><div class="table-wrap"><table>
-      <thead><tr><th>Code</th><th>Country</th><th>Addl Duty %</th><th>USA Freight ×</th><th>CA Freight ×</th><th>Propose Edit</th></tr></thead>
+      <thead><tr><th>Code</th><th>Country</th><th>Addl Duty %</th><th>USA Freight ×</th><th>CA Freight ×</th>${!isPCReadonly ? '<th>Propose Edit</th>' : ''}</tr></thead>
       <tbody>${rates.map(r => {
         const hasPending = pending.some(c => c.data?.code === r.code);
         return `<tr class="${hasPending ? 'proposal-row' : ''}">
@@ -3022,7 +3030,7 @@ const AdminViews = (() => {
           <td>${(r.addlDuty*100).toFixed(1)}%</td>
           <td>${r.usaMult ?? '—'}&times;</td>
           <td>${r.canadaMult ?? '—'}&times;</td>
-          <td><button class="btn btn-secondary btn-sm" onclick="App.openProposeCOOModal('${r.id}')">✏ Propose Edit</button></td>
+          ${!isPCReadonly ? `<td><button class="btn btn-secondary btn-sm" onclick="App.openProposeCOOModal('${r.id}')">✏ Propose Edit</button></td>` : ''}
         </tr>`;
       }).join('')}
       </tbody>
@@ -5049,7 +5057,10 @@ const AdminViews = (() => {
     const logOnlyRecent  = all.filter(c => classify(c) === 'log-only' && inLast30(c)).length;
 
     // Role-scoped pending count for KPI tile (matches sidebar badge logic)
-    const pendingTileCount = (isAdmin || isPC)
+    // pc_readonly observes PC's queue — shows the same count, but the action
+    // subtext ("Awaiting your release") remains PC-only further down.
+    const isPCReadonly = userRole === 'pc_readonly';
+    const pendingTileCount = (isAdmin || isPC || isPCReadonly)
       ? (API.RecostRequests?.pendingProduction?.() || []).length
       : isPlanning
       ? (API.RecostRequests?.pendingSales?.() || []).length
@@ -5195,7 +5206,9 @@ const AdminViews = (() => {
     const logOnlyCount    = all.filter(c => classify(c) === 'log-only').length;
 
     const pendingColor = pendingDCCount > 0 ? '#ef4444' : '#64748b';
-    const pendingTileCount = (isAdmin || isPC)
+    // pc_readonly observes PC's queue — same count, but action subtext remains PC-only below.
+    const isPCReadonly = role === 'pc_readonly';
+    const pendingTileCount = (isAdmin || isPC || isPCReadonly)
       ? all.filter(c => { const r = API.RecostRequests.getByDesignChange(c.id); return r?.status === 'pending_production'; }).length
       : isPlanning
       ? all.filter(c => { const r = API.RecostRequests.getByDesignChange(c.id); return r?.status === 'pending_sales' || r?.status === 'pending'; }).length
