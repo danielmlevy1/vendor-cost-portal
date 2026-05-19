@@ -207,7 +207,7 @@
 <body>
 
 <h1>Vendor Cost Portal — Tracker</h1>
-<div class="subtitle">May 18 · A12 Phase A12.1 + A12.2 + orphan propose-flow fix shipped (v211→v213) · pc_readonly role backend complete · A12.3 UI gating refactor next · GitHub token rotated to fresh keychain entry · 11 days to Stage A go-live (May 29)</div>
+<div class="subtitle">May 19 · <strong>A12 COMPLETE</strong> · A12.3a-e + Stage A blocker fix shipped (v214→v219, 6 commits in 2 days) · pc_readonly role end-to-end with backend allowlists + frontend write-affordance hiding + buildCostMatrix gating + latent batch-review modal defect fix · 10 days to Stage A go-live (May 29)</div>
 
 <div class="milestone-box">
   <strong>🎯 Go-Live Milestone — Staged Rollout (locked May 8)</strong>
@@ -369,48 +369,93 @@
   <strong>QA legend:</strong> <span class="qa-badge qa-cc-done">CC ✓</span> = Claude Code reported done · <span class="qa-badge qa-d-done">D ✓</span> = Daniel verified visually · <span class="qa-badge qa-d-pending">D —</span> = NOT verified
 </div>
 
-<div class="todo-box">
-  <strong>📋 Tomorrow (May 19+) — RESUME HERE</strong>
+<div class="ship-box">
+  <strong>🎯 What's done today (May 19 — A12 COMPLETE)</strong>
   <br><br>
-  A12 Phase A12.1 + A12.2 shipped May 17. Orphan propose-flow fix shipped May 17 (bug surfaced during site testing). GitHub token rotated May 17 evening. Site testing 4/6 done — Tests 1-4 + 6 pass; Test 5 (pc_readonly) confirms broken UI/data state expected pre-A12.3. Resume protocol:
+  <strong>Code commits (6 shipped to origin across May 18-19):</strong>
+  <br>✓ <strong>Stage A blocker fix</strong> <span class="qa-badge qa-cc-done">CC ✓</span><span class="qa-badge qa-d-done">D ✓</span> — <code>55d5715</code> (v214). May 18. PC propose TC modal got Default Payment Terms dropdown; PC propose COO modal got Sea Lead Time input; backend TC update branch's unconditional <code>payment_terms = d.paymentTerms || 'FOB'</code> data-loss bug closed structurally (conditional SET clauses based on payload presence); form labels added to all PC propose TC + COO modal fields. 4-test verification suite (Test 1: data-loss bug regression, Test 2: paymentTerms round-trip, Test 3: seaLeadDays round-trip, Test 4: admin direct-edit regression) — all passed with non-destructive round-trip protocol on TC <code>tc_az</code> + COO <code>BD</code>, originals restored exactly.
+  <br>✓ <strong>A12 Phase A12.3a</strong> <span class="qa-badge qa-cc-done">CC ✓</span><span class="qa-badge qa-d-done">D ✓</span> — <code>bae8f78</code> (v215). May 19. Foundation: <code>App.getPerms</code> explicit pc_readonly branch (canEdit=false, canViewFOB/SellPrice=true) + defense-in-depth explicit <code>pc</code> branch (fixed latent: PC without dept silently inherited FULL.canEdit=true) + role derivations at 4 sites (<code>isPCReadonly</code> + <code>isPCRead = isPC || isPCReadonly</code>) + sidebar nav gate flipped to <code>isPCRead</code> + route dispatcher gate flipped to <code>isPCRead</code> + <code>isVendor</code> derivation fix (positive check <code>role === 'vendor'</code> replaces negation chain that was classifying pc_readonly as vendor). Smoke confirmed: pc_readonly now sees PC sidebar nav, pages populate with data.
+  <br>✓ <strong>A12 Phase A12.3b</strong> <span class="qa-badge qa-cc-done">CC ✓</span><span class="qa-badge qa-d-done">D ✓</span> — <code>6da9915</code> (v216). May 19. Write-affordance hiding: 13 recon-flagged W sites confirmed naturally excluded (literal <code>role === 'pc'</code> checks already false for pc_readonly — no change needed); 3 settings PC variant renderers refactored (<code>renderTradingCompaniesPC</code>, <code>renderInternalProgramsPC</code>, <code>renderCOOPC</code>) to hide propose buttons, propose-edit column header, per-row propose-edit cells, subtitle becomes "Read-only view"; 2 KPI tile count gates flipped to include pc_readonly while subtext gates kept PC-only ("Awaiting your release" stays hidden). <code>buildCostMatrix</code> deferred to A12.3c.
+  <br>✓ <strong>A12 Phase A12.3c</strong> <span class="qa-badge qa-cc-done">CC ✓</span><span class="qa-badge qa-d-done">D ✓</span> — <code>fae53a4</code> (v217). May 19. <code>buildCostMatrix</code> inline editor gating across 19 sites (1 termsSelect at column header + 18 inputs across anchor row + linked row builders): styleName, category, fabrication, qty, sell, duty, freight, fobInput, factoryCost — all wrapped in <code>canEdit ? &lt;input&gt; : &lt;span class="cell-static"&gt;</code> ternaries. New <code>.cell-static</code> CSS class added (3 width variants: base, -wide, -sm) mirroring <code>.cell-input</code> dimensions for column-alignment preservation. <code>canEdit = role === 'admin' || role === 'pc'</code> literal check at top of <code>buildCostMatrix</code> (matches existing pattern at <code>views-admin.js:2502</code>). Collateral fix: sales/planning users also stopped seeing editable-but-broken inputs that silently 403'd on PATCH. 5-role smoke (admin + PC regression, pc_readonly primary, planning + sales collateral) passed clean.
+  <br>✓ <strong>A12 Phase A12.3d</strong> <span class="qa-badge qa-cc-done">CC ✓</span><span class="qa-badge qa-d-done">D ✓</span> — <code>5f00e04</code> (v218). May 19. Backend GET allowlist expansion (5 endpoints, 2 forked constants): <code>/fabric-requests</code> + <code>/fabric-packages</code> (inline allowlists add pc_readonly); <code>FACTORY_INTERNAL_ROLES_READ</code> mutated in place (writes use separate <code>FACTORY_ADMIN_ROLES</code> — safe per usage audit); <code>DP_ROLES_READ</code> forked from <code>DP_ROLES_ALL</code> for <code>GET /delivery-plan</code> only (writes keep <code>DP_ROLES_ALL</code>); <code>CP_ROLES_READ</code> forked from <code>CP_ROLES_ADMIN</code> for <code>GET /capacity-plan</code> only (writes keep <code>CP_ROLES_ADMIN</code>). Frontend: cost-matrix per-row action buttons (cancel-style, restore-style, design-change log 📝 on anchor + linked rows) gated on <code>canEdit</code>; Design Handoff per-row Reactivate/Edit/Cancel buttons hidden for pc_readonly (Open kept visible); Sales Requests Reactivate/Cancel hidden (Open + Download kept). Modal canEdit extensions: <code>openSalesRequestDetail</code> at <code>app.js:6315</code> extended with <code>&& !isPCReadonly</code>; <code>openConsolidatedBatchReview</code> at <code>app.js:6910</code> received its first-ever role gate (latent defect fix — protected sales/planning/design from same silent-fail UX as collateral). 7-test curl verification: 5 GETs that 403'd now return data; 2 substituted write-protection tests confirmed 403 unchanged.
+  <br>✓ <strong>A12 Phase A12.3e</strong> <span class="qa-badge qa-cc-done">CC ✓</span><span class="qa-badge qa-d-done">D ✓</span> — <code>63d6f9d</code> (v219). May 19. Final silent-fail sweep surfaced during A12.4 smoke: cost-matrix selection checkboxes (sel-all header + style-sel-chk per-row) + bulk-action toolbar (sel-fab with Link/Un-Link/Cancel/Re-cost/Clear) gated on <code>canEdit</code>; Design Handoff <code>pendingSection</code> (batch-label inputs + Submit-for-Release + Update-Handoff file upload) wrapped via existing <code>if (hasPending && _hdCanRetract)</code> guard, hiding all 4 ungated affordances; Delivery Plan comment textarea+button gated on backend-aligned <code>(isProd || isSales || isVendor)</code> (collateral fix for design/tech_design/prod_dev who had same silent-fail UX); 4 Design Change Confirm button sites gated on <code>(isAdmin || isPC || isDesign)</code> matching PATCH /design-changes/:id/confirm backend allowlist. Sanity sweep verified 7 sites already-gated naturally (renderRecostQueue, renderCapacityPlan, renderFactories, renderAllDesignChanges recost actions, renderHandoffDetail PC-review section, buildCostMatrix per-style actions, buildCostMatrix data cells from A12.3c).
+  <br><br>
+  <strong>A12 complete summary — what pc_readonly user can do as of May 19 EOD:</strong>
+  <br>✓ Sees PC sidebar nav (Dashboard, Programs, Pre-Costing, Settings) — not vendor nav fragment
+  <br>✓ All read pages populate with data (cost summary, programs, design handoff, factories, delivery plan, capacity plan, fabric requests/packages, pending changes, etc.)
+  <br>✓ Settings TC/IP/COO show "Read-only view" subtitle, no propose buttons
+  <br>✓ Cost matrix cells show static formatted values (no editable inputs, no selection checkboxes)
+  <br>✓ Design Handoff list visible with Open button; per-row Reactivate/Edit/Cancel hidden
+  <br>✓ Sales Requests list visible with Open + Download; Reactivate/Cancel hidden; Open modal renders read-only (inputs disabled, no Save/Import/Add buttons)
+  <br>✓ Pre-Costing Pipeline Open + Review Quantities still visible; underlying Batch Review modal newly gated for read-only
+  <br>✓ Delivery Plan tab shows plan data; comment box hidden
+  <br>✓ Design Changes / Program Changes / 🕒 timeline modal: no Confirm buttons (em-dash placeholders in table cells)
+  <br>✓ All bulk-action affordances on cost matrix hidden (no checkbox column, no sel-fab toolbar reachable)
+  <br><br>
+  <strong>A12 latent defect fixes shipped as collateral (not originally in scope):</strong>
+  <br>• <strong>v214 TC payment_terms data-loss bug</strong> — backend's unconditional <code>payment_terms = d.paymentTerms || 'FOB'</code> in approve path was silently overwriting real values to 'FOB' on every PC propose flow that omitted the field (since PC modal never had the field). Closed via conditional SET clauses.
+  <br>• <strong>v215 App.getPerms PC-without-dept latent</strong> — pc role without department assignment silently inherited FULL profile with canEdit=true. Closed by explicit pc branch matching pc_readonly branch's defensive shape.
+  <br>• <strong>v215 isVendor negation chain</strong> — <code>isVendor = !isAdmin && !isPC && !isPlanning && ...</code> was classifying any new role (including pc_readonly) as vendor by default. Replaced with positive check <code>role === 'vendor'</code>.
+  <br>• <strong>v217 sales/planning silent-fail in cost matrix</strong> — those roles were seeing editable-looking inputs that 403'd on PATCH. Fixed as A12.3c collateral via <code>canEdit = admin || pc</code> gate.
+  <br>• <strong>v218 openConsolidatedBatchReview latent</strong> — modal had no role gate at all; rendered editable inputs + Save button unconditionally. Closed for pc_readonly + sales + planning + any non-canEdit role.
+  <br>• <strong>v219 Delivery Plan comment box silent-fail</strong> — non-DP_ROLES_ALL roles (design, tech_design, prod_dev) saw textarea + Post button that 403'd. Closed via positive role gate.
+  <br><br>
+  <strong>Process / methodology observations from today:</strong>
+  <br>• <strong>Recon-first protocol scaled.</strong> Five A12.3 sub-phases each used Claude Code's recon to surface scope discrepancies before implementation. A12.3c recon caught 19 sites vs 5-6 estimated; A12.3d recon caught the <code>DP_ROLES_ALL</code>/<code>CP_ROLES_ADMIN</code> write-leakage trap; A12.3e recon caught 2 sanity-sweep silent-fails that would have been future commits.
+  <br>• <strong>"Fix the bug class, not just the symptom" pattern repeated.</strong> Every commit today found ≥1 latent defect in the same defect class as the primary fix and closed it as collateral. Discipline: bundle when same root cause, defer when genuinely separate.
+  <br>• <strong>Browser smoke between commits caught real bugs.</strong> A12.4 smoke surfaced 6 new findings that became A12.3d + A12.3e scope. Without the comprehensive between-commit smoke, those would have shipped as silent regressions.
+  <br>• <strong>5-role smoke for buildCostMatrix was non-negotiable.</strong> buildCostMatrix is the heaviest function (~680 lines, regression-prone). 5-role pass (admin, PC, pc_readonly, planning, sales) caught the column-alignment risk before commit.
+  <br>• <strong>Server restart discipline held.</strong> Every curl + browser test ran against fresh code — no repeat of the May 14 stale-server data pollution incident.
+  <br>• <strong>Token budget management.</strong> 75% Claude Code monthly usage flagged mid-A12.3e; scope decisions in remaining work prioritized "fold into current commit" over "spawn new commit" to minimize future cycles. Tracker close-out done in one focused pass rather than incremental.
+  <br><br>
+  <strong>QA legend:</strong> <span class="qa-badge qa-cc-done">CC ✓</span> = Claude Code reported done · <span class="qa-badge qa-d-done">D ✓</span> = Daniel verified visually
+</div>
+
+<div class="todo-box">
+  <strong>📋 Next session (May 20+) — RESUME HERE</strong>
+  <br><br>
+  <strong>A12 is COMPLETE.</strong> All 5 sub-phases shipped May 17-19 (v211→v219, 8 commits total). pc_readonly role works end-to-end backend + frontend. Six latent defects fixed as collateral. Resume protocol:
   <br>
   <ol>
-    <li><strong>Read this tracker first.</strong> Especially the subtitle, the "Just shipped May 14-18" section, and this resume block.</li>
+    <li><strong>Read this tracker first.</strong> Especially the subtitle, the May 19 ship-box (A12 close-out narrative), and this resume block.</li>
     <li><strong>Run codebase verification:</strong>
       <ul>
-        <li><code>vcp-status</code> alias — confirms HEAD = <code>b67d7dd</code> (orphan fix) on main, working tree clean, v=213 on all 5 tags, server status</li>
+        <li><code>vcp-status</code> alias — confirms HEAD = <code>63d6f9d</code> (A12.3e) on main, working tree clean, v=219 on all 5 tags, server status</li>
         <li>If server not running: <code>vcp-start</code> in a fresh tab</li>
       </ul>
     </li>
-    <li><strong>Next work — pick one:</strong>
+    <li><strong>Stage A remaining work — pick one:</strong>
       <ul>
-        <li><strong>A12.3 UI gating refactor</strong> — split <code>isPC</code> → <code>isPCRead</code> / <code>isPCWrite</code> across ~30 UI sites in app.js + views-admin.js. <strong>Scope expanded May 18:</strong> Test 5 revealed pc_readonly users see sidebar nav but pages don't populate. Backend read-path endpoints (GET /programs, GET /styles, etc.) still gate on bare-PC <code>requireRole</code> and silently deny pc_readonly. A12.3 must include backend read-path gating expansion in addition to UI sites. ~4-6 hrs frontend + ~30 min backend audit. <strong>This is the big swing remaining for A12.</strong></li>
-        <li><strong>A12.4 verification</strong> — after A12.3 lands, full smoke pass: pc_readonly can see all read views, no write affordances appear, every PC nav item works as read-only equivalent</li>
-        <li><strong>bug-pc-propose-tc-modal-missing-payment-terms</strong> — Stage A blocker. Add Default Payment Terms field to PC propose TC modal. PC needs to propose payment terms changes per user decision (May 17). Same fix may be needed on Propose IP and Propose COO modals — audit during fix. ~30-60 min.</li>
-        <li><strong>feature-design-handoff-pending-change-indicator</strong> — Stage A scope. Add KPI tile to Design Handoff view (similar to Style Changes KPI), shows count of pending changes for the program. Clicking takes user to Style Changes view. ~30-60 min.</li>
+        <li><strong>feature-design-handoff-pending-change-indicator</strong> — Stage A scope. Add KPI tile to Design Handoff view (similar to Style Changes KPI) showing count of pending changes per program. Clicking takes user to Style Changes view filtered to that program. ~30-60 min. Existing KPI tile pattern reusable. Lowest-effort Stage A item — natural choice for a fresh-morning warm-up.</li>
+        <li><strong>Stage A pilot user identification</strong> — was a May 15 decision deadline; remains open. First internal person to use VCP for real work. Their reactions become a forcing function — without them, "Stage A is ready" is your judgment alone. Decide before launch.</li>
+        <li><strong>Pre-launch smoke pass</strong> — comprehensive smoke as each of the 6 internal roles (admin, PC, pc_readonly, planning, sales, design, tech_design, prod_dev — that's 8). Today's A12.4 covered pc_readonly thoroughly; other roles last tested May 17-18 before today's changes. Worth a re-pass before May 29 to confirm no regression collateral. ~1-2 hrs.</li>
+        <li><strong>Tracker maintenance</strong> — once Stage A items resolve, walk the blocker box, mark complete, recalculate Stage A countdown.</li>
       </ul>
     </li>
     <li><strong>IT-blocked items (still waiting on response):</strong>
       <ul>
         <li>A3 v2 design (Entra groups → roles/permissions); needs IT response to P0 questions in <code>/docs/IT-prep.md</code></li>
         <li>A6 Entra SSO for internal; same blocker</li>
-        <li>A12 group integration (<code>VCP-Highlife-PC-ReadOnly</code> wire-up); same blocker</li>
+        <li>A12.5 group integration (<code>VCP-Highlife-PC-ReadOnly</code> Entra group → <code>pc_readonly</code> role mapping); same blocker — A12.1-A12.4 work is fully ready to receive this when IT lands</li>
       </ul>
     </li>
     <li><strong>Open observation queue (not blocking, knock out when convenient):</strong>
       <ul>
         <li><code>data-pollution-mouedkzymvttk-proj-qty-unknown</code> — style CHM-Q4-LE-01 has NULL proj_qty since May 14 verification incident. Re-enter through UI workflow when convenient.</li>
-        <li>10+ new audit-notes captured May 14-18 (see AUDIT-NOTEs section)</li>
+        <li>21 audit-notes captured (see AUDIT-NOTEs section) — apply during deeper audit pass (Stage B work).</li>
+        <li><code>audit-pc_readonly-role-name-consider-rename-post-launch</code> — Daniel raised renaming <code>pc_readonly</code> to something less confusable with <code>pc</code> (e.g., <code>VCP-HighLife-Read</code>). Deferred — touches every gate we just shipped in A12.1-A12.3e, real regression risk, real token cost. Reconsider post-launch.</li>
+        <li><code>audit-renderCustomers-renderInternalPrograms-dispatcher-gap</code> — pre-existing dispatcher bug: <code>route === 'customers'</code> non-admin path is no-op (<code>mc.innerHTML = mc.innerHTML</code>); <code>route === 'internal'</code> gated <code>&& isAdmin</code>. Both routes silently redirect non-admin to dashboard. Affects PC too, not just pc_readonly. Surfaced during A12.4 smoke.</li>
       </ul>
     </li>
   </ol>
   <br>
-  <strong>Standing pattern reminders (locked into CLAUDE.md May 14):</strong>
+  <strong>Standing pattern reminders (locked into CLAUDE.md May 14, reinforced through A12 work):</strong>
   <br>• Verification trio after every Claude Code commit: <code>git log --oneline -3</code> + <code>git status</code> + <code>grep "?v=" index.html</code>
-  <br>• Recon-first protocol for non-trivial changes (Claude Code investigates before editing)
+  <br>• Recon-first protocol for non-trivial changes (Claude Code investigates before editing — proven 5x today)
   <br>• Terminal tab discipline — server tab is read-only for commands; new tab for everything else
-  <br>• Verification PATCHes use empty body OR round-trip restoration to avoid data pollution (locked May 17)
+  <br>• Verification PATCHes use empty body OR round-trip restoration to avoid data pollution
   <br>• Restart server before any test that exercises new code (route handlers register at server boot)
+  <br>• Comprehensive between-commit smoke when changes touch multiple sites (A12.3d + A12.3e scope came entirely from A12.4 smoke catching what A12.3a-c missed)
 </div>
 
 <div class="blocker-box">
@@ -433,14 +478,18 @@
   <br>
   <strong><span class="stage-tag stage-a">A</span> 6. Entra SSO for internal users</strong> ⛔ <strong>IT-BLOCKED</strong> — replace JWT-only auth for production. Internal team signs in via corporate tenant. Same IT response dependency as A3 v2.
   <br>
-  <strong><span class="stage-tag stage-a">A</span> 12. pc_readonly role (new Stage A blocker — captured May 14)</strong>
+  <strong><span class="stage-tag stage-a">A</span> 12. pc_readonly role (new Stage A blocker — captured May 14)</strong> ✅ <strong>COMPLETE May 19</strong>
   <br>&nbsp;&nbsp;✅ <strong>A12.1 DONE May 17</strong> — Schema + CHECK constraint + seed user + tech_design migration. <code>39155ee</code> (v211).
   <br>&nbsp;&nbsp;✅ <strong>A12.2 DONE May 17</strong> — Backend gating: 4 GET allowlists + close PATCH /styles default-allow gap + tech_design tech-pack write retained. <code>48b4eb4</code> (v212).
-  <br>&nbsp;&nbsp;⏭️ <strong>A12.3 NEXT</strong> — UI gating refactor: split <code>isPC</code> → <code>isPCRead</code> / <code>isPCWrite</code> across ~30 sites (app.js role permissions block at lines 3037-3053 + sidebar nav + view dispatchers + every action button). <strong>Scope expanded May 18:</strong> Test 5 showed pc_readonly sees sidebar but pages don't populate — A12.3 must also expand backend read-path gating (GET /programs, GET /styles, etc.) to include pc_readonly. ~4-6 hrs frontend + ~30 min backend audit.
-  <br>&nbsp;&nbsp;⏭️ <strong>A12.4</strong> — Verification + smoke pass after A12.3. Confirm pc_readonly sees full read views, zero write affordances.
-  <br>&nbsp;&nbsp;⛔ <strong>A12.5 (IT-blocked)</strong> — Wire up <code>VCP-Highlife-PC-ReadOnly</code> Entra group → <code>pc_readonly</code> role mapping in the group-claim handler. Bundled with A3 v2 implementation.
+  <br>&nbsp;&nbsp;✅ <strong>A12.3a DONE May 19</strong> — Foundation: role derivations + App.getPerms fix (+ defense-in-depth pc branch fixed PC-without-dept latent) + sidebar/dispatcher gates flipped to isPCRead + isVendor positive-check fix. <code>bae8f78</code> (v215).
+  <br>&nbsp;&nbsp;✅ <strong>A12.3b DONE May 19</strong> — Write-affordance hiding: 13 sites confirmed naturally excluded (no-op) + 3 settings PC variant renderers refactored + 2 KPI tile splits. <code>6da9915</code> (v216).
+  <br>&nbsp;&nbsp;✅ <strong>A12.3c DONE May 19</strong> — buildCostMatrix inline editor gating across 19 sites + <code>.cell-static</code> CSS variants + sales/planning collateral fix. <code>fae53a4</code> (v217).
+  <br>&nbsp;&nbsp;✅ <strong>A12.3d DONE May 19</strong> — Backend allowlist expansion (5 GET endpoints, 2 forked READ constants) + frontend silent-fail hardening (cost-matrix action buttons, Design Handoff actions, SR/batch modals canEdit gating) + openConsolidatedBatchReview latent defect fix. <code>5f00e04</code> (v218).
+  <br>&nbsp;&nbsp;✅ <strong>A12.3e DONE May 19</strong> — Final silent-fail sweep: cost-matrix checkboxes + bulk-action toolbar + Handoff Detail pendingSection + Delivery Plan comments (collateral fix) + Design Change Confirm buttons (4 sites). <code>63d6f9d</code> (v219).
+  <br>&nbsp;&nbsp;✅ <strong>A12.4 DONE May 19</strong> — Comprehensive verification: pc_readonly sees full read surface + zero write affordances across all 19 sidebar views. Identical column alignment to PC/admin. No silent-fail buttons remain.
+  <br>&nbsp;&nbsp;⛔ <strong>A12.5 (IT-blocked)</strong> — Wire up <code>VCP-Highlife-PC-ReadOnly</code> Entra group → <code>pc_readonly</code> role mapping in the group-claim handler. Bundled with A3 v2 implementation. Frontend + backend are FULLY READY — only needs the group claim handler to land.
   <br>
-  <strong><span class="stage-tag stage-a">A</span> 22. Bug fix: PC Propose TC modal missing Payment Terms field (captured May 18)</strong> — PC's Propose TC modal lacks Default Payment Terms field; admin Edit modal has it. PC needs to propose payment terms changes per locked business workflow. Same drift likely exists for Propose IP and Propose COO modals — audit during fix. ~30-60 min implementation, ~30 min audit.
+  <strong><span class="stage-tag stage-a">A</span> 22. Bug fix: PC Propose TC modal missing Payment Terms field (captured May 18)</strong> ✅ <strong>DONE May 18</strong> — Shipped via <code>55d5715</code> (v214). Closed scope: PC propose TC modal got paymentTerms dropdown + PC propose COO modal got seaLeadDays input + backend TC update branch's data-loss bug closed structurally (conditional SET clauses) + form labels added to all PC propose modal fields. 4-test verification suite passed with non-destructive round-trip.
   <br>
   <strong><span class="stage-tag stage-a">A</span> 23. Design Handoff pending-change indicator (captured May 18)</strong> — When design logs a style change via the lock icon → "Log New Change" modal, the Design Handoff list view shows no indicator that pending changes exist. Add KPI tile to Design Handoff (similar to Style Changes' "Total Changes" tile) showing pending change count per program; clicking takes user to Style Changes view filtered to that program. ~30-60 min.
   <br><br>
@@ -490,10 +539,10 @@
 <div class="grid">
 
   <div>
-    <div class="section in-progress">
+    <div class="section complete">
       <div class="section-header">
-        <div class="section-title">🚧 Now: A12 Phase A12.3 next · 4-6 hrs UI gating + backend read-path expansion · payment terms + handoff KPI on deck</div>
-        <div class="section-count">May 18 EOD</div>
+        <div class="section-title">✅ Now: A12 COMPLETE · Stage A countdown — 10 days · Design Handoff KPI feature + Stage A pilot user identification + pre-launch smoke pass on deck</div>
+        <div class="section-count">May 19 EOD</div>
       </div>
       <div class="group">
         <div class="group-label">Site testing — May 17-18 results</div>
@@ -523,53 +572,40 @@
         </div>
       </div>
       <div class="group">
-        <div class="group-label">A12.3 — UI gating refactor + backend read-path expansion (next session)</div>
-        <div class="item" data-id="a12.3-recon">
-          <div class="item-header"><input type="checkbox">
-            <div class="item-text">Recon prompt to Claude Code: enumerate all <code>isPC</code> sites and bare-PC <code>requireRole</code> GET endpoints</div>
-            <span class="item-priority priority-now">NOW</span></div>
+        <div class="group-label">A12.3 — UI gating refactor + backend read-path expansion (COMPLETE May 19)</div>
+        <div class="item done" data-id="a12.3-recon">
+          <div class="item-header"><input type="checkbox" checked>
+            <div class="item-text">Recon prompt to Claude Code: enumerate all <code>isPC</code> sites and bare-PC <code>requireRole</code> GET endpoints ✅ DONE</div></div>
           <div class="test-detail">
-            <span class="label">Scope:</span>
-            <ul>
-              <li>Frontend: every <code>isPC</code> usage in app.js + views-admin.js + (anywhere else). Categorize as "read context" or "write context". Read context → add pc_readonly. Write context → keep PC-only.</li>
-              <li>Backend: every <code>requireRole(..., 'pc', ...)</code> on GET methods that PC currently sees. Add pc_readonly where PC reads are allowed.</li>
-              <li>Special attention to: sidebar nav (<code>(isAdmin || isPC)</code> gate at app.js:343), route dispatcher (<code>(isAdmin || isPC)</code> at app.js:438), per-action button visibility (~30 sites), per-role permission profile (app.js:3037-3053 — needs pc_readonly entry).</li>
-            </ul>
-            <span class="label">Effort estimate:</span>
-            Recon ~30 min · implementation ~4-6 hrs · verification ~1 hr · total ~6-8 hrs (one focused day)
-            <span class="label">Risk:</span>
-            Missing a site means pc_readonly users see a write button that 403s silently. UI looks broken without clear cause.
+            <span class="label">Result:</span>
+            Recon ran clean. Categorized ~30 frontend sites + 6 backend GET endpoints. Strategy locked: Option 2 naming (keep <code>isPC</code> + add sibling <code>isPCReadonly</code> + derived <code>isPCRead</code>). Settings approach: flag-based hiding in existing PC views.
           </div>
         </div>
-        <div class="item" data-id="a12.3-implement">
-          <div class="item-header"><input type="checkbox">
-            <div class="item-text">A12.3 implementation prompt + sequential 2-3 commit shipping</div>
-            <span class="item-priority priority-major">BUILD</span></div>
+        <div class="item done" data-id="a12.3-implement">
+          <div class="item-header"><input type="checkbox" checked>
+            <div class="item-text">A12.3 implementation across 5 sub-phases (a/b/c/d/e) ✅ DONE</div></div>
+          <div class="test-detail">
+            <span class="label">Final shape:</span>
+            5 commits shipped — <code>bae8f78</code> (3a foundation) · <code>6da9915</code> (3b write-affordance hiding) · <code>fae53a4</code> (3c buildCostMatrix gating, 19 sites) · <code>5f00e04</code> (3d backend allowlist expansion + frontend silent-fail hardening + latent batch-review modal fix) · <code>63d6f9d</code> (3e final silent-fail sweep). Six latent defects fixed as collateral. See May 19 ship-box for full narrative.
+          </div>
         </div>
-        <div class="item" data-id="a12.4-verify">
-          <div class="item-header"><input type="checkbox">
-            <div class="item-text">A12.4 verification — full smoke pass as pc_readonly across all views</div>
-            <span class="item-priority priority-test">TEST</span></div>
+        <div class="item done" data-id="a12.4-verify">
+          <div class="item-header"><input type="checkbox" checked>
+            <div class="item-text">A12.4 verification — full smoke pass as pc_readonly across all views ✅ DONE</div></div>
+          <div class="test-detail">
+            <span class="label">Result:</span>
+            Comprehensive smoke confirmed pc_readonly sees full read surface + zero write affordances across all 19 sidebar views. Two findings surfaced (Customers + Internal Programs redirect to dashboard) — both pre-existing dispatcher gaps, not A12 regression, captured as audit-note.
+          </div>
         </div>
       </div>
       <div class="group">
-        <div class="group-label">Smaller Stage A items (can slot in between A12 phases)</div>
-        <div class="item" data-id="bug-pc-propose-tc-payment-terms">
-          <div class="item-header"><input type="checkbox">
-            <div class="item-text">Bug fix: add Default Payment Terms field to PC Propose TC modal (+ audit IP and COO modals)</div>
-            <span class="item-priority priority-blocker">BLOCKER</span></div>
+        <div class="group-label">Smaller Stage A items remaining</div>
+        <div class="item done" data-id="bug-pc-propose-tc-payment-terms">
+          <div class="item-header"><input type="checkbox" checked>
+            <div class="item-text">Bug fix: add Default Payment Terms field to PC Propose TC modal (+ audit IP and COO modals) ✅ DONE May 18</div></div>
           <div class="test-detail">
-            <span class="label">Issue:</span>
-            PC propose TC modal at <code>app.js:2233</code> has 4 fields (code, name, email, coos). Admin Edit modal has 6 (those + Default Payment Terms + Password). PC needs to propose Payment Terms changes per locked decision May 18. Password absence is acceptable (admin-only for security).
-            <span class="label">Fix:</span>
-            Add <code>&lt;input id="ptc-payment-terms"&gt;</code> to modal body + thread <code>paymentTerms</code> through <code>submitProposeTC</code> + <code>proposeSetting</code>. Verify the pending_changes backend accepts the field.
-            <span class="label">Companion audits during fix:</span>
-            <ul>
-              <li>Check <code>openProposeIPModal</code> (app.js:2264) for similar missing fields vs admin Edit IP modal</li>
-              <li>Check <code>openProposeCOOModal</code> (app.js:2323) for similar missing fields vs admin Edit COO modal</li>
-            </ul>
-            <span class="label">Effort:</span>
-            ~30-60 min implementation + audit. v213 → v214 cache bust.
+            <span class="label">Shipped:</span>
+            <code>55d5715</code> (v214). PC propose TC modal got paymentTerms dropdown; PC propose COO modal got seaLeadDays input; backend TC update branch's unconditional <code>payment_terms = d.paymentTerms || 'FOB'</code> data-loss bug closed structurally; form labels added to all PC propose TC + COO modal fields. 4-test verification suite (data-loss regression + paymentTerms + seaLeadDays + admin direct-edit regression) all passed.
           </div>
         </div>
         <div class="item" data-id="feature-design-handoff-pending-indicator">
@@ -582,7 +618,29 @@
             <span class="label">Approach:</span>
             Add KPI tile to Design Handoff (similar to Style Changes' tile pattern). Shows count of pending changes for current program. Clicking takes user to Style Changes view filtered to that program.
             <span class="label">Effort:</span>
-            ~30-60 min. Existing KPI tile pattern should be reusable.
+            ~30-60 min. Existing KPI tile pattern should be reusable. Lowest-effort Stage A item remaining — natural choice for fresh-morning warm-up.
+          </div>
+        </div>
+        <div class="item" data-id="stage-a-pilot-user">
+          <div class="item-header"><input type="checkbox">
+            <div class="item-text">Decide Stage A pilot user (was May 15 deadline; still open)</div>
+            <span class="item-priority priority-decide">DECIDE</span></div>
+          <div class="test-detail">
+            <span class="label">Context:</span>
+            From milestone-box: first internal person to use VCP for real costing work. Their reactions become a forcing function — without them, "Stage A is ready" is your judgment alone.
+            <span class="label">Action:</span>
+            Pick someone before May 29 launch. Onboard them with a sample program to walk through. Their first hour of use will surface things this tracker can't.
+          </div>
+        </div>
+        <div class="item" data-id="pre-launch-smoke-pass">
+          <div class="item-header"><input type="checkbox">
+            <div class="item-text">Pre-launch 8-role smoke pass — confirm no A12 collateral regression in non-pc_readonly roles</div>
+            <span class="item-priority priority-test">TEST</span></div>
+          <div class="test-detail">
+            <span class="label">Context:</span>
+            A12.4 thoroughly verified pc_readonly. Other roles (admin, PC, planning, sales, design, tech_design, prod_dev, vendor) were last tested May 17-18 before today's changes. The latent defect fixes (App.getPerms PC-without-dept, isVendor positive check, openConsolidatedBatchReview gate, delivery-plan comment role gate) all incidentally affect other roles.
+            <span class="label">Effort:</span>
+            ~1-2 hrs. Walk each role's primary views, confirm no silent regression.
           </div>
         </div>
       </div>
@@ -936,7 +994,7 @@
     <div class="section urgent">
       <div class="section-header">
         <div class="section-title">🔒 AUDIT-NOTEs — for authorization audit pass</div>
-        <div class="section-count">17 items</div>
+        <div class="section-count">21 items</div>
       </div>
       <div class="group">
         <div class="group-label">Captured during today's triage — apply during audit pass, not before</div>
@@ -1172,7 +1230,65 @@
             (a) could fit Stage A scope if A12 finishes early. (b) is a Stage B+ project.
           </div>
         </div>
-        <div class="item" done data-id="audit-orphan-propose-flow-functions">
+        <div class="item" data-id="audit-pc_readonly-rename-post-launch">
+          <div class="item-header"><input type="checkbox">
+            <div class="item-text">Consider renaming <code>pc_readonly</code> to less-confusable name post-launch (Daniel raised May 19)</div>
+            <span class="item-priority priority-low">AUDIT</span></div>
+          <div class="test-detail">
+            <span class="label">Origin:</span>
+            May 19 during A12.3a review. Daniel observed that <code>pc_readonly</code> reads visually similar to <code>pc</code> at a glance and might cause role-confusion when reading code or staff list. Suggested alternative naming: <code>VCP-HighLife-Read</code> (matches Entra group naming pattern from IT-prep.md) or <code>pc_view_only</code> (matches existing snake_case role names).
+            <span class="label">Why deferred:</span>
+            Renaming requires touching every site we shipped in A12.1-A12.3e: DB seed + CHECK constraint, ~6 backend allowlists, ~15-20 frontend gate sites (isPCReadonly, isPCRead, _hdIsPCReadonly, _srIsPCReadonly, _dcRole, etc.), tracker references, IT-prep.md, CLAUDE.md. ~2-4 hrs focused work with real regression risk during search-and-replace. Stage A is 10 days out; budget priority is feature completion, not naming polish.
+            <span class="label">Post-launch action:</span>
+            Reconsider after May 29 launch when there's time for a careful rename pass with full regression smoke. May or may not be worth the churn at that point — naming is workable as-is.
+          </div>
+        </div>
+        <div class="item" data-id="audit-pc_readonly-handoff-batch-visibility">
+          <div class="item-header"><input type="checkbox">
+            <div class="item-text">Fresh handoffs (no released batches yet) show pc_readonly less information than expected</div>
+            <span class="item-priority priority-low">AUDIT</span></div>
+          <div class="test-detail">
+            <span class="label">Origin:</span>
+            A12.4 smoke as pc_readonly. Design Handoff Detail view: when a handoff has NO released batches yet, the <code>hasReleased</code> conditional gates a chunk of read content. A12.3e wrapped <code>pendingSection</code> in <code>_hdCanRetract</code> which hides the per-style batch-assignment management UI from pc_readonly — correct. But the same chunk also contains some read-only summary information (style counts, dates) that pc_readonly might benefit from seeing for pending work.
+            <span class="label">Why not blocking:</span>
+            For handoffs with at least one released batch, pc_readonly sees the released batches table + colored batch badges per style + release dates. That's the majority case. Fresh-pending-only handoffs are an edge case for the first few minutes of work.
+            <span class="label">Post-launch action:</span>
+            Split <code>pendingSection</code> into a read-info-display block (visible to all internal roles) + write-affordance block (gated on <code>_hdCanRetract</code>). Same pattern as the KPI tile read/write split from A12.3b. ~30-45 min.
+          </div>
+        </div>
+        <div class="item" data-id="audit-renderCustomers-renderInternalPrograms-dispatcher-gap">
+          <div class="item-header"><input type="checkbox">
+            <div class="item-text">Pre-existing dispatcher gaps for Customers + Internal Programs routes (non-admin redirected to dashboard)</div>
+            <span class="item-priority priority-medium">AUDIT</span></div>
+          <div class="test-detail">
+            <span class="label">Origin:</span>
+            A12.4 smoke as pc_readonly. Clicking Customers in sidebar → redirects to dashboard. Clicking Internal Programs → same. Dispatcher at <code>app.js:464-466</code>:
+            <ul>
+              <li><code>route === 'customers'</code>: <code>isAdmin ? renderCustomers() : mc.innerHTML</code> — non-admin path is a no-op (mc.innerHTML assigned to itself), then falls through to default which routes to dashboard.</li>
+              <li><code>route === 'internal' && isAdmin</code>: explicit isAdmin gate, no else branch for non-admin.</li>
+            </ul>
+            <span class="label">Scope:</span>
+            Pre-existing — affects PC too, not just pc_readonly. Not introduced by A12 work; visible because A12.3a's dispatcher gate opened the PC-route block to pc_readonly, exposing this latent gap.
+            <span class="label">Action:</span>
+            (a) Confirm with product whether Customers + Internal Programs should be visible to PC at all. (b) If yes, build read-only renderers similar to <code>renderTradingCompaniesPC</code> + add to dispatcher. (c) If no, hide from sidebar nav for non-admin. ~1-2 hrs depending on choice.
+          </div>
+        </div>
+        <div class="item" data-id="audit-modal-canEdit-pattern-could-be-broader">
+          <div class="item-header"><input type="checkbox">
+            <div class="item-text">Modal canEdit pattern: other modals beyond SR + ConsolidatedBatchReview may have same latent silent-fail defect</div>
+            <span class="item-priority priority-medium">AUDIT</span></div>
+          <div class="test-detail">
+            <span class="label">Origin:</span>
+            A12.3d shipped a latent defect fix for <code>openConsolidatedBatchReview</code> (app.js:6910) — that modal had NO role gate at all and was rendering editable inputs + Save button unconditionally for any role that reached it. Closed for pc_readonly + sales + planning + design + tech_design + prod_dev as collateral.
+            <span class="label">Risk:</span>
+            Other modals likely follow the same pattern — rendered for any reachable role, write-on-Save protected only by backend 403. Silent-fail UX for any non-canEdit user who reaches them. Hard to enumerate without a comprehensive modal-by-modal audit.
+            <span class="label">Action during audit:</span>
+            (a) Grep all <code>App.open*Modal</code> functions in app.js. (b) For each, check whether it has a role-derivation + canEdit check at the top. (c) For modals lacking the check, identify which roles can reach them and whether backend writes are gated. (d) Apply same pattern as A12.3d's SR + Batch Review fix where gaps exist.
+            <span class="label">Estimated scope:</span>
+            ~10-20 modals to audit · ~2-4 hrs to fix any gaps found · capture each as a tracked audit-note for review during deeper auth pass.
+          </div>
+        </div>
+        <div class="item done" data-id="audit-orphan-propose-flow-functions">
           <div class="item-header"><input type="checkbox" checked>
             <div class="item-text">✓ RESOLVED May 17 (<code>b67d7dd</code>): 6 propose-flow functions defined but never exposed on App's return — TC/IP/COO openers + submit handlers. Pre-existing bug, fixed during A12 site testing.</div>
             <span class="item-priority priority-debt">DONE</span></div>
