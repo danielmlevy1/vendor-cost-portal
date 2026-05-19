@@ -2219,6 +2219,24 @@ th {
   font-weight: 400;
 }
 
+/* Read-only fallback for cost matrix cells when role lacks edit rights
+   (pc_readonly, sales, planning). Mirrors .cell-input width/min-width/padding
+   so cost matrix column alignment is identical to the editable view. */
+.cell-static {
+  display: inline-block;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 0.85rem;
+  font-weight: 700;
+  width: 100%;
+  min-width: 60px;
+  box-sizing: border-box;
+  text-align: center;
+  padding: 2px 4px;
+}
+.cell-static.cell-input-wide { min-width: 90px; }
+.cell-static.cell-input-sm   { min-width: 48px; font-size: 0.78rem; font-weight: 400; }
+
 /* ── Duty Rate / Est Freight fixed columns ── */
 .col-duty-rate,
 .col-est-freight {

@@ -1519,6 +1519,15 @@ const AdminViews = (() => {
     }
     if (!colGroups.length) return `<div class="empty-state" style="padding:40px"><div class="icon">🏭</div><h3>No trading companies assigned</h3><button class="btn btn-primary mt-3" onclick="App.openAssignTCs('${programId}')">Assign Trading Companies</button></div>`;
 
+    // Inline editors are admin/pc only. Other roles that reach this view
+    // (pc_readonly, sales, planning) see static text — prevents the silent-fail
+    // UX where the cell looks editable but PATCH returns 403. Literal-role
+    // pattern matches renderBuySummary (line ~2502) rather than perms.canEdit
+    // so intent stays explicit at the call site.
+    const _userRole = (typeof App !== 'undefined' && App._getState) ? App._getState()?.user?.role : null;
+    const canEdit = _userRole === 'admin' || _userRole === 'pc';
+    const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+
     // Header row 1: fixed cols + vendor group spans (draggable)
     let hdr1 = `
       <th rowspan="2" class="sel-col sticky-col mat-hdr" style="width:36px;min-width:36px">
@@ -1543,7 +1552,9 @@ const AdminViews = (() => {
       const collapsed = _collapsedTCs.has(colKey);
       const colspan = collapsed ? 2 : 6;
       const tcTerms = tc.paymentTerms || 'FOB';
-      const termsSelect = `<select class="cell-select" style="margin-top:4px;font-size:0.7rem" onchange="App.saveTCTermsInline('${tc.id}','${programId}',this)">${TERMS_LIST.map(t => `<option${tcTerms === t ? ' selected' : ''}>${t}</option>`).join('')}</select>`;
+      const termsSelect = canEdit
+        ? `<select class="cell-select" style="margin-top:4px;font-size:0.7rem" onchange="App.saveTCTermsInline('${tc.id}','${programId}',this)">${TERMS_LIST.map(t => `<option${tcTerms === t ? ' selected' : ''}>${t}</option>`).join('')}</select>`
+        : `<span class="cell-static" style="margin-top:4px;font-size:0.7rem;font-weight:400">${esc(tcTerms)}</span>`;
       const chevron = collapsed ? '▶' : '▼';
       const tcColorClass = tcIdx % 2 === 0 ? 'tc-col-even' : 'tc-col-odd';
       hdr1 += `<th colspan="${colspan}" class="vendor-group-hdr mat-hdr ${tcColorClass}" draggable="true" data-colkey="${colKey}">
@@ -1658,17 +1669,31 @@ const AdminViews = (() => {
         const placement = API.Placements.get(s.id); // needed for green highlight in TC cells
 
         // Fixed style-level inline fields
-        const styleNameInput = `<input class="cell-input cell-input-wide" data-sid="${s.id}" data-field="styleName" value="${(s.styleName || '').replace(/"/g, '&quot;')}" onblur="App.saveStyleInline('${s.id}',this)" onkeydown="if(event.key==='Enter')this.blur()">`;
-        const catInput = `<input class="cell-input" data-sid="${s.id}" data-field="category"    value="${(s.category || '').replace(/"/g, '&quot;')}" onblur="App.saveStyleInline('${s.id}',this)" onkeydown="if(event.key==='Enter')this.blur()">`;
-        const fabInput = `<input class="cell-input cell-input-wide" data-sid="${s.id}" data-field="fabrication"  value="${(s.fabrication || '').replace(/"/g, '&quot;').substring(0, 40)}" onblur="App.saveStyleInline('${s.id}',this)" onkeydown="if(event.key==='Enter')this.blur()">`;
+        const styleNameInput = canEdit
+          ? `<input class="cell-input cell-input-wide" data-sid="${s.id}" data-field="styleName" value="${(s.styleName || '').replace(/"/g, '&quot;')}" onblur="App.saveStyleInline('${s.id}',this)" onkeydown="if(event.key==='Enter')this.blur()">`
+          : `<span class="cell-static cell-input-wide">${esc(s.styleName) || '—'}</span>`;
+        const catInput = canEdit
+          ? `<input class="cell-input" data-sid="${s.id}" data-field="category"    value="${(s.category || '').replace(/"/g, '&quot;')}" onblur="App.saveStyleInline('${s.id}',this)" onkeydown="if(event.key==='Enter')this.blur()">`
+          : `<span class="cell-static">${esc(s.category) || '—'}</span>`;
+        const fabInput = canEdit
+          ? `<input class="cell-input cell-input-wide" data-sid="${s.id}" data-field="fabrication"  value="${(s.fabrication || '').replace(/"/g, '&quot;').substring(0, 40)}" onblur="App.saveStyleInline('${s.id}',this)" onkeydown="if(event.key==='Enter')this.blur()">`
+          : `<span class="cell-static cell-input-wide">${esc((s.fabrication || '').substring(0, 40)) || '—'}</span>`;
         const qtyFmt    = s.projQty      ? Number(s.projQty).toLocaleString()                                  : '';
         const sellFmt   = s.projSellPrice ? '$' + parseFloat(s.projSellPrice).toFixed(2)                        : '';
         const dutyFmt   = s.dutyRate      ? (parseFloat(s.dutyRate) * 100).toFixed(1) + '%'                     : '';
         const frtFmt    = s.estFreight     ? '$' + parseFloat(s.estFreight).toFixed(2)                          : '';
-        const qtyInput = `<input class="cell-input cell-input-sm fmt-qty" data-sid="${s.id}" data-field="projQty" data-raw="${s.projQty || ''}" value="${qtyFmt}" placeholder="Qty" onfocus="App.fmtFocusRaw(this)" onblur="App.fmtBlurQty(this,'${s.id}')" onkeydown="if(event.key==='Enter')this.blur()">`;
-        const sellInput = `<input class="cell-input cell-input-sm fmt-sell" data-sid="${s.id}" data-field="projSellPrice" data-raw="${s.projSellPrice || ''}" value="${sellFmt}" placeholder="Sell" onfocus="App.fmtFocusRaw(this)" onblur="App.fmtBlurCurrency(this,'${s.id}','projSellPrice')" onkeydown="if(event.key==='Enter')this.blur()">`;
-        const dutyInput = `<input class="cell-input cell-input-sm fmt-duty" data-sid="${s.id}" data-field="dutyRate" data-raw="${s.dutyRate || ''}" value="${dutyFmt}" placeholder="e.g. 28.2%" onfocus="App.fmtFocusDuty(this)" onblur="App.fmtBlurDuty(this,'${s.id}')" onkeydown="if(event.key==='Enter')this.blur()" title="Enter duty rate as % (e.g. 28.2) or decimal (e.g. 0.282)">`;
-        const freightInput = `<input class="cell-input cell-input-sm fmt-freight" data-sid="${s.id}" data-field="estFreight" data-raw="${s.estFreight || ''}" value="${frtFmt}" placeholder="$0.00" onfocus="App.fmtFocusRaw(this)" onblur="App.fmtBlurCurrency(this,'${s.id}','estFreight')" onkeydown="if(event.key==='Enter')this.blur()" title="Est base freight per unit">`;
+        const qtyInput = canEdit
+          ? `<input class="cell-input cell-input-sm fmt-qty" data-sid="${s.id}" data-field="projQty" data-raw="${s.projQty || ''}" value="${qtyFmt}" placeholder="Qty" onfocus="App.fmtFocusRaw(this)" onblur="App.fmtBlurQty(this,'${s.id}')" onkeydown="if(event.key==='Enter')this.blur()">`
+          : `<span class="cell-static cell-input-sm">${qtyFmt || '—'}</span>`;
+        const sellInput = canEdit
+          ? `<input class="cell-input cell-input-sm fmt-sell" data-sid="${s.id}" data-field="projSellPrice" data-raw="${s.projSellPrice || ''}" value="${sellFmt}" placeholder="Sell" onfocus="App.fmtFocusRaw(this)" onblur="App.fmtBlurCurrency(this,'${s.id}','projSellPrice')" onkeydown="if(event.key==='Enter')this.blur()">`
+          : `<span class="cell-static cell-input-sm">${sellFmt || '—'}</span>`;
+        const dutyInput = canEdit
+          ? `<input class="cell-input cell-input-sm fmt-duty" data-sid="${s.id}" data-field="dutyRate" data-raw="${s.dutyRate || ''}" value="${dutyFmt}" placeholder="e.g. 28.2%" onfocus="App.fmtFocusDuty(this)" onblur="App.fmtBlurDuty(this,'${s.id}')" onkeydown="if(event.key==='Enter')this.blur()" title="Enter duty rate as % (e.g. 28.2) or decimal (e.g. 0.282)">`
+          : `<span class="cell-static cell-input-sm">${dutyFmt || '—'}</span>`;
+        const freightInput = canEdit
+          ? `<input class="cell-input cell-input-sm fmt-freight" data-sid="${s.id}" data-field="estFreight" data-raw="${s.estFreight || ''}" value="${frtFmt}" placeholder="$0.00" onfocus="App.fmtFocusRaw(this)" onblur="App.fmtBlurCurrency(this,'${s.id}','estFreight')" onkeydown="if(event.key==='Enter')this.blur()" title="Est base freight per unit">`
+          : `<span class="cell-static cell-input-sm">${frtFmt || '—'}</span>`;
 
         // Actual QTY + Wtd Avg Sell from Buy Summary
         const styleBuys   = API.CustomerBuys.byStyle(s.id).filter(b => b.programId === programId);
@@ -1753,22 +1778,26 @@ const AdminViews = (() => {
           const flagIcon = sub?.status === 'flagged' ? ' 🚩' : sub?.status === 'accepted' ? ' ✅' : '';
 
           const fobVal = sub?.fob ? '$' + parseFloat(sub.fob).toFixed(2) : '';
-          const fobInput = `<input class="cell-input" type="text" inputmode="decimal"
+          const fobInput = canEdit
+            ? `<input class="cell-input" type="text" inputmode="decimal"
             data-sid="${s.id}" data-tcid="${tc.id}" data-coo="${coo}" data-field="fob"
             value="${fobVal}"
             placeholder="FOB"
             onfocus="this.value=this.value.replace(/[^0-9.]/g,'')"
             onblur="App.saveSubmissionInline('${s.id}','${tc.id}','${coo}',this);if(this.value&&!isNaN(parseFloat(this.value)))this.value='$'+parseFloat(this.value).toFixed(2);"
-            onkeydown="if(event.key==='Enter')this.blur()">${flagIcon}`;
+            onkeydown="if(event.key==='Enter')this.blur()">${flagIcon}`
+            : `<span class="cell-static">${fobVal || '—'}</span>${flagIcon}`;
 
           const fcVal = sub?.factoryCost ? '$' + parseFloat(sub.factoryCost).toFixed(2) : '';
-          const fcInput = `<input class="cell-input" type="text" inputmode="decimal"
+          const fcInput = canEdit
+            ? `<input class="cell-input" type="text" inputmode="decimal"
             data-sid="${s.id}" data-tcid="${tc.id}" data-coo="${coo}" data-field="factoryCost"
             value="${fcVal}"
             placeholder="Cost"
             onfocus="this.value=this.value.replace(/[^0-9.]/g,'')"
             onblur="App.saveSubmissionInline('${s.id}','${tc.id}','${coo}',this);if(this.value&&!isNaN(parseFloat(this.value)))this.value='$'+parseFloat(this.value).toFixed(2);"
-            onkeydown="if(event.key==='Enter')this.blur()">`;
+            onkeydown="if(event.key==='Enter')this.blur()">`
+            : `<span class="cell-static">${fcVal || '—'}</span>`;
 
           // Per-cell flags and revision history
           const fobFlag = sub ? API.CellFlags.get(sub.id, 'fob') : null;
@@ -1919,13 +1948,27 @@ const AdminViews = (() => {
       const sellFmt    = s.projSellPrice ? '$' + parseFloat(s.projSellPrice).toFixed(2) : '';
       const dutyFmt    = s.dutyRate ? (parseFloat(s.dutyRate) * 100).toFixed(1) + '%' : '';
       const frtFmt     = s.estFreight ? '$' + parseFloat(s.estFreight).toFixed(2) : '';
-      const styleNameInput = `<input class="cell-input cell-input-wide" data-sid="${s.id}" data-field="styleName" value="${(s.styleName||'').replace(/"/g,'&quot;')}" onblur="App.saveStyleInline('${s.id}',this)" onkeydown="if(event.key==='Enter')this.blur()">`;
-      const catInput   = `<input class="cell-input" data-sid="${s.id}" data-field="category" value="${(s.category||'').replace(/"/g,'&quot;')}" onblur="App.saveStyleInline('${s.id}',this)" onkeydown="if(event.key==='Enter')this.blur()">`;
-      const fabInput   = `<input class="cell-input cell-input-wide" data-sid="${s.id}" data-field="fabrication" value="${(s.fabrication||'').replace(/"/g,'&quot;').substring(0,40)}" onblur="App.saveStyleInline('${s.id}',this)" onkeydown="if(event.key==='Enter')this.blur()">`;
-      const qtyInput   = `<input class="cell-input cell-input-sm fmt-qty" data-sid="${s.id}" data-field="projQty" data-raw="${s.projQty||''}" value="${qtyFmt}" placeholder="Qty" onfocus="App.fmtFocusRaw(this)" onblur="App.fmtBlurQty(this,'${s.id}')" onkeydown="if(event.key==='Enter')this.blur()">`;
-      const sellInput  = `<input class="cell-input cell-input-sm fmt-sell" data-sid="${s.id}" data-field="projSellPrice" data-raw="${s.projSellPrice||''}" value="${sellFmt}" placeholder="Sell" onfocus="App.fmtFocusRaw(this)" onblur="App.fmtBlurCurrency(this,'${s.id}','projSellPrice')" onkeydown="if(event.key==='Enter')this.blur()">`;
-      const dutyInput  = `<input class="cell-input cell-input-sm fmt-duty" data-sid="${s.id}" data-field="dutyRate" data-raw="${s.dutyRate||''}" value="${dutyFmt}" placeholder="e.g. 28.2%" onfocus="App.fmtFocusDuty(this)" onblur="App.fmtBlurDuty(this,'${s.id}')" onkeydown="if(event.key==='Enter')this.blur()">`;
-      const freightInput = `<input class="cell-input cell-input-sm fmt-freight" data-sid="${s.id}" data-field="estFreight" data-raw="${s.estFreight||''}" value="${frtFmt}" placeholder="$0.00" onfocus="App.fmtFocusRaw(this)" onblur="App.fmtBlurCurrency(this,'${s.id}','estFreight')" onkeydown="if(event.key==='Enter')this.blur()">`;
+      const styleNameInput = canEdit
+        ? `<input class="cell-input cell-input-wide" data-sid="${s.id}" data-field="styleName" value="${(s.styleName||'').replace(/"/g,'&quot;')}" onblur="App.saveStyleInline('${s.id}',this)" onkeydown="if(event.key==='Enter')this.blur()">`
+        : `<span class="cell-static cell-input-wide">${esc(s.styleName) || '—'}</span>`;
+      const catInput   = canEdit
+        ? `<input class="cell-input" data-sid="${s.id}" data-field="category" value="${(s.category||'').replace(/"/g,'&quot;')}" onblur="App.saveStyleInline('${s.id}',this)" onkeydown="if(event.key==='Enter')this.blur()">`
+        : `<span class="cell-static">${esc(s.category) || '—'}</span>`;
+      const fabInput   = canEdit
+        ? `<input class="cell-input cell-input-wide" data-sid="${s.id}" data-field="fabrication" value="${(s.fabrication||'').replace(/"/g,'&quot;').substring(0,40)}" onblur="App.saveStyleInline('${s.id}',this)" onkeydown="if(event.key==='Enter')this.blur()">`
+        : `<span class="cell-static cell-input-wide">${esc((s.fabrication||'').substring(0,40)) || '—'}</span>`;
+      const qtyInput   = canEdit
+        ? `<input class="cell-input cell-input-sm fmt-qty" data-sid="${s.id}" data-field="projQty" data-raw="${s.projQty||''}" value="${qtyFmt}" placeholder="Qty" onfocus="App.fmtFocusRaw(this)" onblur="App.fmtBlurQty(this,'${s.id}')" onkeydown="if(event.key==='Enter')this.blur()">`
+        : `<span class="cell-static cell-input-sm">${qtyFmt || '—'}</span>`;
+      const sellInput  = canEdit
+        ? `<input class="cell-input cell-input-sm fmt-sell" data-sid="${s.id}" data-field="projSellPrice" data-raw="${s.projSellPrice||''}" value="${sellFmt}" placeholder="Sell" onfocus="App.fmtFocusRaw(this)" onblur="App.fmtBlurCurrency(this,'${s.id}','projSellPrice')" onkeydown="if(event.key==='Enter')this.blur()">`
+        : `<span class="cell-static cell-input-sm">${sellFmt || '—'}</span>`;
+      const dutyInput  = canEdit
+        ? `<input class="cell-input cell-input-sm fmt-duty" data-sid="${s.id}" data-field="dutyRate" data-raw="${s.dutyRate||''}" value="${dutyFmt}" placeholder="e.g. 28.2%" onfocus="App.fmtFocusDuty(this)" onblur="App.fmtBlurDuty(this,'${s.id}')" onkeydown="if(event.key==='Enter')this.blur()">`
+        : `<span class="cell-static cell-input-sm">${dutyFmt || '—'}</span>`;
+      const freightInput = canEdit
+        ? `<input class="cell-input cell-input-sm fmt-freight" data-sid="${s.id}" data-field="estFreight" data-raw="${s.estFreight||''}" value="${frtFmt}" placeholder="$0.00" onfocus="App.fmtFocusRaw(this)" onblur="App.fmtBlurCurrency(this,'${s.id}','estFreight')" onkeydown="if(event.key==='Enter')this.blur()">`
+        : `<span class="cell-static cell-input-sm">${frtFmt || '—'}</span>`;
       const styleBuys  = API.CustomerBuys.byStyle(s.id).filter(b => b.programId === programId);
       const actualQty  = styleBuys.reduce((sum, b) => sum + (parseFloat(b.qty)||0), 0);
       const buyRevenue = styleBuys.reduce((sum, b) => sum + ((parseFloat(b.qty)||0)*(parseFloat(b.sellPrice)||0)), 0);
@@ -1956,18 +1999,24 @@ const AdminViews = (() => {
         const effectiveTerms = tc.paymentTerms || sub?.paymentTerms || 'FOB';
         const r = sub?.fob ? API.calcLDP(parseFloat(sub.fob), s, coo, s.market||'USA','NY',effectiveTerms,sub?.factoryCost) : null;
         const flagIcon = sub?.status === 'flagged' ? ' 🚩' : sub?.status === 'accepted' ? ' ✅' : '';
-        const fobInput2 = `<input class="cell-input" type="text" inputmode="decimal"
+        const fobVal2 = sub?.fob ? '$'+parseFloat(sub.fob).toFixed(2) : '';
+        const fobInput2 = canEdit
+          ? `<input class="cell-input" type="text" inputmode="decimal"
           data-sid="${s.id}" data-tcid="${tc.id}" data-coo="${coo}" data-field="fob"
-          value="${sub?.fob ? '$'+parseFloat(sub.fob).toFixed(2) : ''}" placeholder="FOB"
+          value="${fobVal2}" placeholder="FOB"
           onfocus="this.value=this.value.replace(/[^0-9.]/g,'')"
           onblur="App.saveSubmissionInline('${s.id}','${tc.id}','${coo}',this);if(this.value&&!isNaN(parseFloat(this.value)))this.value='$'+parseFloat(this.value).toFixed(2);"
-          onkeydown="if(event.key==='Enter')this.blur()">${flagIcon}`;
-        const fcInput2 = `<input class="cell-input" type="text" inputmode="decimal"
+          onkeydown="if(event.key==='Enter')this.blur()">${flagIcon}`
+          : `<span class="cell-static">${fobVal2 || '—'}</span>${flagIcon}`;
+        const fcVal2 = sub?.factoryCost ? '$'+parseFloat(sub.factoryCost).toFixed(2) : '';
+        const fcInput2 = canEdit
+          ? `<input class="cell-input" type="text" inputmode="decimal"
           data-sid="${s.id}" data-tcid="${tc.id}" data-coo="${coo}" data-field="factoryCost"
-          value="${sub?.factoryCost ? '$'+parseFloat(sub.factoryCost).toFixed(2) : ''}" placeholder="Cost"
+          value="${fcVal2}" placeholder="Cost"
           onfocus="this.value=this.value.replace(/[^0-9.]/g,'')"
           onblur="App.saveSubmissionInline('${s.id}','${tc.id}','${coo}',this);if(this.value&&!isNaN(parseFloat(this.value)))this.value='$'+parseFloat(this.value).toFixed(2);"
-          onkeydown="if(event.key==='Enter')this.blur()">`;
+          onkeydown="if(event.key==='Enter')this.blur()">`
+          : `<span class="cell-static">${fcVal2 || '—'}</span>`;
         const fobFlag= sub ? API.CellFlags.get(sub.id,'fob') : null;
         const fcFlag = sub ? API.CellFlags.get(sub.id,'factoryCost') : null;
         const fobRevs= sub ? API.Revisions.byField(sub.id,'fob').length : 0;
