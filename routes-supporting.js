@@ -157,7 +157,7 @@ router.get('/fabric-requests', requireAuth, (req, res) => {
   let rows;
   if (req.user.role === 'vendor') {
     rows = db.prepare('SELECT * FROM fabric_requests WHERE tc_id = ? ORDER BY requested_at DESC').all(req.user.tcId);
-  } else if (['admin', 'pc', 'prod_dev'].includes(req.user.role)) {
+  } else if (['admin', 'pc', 'pc_readonly', 'prod_dev'].includes(req.user.role)) {
     rows = db.prepare('SELECT * FROM fabric_requests ORDER BY requested_at DESC').all();
   } else {
     return res.status(403).json({ error: 'Insufficient permissions' });
@@ -280,7 +280,7 @@ router.get('/fabric-packages', requireAuth, (req, res) => {
   let rows;
   if (req.user.role === 'vendor') {
     rows = db.prepare('SELECT * FROM fabric_packages WHERE tc_id = ? ORDER BY created_at DESC').all(req.user.tcId);
-  } else if (['admin', 'pc', 'prod_dev'].includes(req.user.role)) {
+  } else if (['admin', 'pc', 'pc_readonly', 'prod_dev'].includes(req.user.role)) {
     rows = db.prepare('SELECT * FROM fabric_packages ORDER BY created_at DESC').all();
   } else {
     return res.status(403).json({ error: 'Insufficient permissions' });
@@ -2355,7 +2355,10 @@ function validateSections(body) {
   return null;
 }
 
-const FACTORY_INTERNAL_ROLES_READ = ['admin', 'pc', 'planning', 'sales', 'design', 'tech_design', 'prod_dev'];
+// Read-only list. Writes use FACTORY_ADMIN_ROLES. pc_readonly is safe to
+// include here — it cannot reach POST /factories (L2406) or
+// PATCH /factories/:id (L2453), both of which gate on FACTORY_ADMIN_ROLES.
+const FACTORY_INTERNAL_ROLES_READ = ['admin', 'pc', 'pc_readonly', 'planning', 'sales', 'design', 'tech_design', 'prod_dev'];
 const FACTORY_ADMIN_ROLES         = ['admin', 'pc'];
 
 // GET /api/factories
@@ -2570,6 +2573,10 @@ router.delete('/factories/:id', requireAuth, requireRole('admin'), (req, res) =>
 const DP_ROLES_ADMIN = ['admin', 'pc'];
 const DP_ROLES_SALES = ['planning', 'sales'];
 const DP_ROLES_ALL   = ['admin', 'pc', 'planning', 'sales', 'vendor'];
+// READ variant: DP_ROLES_ALL + pc_readonly. Used ONLY by the GET handler.
+// Forked rather than mutated because DP_ROLES_ALL also gates the PATCH at
+// L2767+ and POST comments at L2801+ — pc_readonly must not flow through there.
+const DP_ROLES_READ  = [...DP_ROLES_ALL, 'pc_readonly'];
 
 function dpLineFromRow(r) {
   return {
@@ -2676,7 +2683,7 @@ function dpProgramOrThrow(res, programId, role, tcId) {
 // lines where tc_id matches their own TC. Returns 404 if no plan.
 router.get('/programs/:id/delivery-plan', requireAuth, (req, res) => {
   const role = req.user.role;
-  if (!DP_ROLES_ALL.includes(role)) return res.status(403).json({ error: 'Insufficient permissions' });
+  if (!DP_ROLES_READ.includes(role)) return res.status(403).json({ error: 'Insufficient permissions' });
   if (!dpProgramOrThrow(res, req.params.id, role, req.user.tcId)) return;
 
   const plan = db.prepare('SELECT * FROM delivery_plans WHERE program_id = ?').get(req.params.id);
@@ -2853,6 +2860,10 @@ router.delete('/programs/:id/delivery-plan', requireAuth, requireRole('admin'), 
 // if Sales needs read access).
 
 const CP_ROLES_ADMIN = ['admin', 'pc'];
+// READ variant: CP_ROLES_ADMIN + pc_readonly. Used ONLY by the GET handler.
+// Forked rather than mutated because CP_ROLES_ADMIN also gates the writes at
+// POST L3002 (submit) and L3050 (approve) — pc_readonly must not flow there.
+const CP_ROLES_READ  = [...CP_ROLES_ADMIN, 'pc_readonly'];
 
 function cpPlanFromRow(r) {
   return {
@@ -2928,7 +2939,7 @@ router.get('/programs/:id/capacity-plan', requireAuth, (req, res) => {
   if (role === 'vendor') {
     const asg = db.prepare('SELECT 1 FROM assignments WHERE program_id = ? AND tc_id = ?').get(req.params.id, req.user.tcId);
     if (!asg) return res.status(403).json({ error: 'Not assigned to this program' });
-  } else if (!CP_ROLES_ADMIN.includes(role)) {
+  } else if (!CP_ROLES_READ.includes(role)) {
     return res.status(403).json({ error: 'Insufficient permissions' });
   }
 

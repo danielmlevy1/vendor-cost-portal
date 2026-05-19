@@ -6278,6 +6278,7 @@ App.openSalesRequestDetail = function(requestId) {
   if (!r) return;
   const _srDetailRole    = typeof App !== 'undefined' && App._getState ? (App._getState()?.user?.role || '') : '';
   const _canConvertSR    = _srDetailRole === 'admin' || _srDetailRole === 'pc';
+  const _srIsPCReadonly  = _srDetailRole === 'pc_readonly';
   const d   = new Date(r.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   const fmtDate  = iso => iso ? new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : null;
   const fmtShort = iso => iso ? new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
@@ -6312,7 +6313,9 @@ App.openSalesRequestDetail = function(requestId) {
   const isBatchReview = r.status === 'batch-review';
   const isDraftSR     = r.status === 'draft';
   const isCancelledSR = r.status === 'cancelled';
-  const canEdit = !r.linkedProgramId || isBatchReview;
+  // pc_readonly opens this modal in pure read-only form — inputs auto-disable,
+  // save/import/add-row footer buttons auto-hide.
+  const canEdit = (!r.linkedProgramId || isBatchReview) && !_srIsPCReadonly;
 
   const allStyles = [...(r.styles||[]), ...(r.cancelledStyles||[])];
   const srHasManyBatches = new Set((r.styles||[]).map(s => s.batchLabel).filter(Boolean)).size >= 2;
@@ -6914,6 +6917,11 @@ App.openConsolidatedBatchReview = function(programId) {
 
   const prog = API.Programs.get(programId);
   const progTitle = [prog?.season, prog?.year, prog?.name].filter(Boolean).join(' · ');
+  // Read-only roles open this modal in pure inspect mode. Inputs disable,
+  // Save / Import buttons hide. Same latent-defect pattern as the SR detail
+  // modal — without this, pc_readonly's Save would 403 and Import would corrupt.
+  const _cbrRole       = typeof App !== 'undefined' && App._getState ? (App._getState()?.user?.role || '') : '';
+  const _cbrCanEdit    = _cbrRole === 'admin' || _cbrRole === 'pc';
 
   const batchColors = [
     'rgba(99,102,241,0.10)', 'rgba(16,185,129,0.08)', 'rgba(245,158,11,0.09)',
@@ -6936,6 +6944,7 @@ App.openConsolidatedBatchReview = function(programId) {
     const rows = allStyles.map(s => {
       const isCancelled = s.cancelled || (r.cancelledStyles||[]).some(cs => cs.styleNumber === s.styleNumber);
       const sn = (s.styleNumber||'').replace(/"/g, '&quot;');
+      const disabledAttr = (isCancelled || !_cbrCanEdit) ? 'disabled' : '';
       return `<tr style="${isCancelled ? 'opacity:0.45;background:rgba(239,68,68,0.05)' : ''}">
         <td class="primary font-bold">${s.styleNumber||'—'}</td>
         <td>${s.styleName||'—'}</td>
@@ -6943,17 +6952,17 @@ App.openConsolidatedBatchReview = function(programId) {
         <td style="padding:4px 6px">
           <input class="form-input sr-qty-input" data-sr-id="${r.id}" data-sn="${sn}" type="number" min="0"
             value="${s.projQty||''}" placeholder="Qty" style="width:90px;padding:4px 6px"
-            ${isCancelled ? 'disabled' : ''}>
+            ${disabledAttr}>
         </td>
         <td style="padding:4px 6px">
           <input class="form-input sr-sell-input" data-sr-id="${r.id}" data-sn="${sn}" type="number" min="0" step="0.01"
             value="${s.projSell||s.projSellPrice||''}" placeholder="$0.00" style="width:100px;padding:4px 6px"
-            ${isCancelled ? 'disabled' : ''}>
+            ${disabledAttr}>
         </td>
         <td style="padding:4px 6px">
           <input class="form-input sr-note-input" data-sr-id="${r.id}" data-sn="${sn}" type="text"
             value="${(s.notes||'').replace(/"/g,'&quot;')}" placeholder="Notes…" style="width:140px;padding:4px 6px"
-            ${isCancelled ? 'disabled' : ''}>
+            ${disabledAttr}>
         </td>
         <td><span class="badge ${isCancelled ? 'badge-cancelled' : 'badge-costing'}">${isCancelled ? 'Cancelled' : 'Active'}</span></td>
       </tr>`;
@@ -6984,14 +6993,14 @@ App.openConsolidatedBatchReview = function(programId) {
     <div class="modal-footer" style="display:flex;gap:8px;flex-wrap:wrap;justify-content:space-between;align-items:center">
       <div style="display:flex;gap:8px;align-items:center">
         <button class="btn btn-ghost btn-sm" onclick="App.downloadConsolidatedBatchExcel('${programId}')">⬇ Download Excel</button>
-        <label class="btn btn-ghost btn-sm" style="cursor:pointer;margin:0">
+        ${_cbrCanEdit ? `<label class="btn btn-ghost btn-sm" style="cursor:pointer;margin:0">
           ⬆ Import Excel
           <input type="file" accept=".xlsx,.xls,.csv" style="display:none" onchange="App.importConsolidatedBatchExcel(event,'${programId}')">
-        </label>
+        </label>` : ''}
       </div>
       <div style="display:flex;gap:8px">
         <button class="btn btn-secondary" onclick="App.closeModal()">Close</button>
-        <button class="btn btn-primary" onclick="App.saveConsolidatedBatchReview('${programId}')">💾 Save &amp; Confirm All Batches</button>
+        ${_cbrCanEdit ? `<button class="btn btn-primary" onclick="App.saveConsolidatedBatchReview('${programId}')">💾 Save &amp; Confirm All Batches</button>` : ''}
       </div>
     </div>`,
     'modal-xl');

@@ -1857,14 +1857,18 @@ const AdminViews = (() => {
               title="${ldpTitle}">` + ldpCell + `</td>`;
         });
 
-        // Actions column
+        // Actions column — write buttons hidden for non-edit roles (pc_readonly, sales, planning).
         if (isCancelled) {
-          rowHtml += `<td data-col="actions"><button class="btn-restore-style" onclick="App.uncancelStyle('${s.id}','${pid}')">↩ Restore</button></td>`;
-        } else {
+          rowHtml += canEdit
+            ? `<td data-col="actions"><button class="btn-restore-style" onclick="App.uncancelStyle('${s.id}','${pid}')">↩ Restore</button></td>`
+            : `<td data-col="actions"></td>`;
+        } else if (canEdit) {
           const cancelBtn = placement
             ? `<button class="btn-cancel-style" disabled style="opacity:0.3;cursor:not-allowed" title="Cannot cancel a placed style. Contact Admin or PC to negotiate vendor cancellation.">🚫</button>`
             : `<button class="btn-cancel-style" onclick="App.cancelStyle('${s.id}','${pid}')">🚫</button>`;
           rowHtml += `<td data-col="actions" style="white-space:nowrap"><button class="btn btn-ghost btn-sm" style="font-size:0.7rem;padding:2px 5px;margin-right:2px" title="Log style change" onclick="App.openDesignChangeModal('${s.id}')">📝</button>${cancelBtn}</td>`;
+        } else {
+          rowHtml += `<td data-col="actions"></td>`;
         }
 
         // Repeat Style column
@@ -2053,11 +2057,16 @@ const AdminViews = (() => {
               oncontextmenu="App.openCellHighlightMenu(event,'${s.id}','${tc.id}','${coo}','${sub?.id||''}',${sub?.fob||0});return false;"
               title="${ldpTitle2}">${ldpCell}</td>`;
       });
-      const guestPlacement = API.Placements.get(s.id);
-      const guestCancelBtn = guestPlacement
-        ? `<button class="btn-cancel-style" disabled style="opacity:0.3;cursor:not-allowed" title="Cannot cancel a placed style. Contact Admin or PC to negotiate vendor cancellation.">🚫</button>`
-        : `<button class="btn-cancel-style" onclick="App.cancelStyle('${s.id}','${programId}')">🚫</button>`;
-      rowHtml += `<td data-col="actions" style="white-space:nowrap"><button class="btn btn-ghost btn-sm" style="font-size:0.7rem;padding:2px 5px;margin-right:2px" title="Log style change" onclick="App.openDesignChangeModal('${s.id}')">📝</button>${guestCancelBtn}</td>`;
+      // Actions column — write buttons hidden for non-edit roles (mirrors anchor row).
+      if (canEdit) {
+        const guestPlacement = API.Placements.get(s.id);
+        const guestCancelBtn = guestPlacement
+          ? `<button class="btn-cancel-style" disabled style="opacity:0.3;cursor:not-allowed" title="Cannot cancel a placed style. Contact Admin or PC to negotiate vendor cancellation.">🚫</button>`
+          : `<button class="btn-cancel-style" onclick="App.cancelStyle('${s.id}','${programId}')">🚫</button>`;
+        rowHtml += `<td data-col="actions" style="white-space:nowrap"><button class="btn btn-ghost btn-sm" style="font-size:0.7rem;padding:2px 5px;margin-right:2px" title="Log style change" onclick="App.openDesignChangeModal('${s.id}')">📝</button>${guestCancelBtn}</td>`;
+      } else {
+        rowHtml += `<td data-col="actions"></td>`;
+      }
       const sn2 = (s.styleNumber||'').trim();
       const hist2 = sn2 ? (repeatHistory[sn2]||[]) : [];
       if (!hist2.length) {
@@ -3112,6 +3121,7 @@ const AdminViews = (() => {
     const _hdRole       = typeof App !== 'undefined' && App._getState ? (App._getState()?.user?.role || '') : '';
     const _canNewHandoff = _hdRole === 'admin' || _hdRole === 'pc' || _hdRole === 'design';
     const _canSubmitHd   = _hdRole === 'admin' || _hdRole === 'pc' || _hdRole === 'design' || _hdRole === 'tech_design';
+    const _hdIsPCReadonly = _hdRole === 'pc_readonly';
     const handoffs  = API.DesignHandoffs.all().slice().reverse();
     const allSRs    = API.SalesRequests.all();
 
@@ -3267,10 +3277,10 @@ const AdminViews = (() => {
         <td>
           <div style="display:flex;gap:6px">
             ${h.status === 'cancelled'
-              ? `<button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();App.reactivateHandoff('${h.id}')">↩ Reactivate</button>`
-              : `<button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();App.openEditHandoffModal('${h.id}')">✏ Edit</button>
+              ? (_hdIsPCReadonly ? '' : `<button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();App.reactivateHandoff('${h.id}')">↩ Reactivate</button>`)
+              : `${_hdIsPCReadonly ? '' : `<button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();App.openEditHandoffModal('${h.id}')">✏ Edit</button>`}
                  <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();App.openHandoffDetail('${h.id}')">👁 Open</button>
-                 ${!h.linkedProgramId ? `<button class="btn btn-secondary btn-sm" style="color:#ef4444;border-color:#ef4444" onclick="event.stopPropagation();App.cancelHandoff('${h.id}')">🚫 Cancel</button>` : ''}`
+                 ${!h.linkedProgramId && !_hdIsPCReadonly ? `<button class="btn btn-secondary btn-sm" style="color:#ef4444;border-color:#ef4444" onclick="event.stopPropagation();App.cancelHandoff('${h.id}')">🚫 Cancel</button>` : ''}`
             }
           </div>
         </td>
@@ -3341,6 +3351,7 @@ const AdminViews = (() => {
     const _isPlanning    = _srUser.role === 'planning';
     const _canCreateSR   = _srUser.role === 'admin' || _srUser.role === 'pc' || _srUser.role === 'sales';
     const _canConvertSRList = _srUser.role === 'admin' || _srUser.role === 'pc';
+    const _srIsPCReadonly = _srUser.role === 'pc_readonly';
     const requests = API.SalesRequests.all().slice().reverse();
     const allHandoffs = API.DesignHandoffs.all();
     // Handoffs not yet linked to a Sales Request — available for Sales to build from
@@ -3457,10 +3468,10 @@ const AdminViews = (() => {
         <td>
           <div style="display:flex;gap:6px">
             ${r.status === 'cancelled'
-              ? `<button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();App.reactivateSR('${r.id}')">↩ Reactivate</button>`
+              ? (_srIsPCReadonly ? '' : `<button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();App.reactivateSR('${r.id}')">↩ Reactivate</button>`)
               : `<button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();App.openSalesRequestDetail('${r.id}')">👁 Open</button>
                  <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();App.downloadSalesRequest('${r.id}')" title="Download as Excel">⬇</button>
-                 <button class="btn btn-secondary btn-sm" style="color:#ef4444;border-color:#ef4444" onclick="event.stopPropagation();App.cancelSR('${r.id}')">🚫 Cancel</button>`
+                 ${_srIsPCReadonly ? '' : `<button class="btn btn-secondary btn-sm" style="color:#ef4444;border-color:#ef4444" onclick="event.stopPropagation();App.cancelSR('${r.id}')">🚫 Cancel</button>`}`
             }
           </div>
         </td>
