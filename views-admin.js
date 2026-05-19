@@ -1371,6 +1371,11 @@ const AdminViews = (() => {
   function renderCostSummary(programId) {
     const prog = API.Programs.get(programId);
     if (!prog) return `<div class="empty-state"><div class="icon">⚠️</div><h3>Program not found</h3><p class="text-muted" style="margin-top:8px">This program may have been deleted or the link is stale.</p><button class="btn btn-secondary btn-sm" style="margin-top:16px" onclick="App.navigate('pre-costing')">← Back to Pipeline</button></div>`;
+    // Mirror buildCostMatrix's literal canEdit (A12.3c) so the bulk-action FAB
+    // and the selection checkboxes share the same gate. Read-only roles never
+    // see the FAB DOM at all — selection state can't open silent-fail paths.
+    const _csUserRole = (typeof App !== 'undefined' && App._getState) ? App._getState()?.user?.role : null;
+    const canEdit = _csUserRole === 'admin' || _csUserRole === 'pc';
     const styles = API.Styles.byProgram(programId);
     const asgns = API.Assignments.byProgram(programId);
     const tcs = asgns.map(a => a.tc).filter(Boolean);
@@ -1496,7 +1501,7 @@ const AdminViews = (() => {
         ${buildCostMatrix(styles, colGroups, prog, programId, '', 'fabrication')}
       </div>
     </div>
-    <!-- Multi-select floating action bar -->
+    ${canEdit ? `<!-- Multi-select floating action bar -->
     <div id="sel-fab" style="display:none;position:fixed;bottom:28px;left:50%;transform:translateX(-50%);z-index:300;
       background:var(--bg-elevated);border:1px solid var(--border);border-radius:40px;
       padding:10px 20px;box-shadow:0 8px 32px rgba(0,0,0,0.4);align-items:center;gap:10px;flex-wrap:wrap">
@@ -1506,7 +1511,7 @@ const AdminViews = (() => {
       <button class="btn btn-danger btn-sm" onclick="App.bulkCancelStyles()">✕ Cancel</button>
       <button class="btn btn-warning btn-sm" onclick="App.bulkRequestRecost('${programId}')">↩ Re-cost</button>
       <button class="btn btn-ghost btn-sm" onclick="App.clearStyleSelection()" style="border:1px solid var(--border)">✕ Clear</button>
-    </div>`;
+    </div>` : ''}`;
   }
 
   // colGroups = [{tc, coo}] — one column group per TC×COO
@@ -1531,7 +1536,7 @@ const AdminViews = (() => {
     // Header row 1: fixed cols + vendor group spans (draggable)
     let hdr1 = `
       <th rowspan="2" class="sel-col sticky-col mat-hdr" style="width:36px;min-width:36px">
-        <input type="checkbox" id="sel-all-chk" class="sel-col-chk" title="Select all" onchange="App.selectAllStyles('${programId}',this.checked)">
+        ${canEdit ? `<input type="checkbox" id="sel-all-chk" class="sel-col-chk" title="Select all" onchange="App.selectAllStyles('${programId}',this.checked)">` : ''}
       </th>
       <th rowspan="2" class="sticky-col mat-hdr" style="width:28px;min-width:28px;padding:0;text-align:center" title="Design change history"></th>
       <th rowspan="2" data-col="styleNum" class="sticky-col mat-hdr" style="width:120px;min-width:110px;white-space:nowrap">Style #</th>
@@ -1895,7 +1900,7 @@ const AdminViews = (() => {
             bestLDP <= targetLDP ? 'row-on-target' : 'row-over-target'
           ) : ''
         );
-        return `<tr class="${rowClass}" data-style-id="${s.id}" data-batch-label="${(s.releasedBatch||'').replace(/"/g,'&quot;')}"><td class="sel-col sticky-col mat-cell-white" style="width:36px;min-width:36px"><input type="checkbox" class="style-sel-chk" data-sid="${s.id}" onchange="App.onStyleSelect('${s.id}',this.checked,'${programId}')"></td>${rowHtml}</tr>`;
+        return `<tr class="${rowClass}" data-style-id="${s.id}" data-batch-label="${(s.releasedBatch||'').replace(/"/g,'&quot;')}"><td class="sel-col sticky-col mat-cell-white" style="width:36px;min-width:36px">${canEdit ? `<input type="checkbox" class="style-sel-chk" data-sid="${s.id}" onchange="App.onStyleSelect('${s.id}',this.checked,'${programId}')">` : ''}</td>${rowHtml}</tr>`;
       }).join('');
     }
 
@@ -3905,8 +3910,13 @@ const AdminViews = (() => {
       </div>` : '';
 
     // ── PENDING BATCHES SECTION ────────────────────────────────
+    // pendingSection emits per-row batch-label inputs, the Submit-for-Release
+    // toolbar, and the Update-Handoff file upload. All three hit backend
+    // routes that gate on admin/pc/design — same role set as _hdCanRetract.
+    // Hiding the whole block for other roles (pc_readonly, tech_design)
+    // closes the silent-fail UX in one wrap.
     let pendingSection = '';
-    if (hasPending) {
+    if (hasPending && _hdCanRetract) {
       const suggestedLabel = `Batch ${releases.length + 1}`;
       const pendingRows = unreleasedStyles.map(s => `
         <tr class="hd-row-unreleased" data-style-id="${s.id}">
@@ -4997,6 +5007,9 @@ const AdminViews = (() => {
     const changes = API.DesignChanges.byStyle(styleId);
     if (!changes.length) return `<div class="text-muted text-sm" style="padding:12px">No style changes logged for this style.</div>`;
     const fmtDate = d => new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+    // Confirm = PATCH /design-changes/:id/confirm gated admin/pc/design.
+    const _dcRole = (typeof App !== 'undefined' && App._getState) ? App._getState()?.user?.role : '';
+    const _dcCanConfirm = ['admin','pc','design'].includes(_dcRole);
     return `<div class="design-change-timeline">${changes.map(c => {
       const isPending = c.status === 'pending';
       return `
@@ -5007,7 +5020,7 @@ const AdminViews = (() => {
             <span class="dc-desc">${c.description || '—'}</span>
             ${isPending
               ? `<span class="badge badge-pending" style="font-size:0.65rem">Pending</span>
-                 <button class="btn btn-secondary btn-sm" style="padding:2px 8px;font-size:0.72rem" onclick="App.confirmDesignChange('${c.id}','${styleId}')">✓ Confirm</button>`
+                 ${_dcCanConfirm ? `<button class="btn btn-secondary btn-sm" style="padding:2px 8px;font-size:0.72rem" onclick="App.confirmDesignChange('${c.id}','${styleId}')">✓ Confirm</button>` : ''}`
               : `<span class="badge badge-placed" style="font-size:0.65rem">Confirmed</span>`}
           </div>
           ${c.field ? `<div class="dc-field text-sm text-muted">${c.field}${c.previousValue ? ': <span style="text-decoration:line-through;color:#ef4444">' + c.previousValue + '</span>' : ''} ${c.newValue ? '→ <strong>' + c.newValue + '</strong>' : ''}</div>` : ''}
@@ -5024,6 +5037,7 @@ const AdminViews = (() => {
     const userRole  = (typeof App !== 'undefined' && App._getState) ? App._getState()?.user?.role : '';
     const isAdmin   = userRole === 'admin';
     const isPC      = userRole === 'pc';
+    const isDesign  = userRole === 'design';
     const isPlanning = userRole === 'planning' || userRole === 'sales';
     const fmtDate   = d => new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 
@@ -5069,7 +5083,7 @@ const AdminViews = (() => {
               : `<span class="dc-desc">${c.description || '—'}</span>`}
             ${isPending
               ? `<span class="badge badge-pending" style="font-size:0.65rem">Pending</span>
-                 <button class="btn btn-secondary btn-sm" style="padding:2px 8px;font-size:0.72rem" onclick="App.confirmDesignChange('${c.id}','${styleId}')">✓ Confirm</button>`
+                 ${(isAdmin || isPC || isDesign) ? `<button class="btn btn-secondary btn-sm" style="padding:2px 8px;font-size:0.72rem" onclick="App.confirmDesignChange('${c.id}','${styleId}')">✓ Confirm</button>` : ''}`
               : (rcr ? '' : `<span class="badge badge-placed" style="font-size:0.65rem">Confirmed</span>`)}
             ${rcrBadge}
           </div>
@@ -5088,6 +5102,7 @@ const AdminViews = (() => {
     const userRole = (typeof App !== 'undefined' && App._getState) ? App._getState()?.user?.role : '';
     const isAdmin = userRole === 'admin';
     const isPC    = userRole === 'pc';
+    const isDesign = userRole === 'design';
     const isPlanning = userRole === 'planning' || userRole === 'sales';
 
     const all = API.DesignChanges.all().slice().reverse();
@@ -5184,7 +5199,7 @@ const AdminViews = (() => {
         <td class="text-sm">${c.newValue ? `<strong>${c.newValue}</strong>` : '—'}</td>
         <td class="text-sm text-muted">${c.changedByName || c.changedBy || '—'}</td>
         <td>${isPending
-          ? `<button class="btn btn-secondary btn-sm" onclick="App.confirmDesignChange('${c.id}','${c.styleId}',true)">✓ Confirm</button>`
+          ? ((isAdmin || isPC || isDesign) ? `<button class="btn btn-secondary btn-sm" onclick="App.confirmDesignChange('${c.id}','${c.styleId}',true)">✓ Confirm</button>` : '<span class="text-muted text-sm">—</span>')
           : `<span class="text-muted text-sm">${c.confirmedByName || '—'}</span>`}
         </td>
         <td style="min-width:170px">${rcrStatusBadge(rcr)}${rcrActions(rcr, c)}</td>
@@ -5243,6 +5258,7 @@ const AdminViews = (() => {
     const role     = userRole || ((typeof App !== 'undefined' && App._getState) ? App._getState()?.user?.role : '');
     const isAdmin  = role === 'admin';
     const isPC     = role === 'pc';
+    const isDesign = role === 'design';
     const isPlanning = role === 'planning' || role === 'sales';
 
     const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
@@ -5331,7 +5347,7 @@ const AdminViews = (() => {
         <td class="text-sm">${c.newValue ? `<strong>${c.newValue}</strong>` : '—'}</td>
         <td class="text-sm text-muted">${c.changedByName || c.changedBy || '—'}</td>
         <td>${isPending
-          ? `<button class="btn btn-secondary btn-sm" onclick="App.confirmDesignChange('${c.id}','${c.styleId}',true)">✓ Confirm</button>`
+          ? ((isAdmin || isPC || isDesign) ? `<button class="btn btn-secondary btn-sm" onclick="App.confirmDesignChange('${c.id}','${c.styleId}',true)">✓ Confirm</button>` : '<span class="text-muted text-sm">—</span>')
           : `<span class="text-muted text-sm">${c.confirmedByName || '—'}</span>`}
         </td>
         <td style="min-width:170px">${rcrStatusBadge(rcr)}${rcrActions(rcr, c)}</td>
@@ -5916,10 +5932,10 @@ const AdminViews = (() => {
       <div style="max-height:320px;overflow-y:auto;margin-bottom:12px">
         ${historyHtml}
       </div>
-      <div style="display:flex;gap:8px">
+      ${(isProd || isSales || isVendor) ? `<div style="display:flex;gap:8px">
         <textarea id="dp-comment-${esc(plan.id)}" class="form-input" rows="2" placeholder="Add a comment visible to Production, Sales, and TC…" style="flex:1"></textarea>
         <button class="btn btn-primary" onclick="App.postDeliveryComment('${esc(programId)}','${esc(plan.id)}')">Post</button>
-      </div>
+      </div>` : ''}
     </div>`;
   }
 
