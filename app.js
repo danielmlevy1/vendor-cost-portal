@@ -24,7 +24,7 @@ App = (() => {
       if (user) {
         state.user = user;
         // Pre-load data needed by the sidebar (users list for role switcher, badges)
-        const _canSeeUsers = user.role === 'admin' || user.role === 'pc';
+        const _canSeeUsers = user.role === 'admin' || user.role === 'pc' || user.role === 'pc_readonly';
         await Promise.all([
           _canSeeUsers ? API.Users.all().catch(() => {}) : Promise.resolve(),
           API.TradingCompanies.all().catch(() => {}),
@@ -154,7 +154,7 @@ App = (() => {
       const user = await API.Auth.login(email, password);
       state.user = user;
       // Pre-load sidebar data before first render
-      const _canSeeUsers = user.role === 'admin' || user.role === 'pc';
+      const _canSeeUsers = user.role === 'admin' || user.role === 'pc' || user.role === 'pc_readonly';
       await Promise.all([
         _canSeeUsers ? API.Users.all().catch(() => {}) : Promise.resolve(),
         API.TradingCompanies.all().catch(() => {}),
@@ -259,6 +259,8 @@ App = (() => {
 
     const isAdmin  = state.user.role === 'admin';
     const isPC     = state.user.role === 'pc';
+    const isPCReadonly = state.user.role === 'pc_readonly';
+    const isPCRead = isPC || isPCReadonly;   // unified read-context flag — use for nav/dispatch; keep isPC for write contexts
     const isDesign     = state.user.role === 'design';
     const isTechDesign = state.user.role === 'tech_design';
     const isProdDev    = state.user.role === 'prod_dev';
@@ -340,7 +342,7 @@ App = (() => {
     if (navEl) navEl.innerHTML = `
       <div class="sidebar-section"><div class="sidebar-section-label">Navigation</div></div>
       <div style="padding:0 8px">
-      ${(isAdmin || isPC) ? `
+      ${(isAdmin || isPCRead) ? `
         <button class="nav-item ${state.route === 'dashboard' ? 'active' : ''}" onclick="App.navigate('dashboard')"><span class="icon">🏡</span> Dashboard</button>
         ${programsGroup}
         <button class="nav-item ${state.route === 'cross-program' ? 'active' : ''}" onclick="App.navigate('cross-program')"><span class="icon">🌐</span> All Open Programs</button>
@@ -421,6 +423,8 @@ App = (() => {
     const { route, routeParam, user } = state;
     const isAdmin    = user.role === 'admin';
     const isPC       = user.role === 'pc';
+    const isPCReadonly = user.role === 'pc_readonly';
+    const isPCRead   = isPC || isPCReadonly;
     const isPlanning   = user.role === 'planning';
     const isDesign     = user.role === 'design';
     const isTechDesign = user.role === 'tech_design';
@@ -430,12 +434,15 @@ App = (() => {
     // ── Pre-costing shared routes (async) ──
     if (route === 'fabric-standards') {
       mc.innerHTML = '<div class="empty-state"><div class="icon">🧵</div><h3>Loading…</h3></div>';
-      const isVendor = !isAdmin && !isPC && !isPlanning && !isSales && !isDesign;
+      // Positive check — was a negation chain that classified any non-listed role
+      // (e.g. pc_readonly, tech_design, prod_dev) as vendor. Dead-code today but
+      // pinned to the correct semantics to prevent reuse from masking a bug.
+      const isVendor = user.role === 'vendor';
       AdminViews.renderFabricStandards(user.role, user.tcId).then(html => { mc.innerHTML = html; });
       return;
     }
 
-    if (isAdmin || isPC) {
+    if (isAdmin || isPCRead) {
       // Shared program & cost views — both roles
       if (route === 'dashboard')     mc.innerHTML = AdminViews.renderDashboard(user.role, user);
       else if (route === 'programs')      mc.innerHTML = AdminViews.renderPrograms(routeParam);
@@ -3085,9 +3092,14 @@ App.getPerms = function() {
   if (!user) return { ...FULL, canEdit: false };
   if (user.role === 'admin') return { ...FULL, isAdmin: true };
   if (user.role === 'vendor') return { canViewFOB: true, canViewSellPrice: false, canEdit: true, canEditTechPack: false, canEditSellStatus: false, isAdmin: false, brandFilter: [], tierFilter: [] };
+  // pc_readonly: full read surface, zero write. Must precede the dept lookup so
+  // a pc_readonly user with a department assignment still gets canEdit=false
+  // regardless of the department's canEdit flag.
+  if (user.role === 'pc_readonly') return { canViewFOB: true, canViewSellPrice: true, canEdit: false, canEditTechPack: false, canEditSellStatus: false, canEditTechNotes: false, isAdmin: false, brandFilter: [], tierFilter: [] };
   const dept = user.departmentId ? API.Departments.get(user.departmentId) : null;
   if (!dept) {
     // Role-based fallback (no department assigned)
+    if (user.role === 'pc')          return { ...FULL, isAdmin: false };  // defense-in-depth: explicit branch so PC without a dept doesn't silently get the FULL fallthrough
     if (user.role === 'design')      return { canViewFOB: false, canViewSellPrice: false, canEdit: false, canEditTechPack: true,  canEditSellStatus: false, canEditTechNotes: false, isAdmin: false, brandFilter: [], tierFilter: [] };
     if (user.role === 'tech_design') return { canViewFOB: false, canViewSellPrice: false, canEdit: false, canEditTechPack: false, canEditSellStatus: false, canEditTechNotes: true,  isAdmin: false, brandFilter: [], tierFilter: [] };
     if (user.role === 'prod_dev')    return { canViewFOB: false, canViewSellPrice: false, canEdit: false, canEditTechPack: false, canEditSellStatus: false, canEditTechNotes: false, isAdmin: false, brandFilter: [], tierFilter: [] };

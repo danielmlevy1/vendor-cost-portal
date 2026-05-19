@@ -32,10 +32,13 @@ const AdminViews = (() => {
   function renderDashboard(role, user) {
     const isAdmin    = role === 'admin';
     const isPC       = role === 'pc';
+    const isPCReadonly = role === 'pc_readonly';
+    const isPCRead   = isPC || isPCReadonly;
     const isPlanning = role === 'planning';
     const isSales    = role === 'sales';
     const isDesign   = role === 'design';
     const isAdminOrPC = isAdmin || isPC;
+    const isAdminOrPCRead = isAdmin || isPCRead;
 
     // ── IP-scoped filtering ──────────────────────────────────
     // Admin/PC can temporarily filter by team via the dropdown (_dashIpFilter).
