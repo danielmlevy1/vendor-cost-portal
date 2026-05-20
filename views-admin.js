@@ -1524,13 +1524,19 @@ const AdminViews = (() => {
     }
     if (!colGroups.length) return `<div class="empty-state" style="padding:40px"><div class="icon">🏭</div><h3>No trading companies assigned</h3><button class="btn btn-primary mt-3" onclick="App.openAssignTCs('${programId}')">Assign Trading Companies</button></div>`;
 
-    // Inline editors are admin/pc only. Other roles that reach this view
-    // (pc_readonly, sales, planning) see static text — prevents the silent-fail
-    // UX where the cell looks editable but PATCH returns 403. Literal-role
-    // pattern matches renderBuySummary (line ~2502) rather than perms.canEdit
-    // so intent stays explicit at the call site.
+    // Field-level edit gating mirrors backend PATCH /styles allowlist
+    // (routes.js:921). Two buckets:
+    //   canEdit         — admin/pc only. Production-owned fields:
+    //                     styleName, category, fabrication, dutyRate,
+    //                     estFreight, fob, factoryCost, TC payment terms.
+    //   canEditQtySell  — admin/pc + planning/sales. Sales/Planning own
+    //                     projQty + projSellPrice per CLAUDE.md.
+    // pc_readonly falls below both gates and sees static text everywhere.
+    // Vendor/design/tech_design/prod_dev don't reach this view at all
+    // (dispatcher routes them to renderDesignCostingView).
     const _userRole = (typeof App !== 'undefined' && App._getState) ? App._getState()?.user?.role : null;
     const canEdit = _userRole === 'admin' || _userRole === 'pc';
+    const canEditQtySell = canEdit || _userRole === 'planning' || _userRole === 'sales';
     const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
 
     // Header row 1: fixed cols + vendor group spans (draggable)
@@ -1687,10 +1693,10 @@ const AdminViews = (() => {
         const sellFmt   = s.projSellPrice ? '$' + parseFloat(s.projSellPrice).toFixed(2)                        : '';
         const dutyFmt   = s.dutyRate      ? (parseFloat(s.dutyRate) * 100).toFixed(1) + '%'                     : '';
         const frtFmt    = s.estFreight     ? '$' + parseFloat(s.estFreight).toFixed(2)                          : '';
-        const qtyInput = canEdit
+        const qtyInput = canEditQtySell
           ? `<input class="cell-input cell-input-sm fmt-qty" data-sid="${s.id}" data-field="projQty" data-raw="${s.projQty || ''}" value="${qtyFmt}" placeholder="Qty" onfocus="App.fmtFocusRaw(this)" onblur="App.fmtBlurQty(this,'${s.id}')" onkeydown="if(event.key==='Enter')this.blur()">`
           : `<span class="cell-static cell-input-sm">${qtyFmt || '—'}</span>`;
-        const sellInput = canEdit
+        const sellInput = canEditQtySell
           ? `<input class="cell-input cell-input-sm fmt-sell" data-sid="${s.id}" data-field="projSellPrice" data-raw="${s.projSellPrice || ''}" value="${sellFmt}" placeholder="Sell" onfocus="App.fmtFocusRaw(this)" onblur="App.fmtBlurCurrency(this,'${s.id}','projSellPrice')" onkeydown="if(event.key==='Enter')this.blur()">`
           : `<span class="cell-static cell-input-sm">${sellFmt || '—'}</span>`;
         const dutyInput = canEdit
@@ -1966,10 +1972,10 @@ const AdminViews = (() => {
       const fabInput   = canEdit
         ? `<input class="cell-input cell-input-wide" data-sid="${s.id}" data-field="fabrication" value="${(s.fabrication||'').replace(/"/g,'&quot;').substring(0,40)}" onblur="App.saveStyleInline('${s.id}',this)" onkeydown="if(event.key==='Enter')this.blur()">`
         : `<span class="cell-static cell-input-wide">${esc((s.fabrication||'').substring(0,40)) || '—'}</span>`;
-      const qtyInput   = canEdit
+      const qtyInput   = canEditQtySell
         ? `<input class="cell-input cell-input-sm fmt-qty" data-sid="${s.id}" data-field="projQty" data-raw="${s.projQty||''}" value="${qtyFmt}" placeholder="Qty" onfocus="App.fmtFocusRaw(this)" onblur="App.fmtBlurQty(this,'${s.id}')" onkeydown="if(event.key==='Enter')this.blur()">`
         : `<span class="cell-static cell-input-sm">${qtyFmt || '—'}</span>`;
-      const sellInput  = canEdit
+      const sellInput  = canEditQtySell
         ? `<input class="cell-input cell-input-sm fmt-sell" data-sid="${s.id}" data-field="projSellPrice" data-raw="${s.projSellPrice||''}" value="${sellFmt}" placeholder="Sell" onfocus="App.fmtFocusRaw(this)" onblur="App.fmtBlurCurrency(this,'${s.id}','projSellPrice')" onkeydown="if(event.key==='Enter')this.blur()">`
         : `<span class="cell-static cell-input-sm">${sellFmt || '—'}</span>`;
       const dutyInput  = canEdit
