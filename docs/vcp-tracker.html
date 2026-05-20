@@ -207,7 +207,7 @@
 <body>
 
 <h1>Vendor Cost Portal — Tracker</h1>
-<div class="subtitle">May 19 · <strong>A12 COMPLETE</strong> · A12.3a-e + Stage A blocker fix shipped (v214→v219, 6 commits in 2 days) · pc_readonly role end-to-end with backend allowlists + frontend write-affordance hiding + buildCostMatrix gating + latent batch-review modal defect fix · 10 days to Stage A go-live (May 29)</div>
+<div class="subtitle">May 20 · A12.3f shipped (v220) — sales projQty/projSellPrice edit access restored in cost matrix · A12.3c framing-error acknowledged (was regression for sales/planning, not silent-fail collateral) · planning routing discovery surfaced for follow-up · 9 days to Stage A go-live (May 29)</div>
 
 <div class="milestone-box">
   <strong>🎯 Go-Live Milestone — Staged Rollout (locked May 8)</strong>
@@ -411,24 +411,59 @@
   <strong>QA legend:</strong> <span class="qa-badge qa-cc-done">CC ✓</span> = Claude Code reported done · <span class="qa-badge qa-d-done">D ✓</span> = Daniel verified visually
 </div>
 
-<div class="todo-box">
-  <strong>📋 Next session (May 20+) — RESUME HERE</strong>
+<div class="ship-box">
+  <strong>🎯 What's done today (May 20)</strong>
   <br><br>
-  <strong>A12 is COMPLETE.</strong> All 5 sub-phases shipped May 17-19 (v211→v219, 8 commits total). pc_readonly role works end-to-end backend + frontend. Six latent defects fixed as collateral. Resume protocol:
+  <strong>Code commits (1 shipped to origin):</strong>
+  <br>✓ <strong>A12 Phase A12.3f</strong> <span class="qa-badge qa-cc-done">CC ✓</span><span class="qa-badge qa-d-done">D ✓</span> — <code>616b5b4</code> (v220). Split <code>canEdit</code> in buildCostMatrix into <code>canEdit</code> + <code>canEditQtySell</code>. Restores planning/sales projQty/projSellPrice edit access in cost matrix that A12.3c accidentally removed yesterday. 4 site swaps (anchor + linked row builders × qty + sell), 1 new derivation line, 1 comment-block update for two-bucket model. 15 production-only sites (styleName/category/fabrication/dutyRate/estFreight/fobInput/factoryCost/termsSelect × applicable row builders) unchanged — still gated on <code>canEdit = admin || pc</code>. ~5 LOC net change.
+  <br><br>
+  <strong>Honest accounting — A12.3c was a regression, not "collateral fix":</strong>
+  <br>Yesterday's A12.3c framed the universal <code>canEdit</code> gate as "fixing sales/planning silent-fail UX as collateral." Today's 8-role smoke surfaced that this framing was WRONG. Backend curl audit (PATCH /styles handler at routes.js:921) confirmed planning/sales have always been allowed to write <code>projQty</code> + <code>projSellPrice</code> via the planning/sales field-allowlist branch added in A12.2. Sales actually USED that editing capability — A12.3c removed it without realizing. Sales lost real functionality from yesterday's framing-error commit until today's A12.3f restoration.
+  <br><br>
+  <strong>Planning routing discovery (surfaced during smoke):</strong>
+  <br>Even after A12.3f, planning still showed all-static cells. DevTools investigation revealed planning's sidebar navigation routes them to <code>renderDesignCostingView</code> (table id <code>dcv-table</code>), NOT <code>renderCostSummary</code>/<code>buildCostMatrix</code> (table id <code>cs-table</code>). Sales hits renderCostSummary directly — A12.3f restored their edits. Planning hits a different view that A12.3f doesn't touch. The dispatcher at app.js:506-525 has planning+sales in the same role block, but routes <code>cost-summary</code> → renderCostSummary AND <code>design-costing</code> → renderDesignCostingView; planning's sidebar default lands on the second one. Captured as audit-note — investigate tomorrow whether planning should route to renderCostSummary (single-line dispatcher swap), whether renderDesignCostingView needs its own edit-gating refactor, or whether this is a deeper product question about planning's workflow vs sales'.
+  <br><br>
+  <strong>Near-pollution incident (recovered cleanly):</strong>
+  <br>During backend curl audit, Web Claude included a test write (<code>PATCH /styles/mouedkzymvttk</code> with <code>projQty: 99999</code>) in a diagnostic snippet, then sent a "wait — don't run that" mid-message correction. Daniel ran the original snippet before reading the correction. SELECT confirmed proj_qty stayed NULL — write didn't persist (probably field-allowlist filtered, possibly shell-quoting issue, didn't matter which). Same style as May 14 data-pollution incident; would have re-polluted the same record. No harm done but bad pacing on Web Claude's part. Lesson reinforced: even "non-destructive" diagnostic curls need round-trip protocol; mid-message reversals don't beat the linear-instructions memory edit; pause and reconsider before sending diagnostic write tests.
+  <br><br>
+  <strong>Smoke pass status (partial — pre-launch sweep continued tomorrow):</strong>
+  <br>✓ planning — surfaced renderDesignCostingView routing question (not A12.3f bug)
+  <br>✓ sales — A12.3f restored qty/sell edits, all other inputs static (correct)
+  <br>✓ pc_readonly — all static (regression check clean)
+  <br>✓ PC — all editable (regression check clean — except style # which is never an input by design, verified at routes.js)
+  <br>⏭ design — not yet tested
+  <br>⏭ tech_design — not yet tested
+  <br>⏭ vendor — not yet tested
+  <br>⏭ prod_dev — no seed user; documented as untested intentionally
+  <br><br>
+  <strong>Process / methodology observations from today:</strong>
+  <br>• <strong>"Comprehensive smoke" framing is fragile.</strong> Yesterday's A12.4 was framed as "comprehensive verification" but only tested 2 of 8 roles for the regression class A12.3c introduced. Today surfaced the gap. Going forward: "comprehensive" requires explicit per-role checks against explicit per-role expectations, not "I tested admin + PC + the new role, all looks good."
+  <br>• <strong>Collateral-fix framing is dangerous.</strong> When a commit incidentally affects roles other than its primary target, the framing matters. "Collateral fix" implies we were helping; "collateral regression" implies we were hurting. A12.3c's effect on sales should have been called "collateral regression" yesterday — at minimum that's what triggers a smoke test of the affected role before declaring the commit successful.
+  <br>• <strong>Round-trip protocol applies to ALL curl tests, not just "destructive" ones.</strong> Web Claude proposed a "quick diagnostic" write without round-trip protocol because it was "just checking what 200 vs 403 returns" — but the write payload was a real value (99999) for a real field. Saved by luck (and field-allowlist filtering). Memory edit reinforced: any curl that includes a non-empty body needs explicit round-trip framing even when the intent is purely diagnostic.
+  <br>• <strong>DOM inspection earned its place again.</strong> The "no edits for planning" finding got attributed to cache, then to a code bug, then to a hidden gate — each guess wrong. DevTools inspection of the actual rendered cell HTML (<code>&lt;td data-col="qty"&gt;20,000&lt;/td&gt;</code>, neither input nor cell-static) was the moment the actual situation became clear. Worth jumping to DOM inspection earlier next time something doesn't behave as expected.
+  <br><br>
+  <strong>QA legend:</strong> <span class="qa-badge qa-cc-done">CC ✓</span> = Claude Code reported done · <span class="qa-badge qa-d-done">D ✓</span> = Daniel verified visually
+</div>
+
+<div class="todo-box">
+  <strong>📋 Next session (May 21+) — RESUME HERE</strong>
+  <br><br>
+  A12.3f shipped May 20 to restore sales projQty/projSellPrice edit access (regression from A12.3c). Planning routing question surfaced for follow-up. Smoke pass partial — 4 of 8 roles confirmed clean. Resume protocol:
   <br>
   <ol>
-    <li><strong>Read this tracker first.</strong> Especially the subtitle, the May 19 ship-box (A12 close-out narrative), and this resume block.</li>
+    <li><strong>Read this tracker first.</strong> Especially the subtitle, the May 20 ship-box (A12.3f + framing-error accounting + planning routing discovery + near-pollution incident), and this resume block.</li>
     <li><strong>Run codebase verification:</strong>
       <ul>
-        <li><code>vcp-status</code> alias — confirms HEAD = <code>63d6f9d</code> (A12.3e) on main, working tree clean, v=219 on all 5 tags, server status</li>
+        <li><code>vcp-status</code> alias — confirms HEAD on main, working tree clean, v=220 on all 5 tags, server status</li>
         <li>If server not running: <code>vcp-start</code> in a fresh tab</li>
       </ul>
     </li>
-    <li><strong>Stage A remaining work — pick one:</strong>
+    <li><strong>Stage A remaining work — pick one (order suggestion):</strong>
       <ul>
-        <li><strong>feature-design-handoff-pending-change-indicator</strong> — Stage A scope. Add KPI tile to Design Handoff view (similar to Style Changes KPI) showing count of pending changes per program. Clicking takes user to Style Changes view filtered to that program. ~30-60 min. Existing KPI tile pattern reusable. Lowest-effort Stage A item — natural choice for a fresh-morning warm-up.</li>
-        <li><strong>Stage A pilot user identification</strong> — was a May 15 decision deadline; remains open. First internal person to use VCP for real work. Their reactions become a forcing function — without them, "Stage A is ready" is your judgment alone. Decide before launch.</li>
-        <li><strong>Pre-launch smoke pass</strong> — comprehensive smoke as each of the 6 internal roles (admin, PC, pc_readonly, planning, sales, design, tech_design, prod_dev — that's 8). Today's A12.4 covered pc_readonly thoroughly; other roles last tested May 17-18 before today's changes. Worth a re-pass before May 29 to confirm no regression collateral. ~1-2 hrs.</li>
+        <li><strong>Planning routing investigation (RECOMMENDED FIRST)</strong> — 30 min recon to answer: does planning's sidebar default belong on <code>cost-summary</code> (single-line dispatcher swap) or on <code>design-costing</code> (current state, but their view lacks edit affordances)? Quick recon, then a decision. If dispatcher swap is correct, ~5 min implementation closes both the routing question and gives planning back their qty/sell edits in cost matrix.</li>
+        <li><strong>Complete the 8-role smoke pass</strong> — design, tech_design, vendor remaining. ~30-45 min. Should be quick since A12.3f only touched buildCostMatrix and those roles don't reach it.</li>
+        <li><strong>feature-design-handoff-pending-change-indicator</strong> — Stage A scope. Add KPI tile to Design Handoff view (similar to Style Changes KPI) showing count of pending changes per program. ~30-60 min. Existing KPI tile pattern reusable.</li>
+        <li><strong>Stage A pilot user identification</strong> — was a May 15 decision deadline; remains open. First internal person to use VCP for real work. Decide before launch.</li>
         <li><strong>Tracker maintenance</strong> — once Stage A items resolve, walk the blocker box, mark complete, recalculate Stage A countdown.</li>
       </ul>
     </li>
@@ -441,21 +476,23 @@
     </li>
     <li><strong>Open observation queue (not blocking, knock out when convenient):</strong>
       <ul>
-        <li><code>data-pollution-mouedkzymvttk-proj-qty-unknown</code> — style CHM-Q4-LE-01 has NULL proj_qty since May 14 verification incident. Re-enter through UI workflow when convenient.</li>
-        <li>21 audit-notes captured (see AUDIT-NOTEs section) — apply during deeper audit pass (Stage B work).</li>
-        <li><code>audit-pc_readonly-role-name-consider-rename-post-launch</code> — Daniel raised renaming <code>pc_readonly</code> to something less confusable with <code>pc</code> (e.g., <code>VCP-HighLife-Read</code>). Deferred — touches every gate we just shipped in A12.1-A12.3e, real regression risk, real token cost. Reconsider post-launch.</li>
-        <li><code>audit-renderCustomers-renderInternalPrograms-dispatcher-gap</code> — pre-existing dispatcher bug: <code>route === 'customers'</code> non-admin path is no-op (<code>mc.innerHTML = mc.innerHTML</code>); <code>route === 'internal'</code> gated <code>&& isAdmin</code>. Both routes silently redirect non-admin to dashboard. Affects PC too, not just pc_readonly. Surfaced during A12.4 smoke.</li>
+        <li><code>data-pollution-mouedkzymvttk-proj-qty-unknown</code> — style CHM-Q4-LE-01 has NULL proj_qty since May 14 verification incident. Same record was nearly re-polluted today May 20 (recovered cleanly). Re-enter through UI workflow when convenient.</li>
+        <li>26 audit-notes captured (see AUDIT-NOTEs section) — apply during deeper audit pass (Stage B work).</li>
+        <li><code>audit-pc_readonly-role-name-consider-rename-post-launch</code> — Daniel raised renaming <code>pc_readonly</code> to something less confusable with <code>pc</code> (e.g., <code>VCP-HighLife-Read</code>). Deferred — touches every gate shipped in A12.1-A12.3e, real regression risk, real token cost. Reconsider post-launch.</li>
+        <li><code>audit-renderCustomers-renderInternalPrograms-dispatcher-gap</code> — pre-existing dispatcher bug: both routes silently redirect non-admin to dashboard. Affects PC too, not just pc_readonly. Surfaced during A12.4 smoke.</li>
+        <li><strong>NEW</strong> <code>audit-a12.3c-was-actually-a-regression-for-sales-planning</code>, <code>audit-a12.4-was-not-actually-comprehensive</code>, <code>audit-planning-routes-to-design-costing-view-not-cost-summary</code>, <code>feature-sales-design-editable-style-identification-fields</code>, <code>feature-style-edit-typo-vs-cost-change-modal</code>, <code>audit-curl-test-near-pollution-may20</code> — captured May 20.</li>
       </ul>
     </li>
   </ol>
   <br>
   <strong>Standing pattern reminders (locked into CLAUDE.md May 14, reinforced through A12 work):</strong>
   <br>• Verification trio after every Claude Code commit: <code>git log --oneline -3</code> + <code>git status</code> + <code>grep "?v=" index.html</code>
-  <br>• Recon-first protocol for non-trivial changes (Claude Code investigates before editing — proven 5x today)
+  <br>• Recon-first protocol for non-trivial changes (Claude Code investigates before editing)
   <br>• Terminal tab discipline — server tab is read-only for commands; new tab for everything else
-  <br>• Verification PATCHes use empty body OR round-trip restoration to avoid data pollution
+  <br>• Verification PATCHes use empty body OR round-trip restoration to avoid data pollution — applies to "diagnostic" curls too, not just intentional writes (May 20 lesson)
   <br>• Restart server before any test that exercises new code (route handlers register at server boot)
-  <br>• Comprehensive between-commit smoke when changes touch multiple sites (A12.3d + A12.3e scope came entirely from A12.4 smoke catching what A12.3a-c missed)
+  <br>• Comprehensive smoke means explicit per-role checks against explicit per-role expectations (May 20 lesson — A12.4's "all clean" missed 2-of-8 roles' actual regression)
+  <br>• DOM inspection earned its place: when a gate evaluates correctly but UI doesn't match, jump to DevTools Elements panel sooner rather than later (May 20 lesson)
 </div>
 
 <div class="blocker-box">
@@ -478,15 +515,16 @@
   <br>
   <strong><span class="stage-tag stage-a">A</span> 6. Entra SSO for internal users</strong> ⛔ <strong>IT-BLOCKED</strong> — replace JWT-only auth for production. Internal team signs in via corporate tenant. Same IT response dependency as A3 v2.
   <br>
-  <strong><span class="stage-tag stage-a">A</span> 12. pc_readonly role (new Stage A blocker — captured May 14)</strong> ✅ <strong>COMPLETE May 19</strong>
+  <strong><span class="stage-tag stage-a">A</span> 12. pc_readonly role (new Stage A blocker — captured May 14)</strong> ✅ <strong>COMPLETE May 19 + A12.3f addendum May 20</strong>
   <br>&nbsp;&nbsp;✅ <strong>A12.1 DONE May 17</strong> — Schema + CHECK constraint + seed user + tech_design migration. <code>39155ee</code> (v211).
   <br>&nbsp;&nbsp;✅ <strong>A12.2 DONE May 17</strong> — Backend gating: 4 GET allowlists + close PATCH /styles default-allow gap + tech_design tech-pack write retained. <code>48b4eb4</code> (v212).
   <br>&nbsp;&nbsp;✅ <strong>A12.3a DONE May 19</strong> — Foundation: role derivations + App.getPerms fix (+ defense-in-depth pc branch fixed PC-without-dept latent) + sidebar/dispatcher gates flipped to isPCRead + isVendor positive-check fix. <code>bae8f78</code> (v215).
   <br>&nbsp;&nbsp;✅ <strong>A12.3b DONE May 19</strong> — Write-affordance hiding: 13 sites confirmed naturally excluded (no-op) + 3 settings PC variant renderers refactored + 2 KPI tile splits. <code>6da9915</code> (v216).
-  <br>&nbsp;&nbsp;✅ <strong>A12.3c DONE May 19</strong> — buildCostMatrix inline editor gating across 19 sites + <code>.cell-static</code> CSS variants + sales/planning collateral fix. <code>fae53a4</code> (v217).
-  <br>&nbsp;&nbsp;✅ <strong>A12.3d DONE May 19</strong> — Backend allowlist expansion (5 GET endpoints, 2 forked READ constants) + frontend silent-fail hardening (cost-matrix action buttons, Design Handoff actions, SR/batch modals canEdit gating) + openConsolidatedBatchReview latent defect fix. <code>5f00e04</code> (v218).
-  <br>&nbsp;&nbsp;✅ <strong>A12.3e DONE May 19</strong> — Final silent-fail sweep: cost-matrix checkboxes + bulk-action toolbar + Handoff Detail pendingSection + Delivery Plan comments (collateral fix) + Design Change Confirm buttons (4 sites). <code>63d6f9d</code> (v219).
-  <br>&nbsp;&nbsp;✅ <strong>A12.4 DONE May 19</strong> — Comprehensive verification: pc_readonly sees full read surface + zero write affordances across all 19 sidebar views. Identical column alignment to PC/admin. No silent-fail buttons remain.
+  <br>&nbsp;&nbsp;⚠️ <strong>A12.3c DONE May 19 (regression discovered May 20)</strong> — buildCostMatrix inline editor gating across 19 sites + <code>.cell-static</code> CSS variants. <code>fae53a4</code> (v217). <strong>Original framing claimed "sales/planning silent-fail collateral fix" but was actually a regression for sales</strong> — they had legitimate qty/sell edit access via planning/sales field-allowlist branch in A12.2 backend. Partial restoration shipped in A12.3f (see below).
+  <br>&nbsp;&nbsp;✅ <strong>A12.3d DONE May 19</strong> — Backend allowlist expansion (5 GET endpoints, 2 forked READ constants) + frontend silent-fail hardening + openConsolidatedBatchReview latent defect fix. <code>5f00e04</code> (v218).
+  <br>&nbsp;&nbsp;✅ <strong>A12.3e DONE May 19</strong> — Final silent-fail sweep: cost-matrix checkboxes + bulk-action toolbar + Handoff Detail pendingSection + Delivery Plan comments + Design Change Confirm buttons. <code>63d6f9d</code> (v219).
+  <br>&nbsp;&nbsp;⚠️ <strong>A12.4 DONE May 19 (gaps discovered May 20)</strong> — Comprehensive verification framed at the time as covering pc_readonly thoroughly. May 20 8-role smoke surfaced that A12.4 only tested admin + PC + pc_readonly, missing the A12.3c regression for sales/planning. "Comprehensive" framing was inaccurate.
+  <br>&nbsp;&nbsp;✅ <strong>A12.3f DONE May 20</strong> — Split <code>canEdit</code> into <code>canEdit</code> + <code>canEditQtySell</code> in buildCostMatrix. Restores sales projQty/projSellPrice edit access in cost matrix. 4 site swaps, ~5 LOC net. <code>616b5b4</code> (v220). Note: planning still shows static cells in their default view because planning's sidebar lands on renderDesignCostingView (different code path than A12.3f touched) — captured as <code>audit-planning-routes-to-design-costing-view-not-cost-summary</code>.
   <br>&nbsp;&nbsp;⛔ <strong>A12.5 (IT-blocked)</strong> — Wire up <code>VCP-Highlife-PC-ReadOnly</code> Entra group → <code>pc_readonly</code> role mapping in the group-claim handler. Bundled with A3 v2 implementation. Frontend + backend are FULLY READY — only needs the group claim handler to land.
   <br>
   <strong><span class="stage-tag stage-a">A</span> 22. Bug fix: PC Propose TC modal missing Payment Terms field (captured May 18)</strong> ✅ <strong>DONE May 18</strong> — Shipped via <code>55d5715</code> (v214). Closed scope: PC propose TC modal got paymentTerms dropdown + PC propose COO modal got seaLeadDays input + backend TC update branch's data-loss bug closed structurally (conditional SET clauses) + form labels added to all PC propose modal fields. 4-test verification suite passed with non-destructive round-trip.
@@ -541,8 +579,8 @@
   <div>
     <div class="section complete">
       <div class="section-header">
-        <div class="section-title">✅ Now: A12 COMPLETE · Stage A countdown — 10 days · Design Handoff KPI feature + Stage A pilot user identification + pre-launch smoke pass on deck</div>
-        <div class="section-count">May 19 EOD</div>
+        <div class="section-title">✅ Now: A12 + A12.3f addendum shipped · Stage A countdown — 9 days · Planning routing investigation + complete smoke pass + Handoff KPI feature on deck</div>
+        <div class="section-count">May 20 EOD</div>
       </div>
       <div class="group">
         <div class="group-label">Site testing — May 17-18 results</div>
@@ -994,7 +1032,7 @@
     <div class="section urgent">
       <div class="section-header">
         <div class="section-title">🔒 AUDIT-NOTEs — for authorization audit pass</div>
-        <div class="section-count">21 items</div>
+        <div class="section-count">27 items</div>
       </div>
       <div class="group">
         <div class="group-label">Captured during today's triage — apply during audit pass, not before</div>
@@ -1286,6 +1324,102 @@
             (a) Grep all <code>App.open*Modal</code> functions in app.js. (b) For each, check whether it has a role-derivation + canEdit check at the top. (c) For modals lacking the check, identify which roles can reach them and whether backend writes are gated. (d) Apply same pattern as A12.3d's SR + Batch Review fix where gaps exist.
             <span class="label">Estimated scope:</span>
             ~10-20 modals to audit · ~2-4 hrs to fix any gaps found · capture each as a tracked audit-note for review during deeper auth pass.
+          </div>
+        </div>
+        <div class="item" data-id="audit-a12.3c-was-actually-a-regression-for-sales-planning">
+          <div class="item-header"><input type="checkbox">
+            <div class="item-text">A12.3c was a regression for sales/planning, not a "collateral fix" — honest accounting note</div>
+            <span class="item-priority priority-high">AUDIT</span></div>
+          <div class="test-detail">
+            <span class="label">Origin:</span>
+            May 20 8-role smoke as sales. Sales tried to verify projQty edit access and found cells were static. Backend curl audit confirmed routes.js:921+ planning/sales allowlist branch has ALWAYS included <code>projQty</code> + <code>projSellPrice</code> (added in A12.2 May 17). A12.3c's universal <code>canEdit = admin || pc</code> gate hid editable inputs that backend was happy to accept.
+            <span class="label">Framing-error pattern:</span>
+            A12.3c's commit message and tracker entry framed the effect on sales/planning as "silent-fail UX collateral fix." That framing implied sales/planning were already broken and A12.3c was helping. Actually sales/planning had working write access that A12.3c removed. The honest framing was "regression for sales/planning, restored separately in A12.3f."
+            <span class="label">Action during audit:</span>
+            (a) Pattern reminder for future commits: when a commit incidentally affects roles other than its primary target, framing should reflect actual user impact (helping vs hurting). "Collateral fix" requires evidence the affected roles were broken before; otherwise it's "collateral regression." (b) Smoke test the affected role before declaring the commit successful, not just the primary target role + admin/PC.
+            <span class="label">Status:</span>
+            Partial fix shipped May 20 via A12.3f (<code>616b5b4</code>). Sales restored. Planning still broken in their default view per separate audit-note.
+          </div>
+        </div>
+        <div class="item" data-id="audit-a12.4-was-not-actually-comprehensive">
+          <div class="item-header"><input type="checkbox">
+            <div class="item-text">A12.4 "comprehensive verification" only tested 3 of 8 roles — pattern of overclaiming completeness</div>
+            <span class="item-priority priority-high">AUDIT</span></div>
+          <div class="test-detail">
+            <span class="label">Origin:</span>
+            May 19 A12.4 tracker entry: "Comprehensive verification: pc_readonly sees full read surface + zero write affordances across all 19 sidebar views." May 20 smoke surfaced this only tested admin + PC + pc_readonly. The 5 other internal roles (planning, sales, design, tech_design, prod_dev) were not in the A12.4 smoke. The A12.3c sales regression went undetected because sales wasn't smoked.
+            <span class="label">Risk pattern:</span>
+            "Comprehensive" is a strong word that creates false confidence. When applied to verification that only covers a subset of cases, it actively misleads — both Daniel's recall and future readers of the tracker. The same overclaim could happen on future "comprehensive" smokes if the pattern isn't named.
+            <span class="label">Locked discipline:</span>
+            "Comprehensive smoke" requires (a) explicit list of cases to be tested, (b) explicit expected behavior per case, (c) actual verification each case meets expected behavior. Anything less is "smoke pass" or "partial verification," not comprehensive.
+            <span class="label">Action during audit:</span>
+            Review future "verification complete" tracker entries with this discipline. If a commit affects N roles or N code paths, the verification covers all N or it's not complete.
+          </div>
+        </div>
+        <div class="item" data-id="audit-planning-routes-to-design-costing-view-not-cost-summary">
+          <div class="item-header"><input type="checkbox">
+            <div class="item-text">Planning's sidebar lands on renderDesignCostingView, not renderCostSummary — investigate product intent</div>
+            <span class="item-priority priority-high">AUDIT</span></div>
+          <div class="test-detail">
+            <span class="label">Origin:</span>
+            May 20 A12.3f smoke. Sales hit <code>cost-summary</code> route → <code>renderCostSummary</code> → <code>buildCostMatrix</code> → A12.3f's <code>canEditQtySell</code> gate fired → editable qty/sell. Planning hit <code>design-costing</code> route → <code>renderDesignCostingView</code> (table id <code>dcv-table</code>) → A12.3f doesn't touch this view → all static. The dispatcher at app.js:506-525 has planning+sales in the same role block and supports both <code>cost-summary</code> AND <code>design-costing</code> routes for each; planning's sidebar default lands on <code>design-costing</code> while sales' lands on <code>cost-summary</code>.
+            <span class="label">Business intent (Daniel May 20):</span>
+            "Planning should be the same views and permissions as sales. They can even be combined."
+            <span class="label">Three possible directions:</span>
+            <ul>
+              <li>(a) <strong>Dispatcher swap</strong> — change planning's sidebar to route <code>cost-summary</code> by default. Single-line fix; if correct, planning auto-gets the A12.3f restoration sales has. Cleanest if renderDesignCostingView's edit affordances were never used by planning.</li>
+              <li>(b) <strong>Edit affordances in renderDesignCostingView</strong> — keep planning's current routing but gate qty/sell inputs in renderDesignCostingView to match A12.3f. Bigger refactor of a separate code path.</li>
+              <li>(c) <strong>Combine planning + sales into one role</strong> — product decision. Affects backend (would need migration to merge users), all per-role gates, all sidebar labels. Largest scope.</li>
+            </ul>
+            <span class="label">Recommendation for May 21:</span>
+            Start with 30-min recon of (a) before deciding between (a), (b), (c). Recon = read planning's sidebar config, read renderDesignCostingView's input rendering to see if planning ever had edits there, check whether any production workflow depends on planning being in renderDesignCostingView. Then decide.
+          </div>
+        </div>
+        <div class="item" data-id="feature-sales-design-editable-style-identification-fields">
+          <div class="item-header"><input type="checkbox">
+            <div class="item-text">Feature: sales + design should be able to edit styleName, category, fabrication (currently admin/PC only)</div>
+            <span class="item-priority priority-medium">FEATURE</span></div>
+          <div class="test-detail">
+            <span class="label">Origin:</span>
+            May 20 business-intent conversation. Daniel: "sales has to make an edit on Style #, Style Name, Category, Fabrication, proj qty or Proj sell, where are they doing it?" Current backend (routes.js:921+) only allows planning/sales to write <code>projQty, projSellPrice, sellStatus, sellStatusNote</code>. Design only writes <code>techPackStatus, techDesignNotes</code>. So styleName/category/fabrication can only be edited by admin/PC today.
+            <span class="label">Daniel intent:</span>
+            Sales should edit styleName, category, fabrication, projQty, projSellPrice (5 fields). Design same.
+            <span class="label">Why not shipped today:</span>
+            This is a permission-model change, not a regression fix. Adding styleName/category/fabrication to sales/design backend allowlist requires (a) backend change with curl verification, (b) frontend gate expansion in buildCostMatrix (renames canEdit to add canEditStyleData bucket), (c) potential downstream impact analysis — does category change trigger margin lookup mismatch? Does styleName change need audit-trail? Would benefit from companion feature (typo-vs-cost-change modal — separate audit-note).
+            <span class="label">Estimated scope:</span>
+            ~3-4 hrs work + product validation conversation. Stage A is 9 days out; this is post-launch refinement, not pre-launch must-have.
+          </div>
+        </div>
+        <div class="item" data-id="feature-style-edit-typo-vs-cost-change-modal">
+          <div class="item-header"><input type="checkbox">
+            <div class="item-text">Feature: on style edit by sales/design/planning, prompt typo-vs-cost-change to determine audit + recost trail</div>
+            <span class="item-priority priority-medium">FEATURE</span></div>
+          <div class="test-detail">
+            <span class="label">Origin:</span>
+            May 20 Daniel: "if they make a change, should it bring a modal that prompts them to determine if it was a cost change or a typo?"
+            <span class="label">Concept:</span>
+            User edits styleName/category/fabrication/projQty/projSellPrice. On blur/save, modal asks: "Is this a typo (no cost impact) or a real change (triggers re-cost)?" Typo path → silent update. Real change path → logged to Style Changes log, may trigger recost request. Reuses existing design-change-log infrastructure (🕒 timeline modal + design-change records).
+            <span class="label">Why this is good:</span>
+            Solves "is this material?" question at the source vs downstream cleanup. Creates accountability — non-PC roles can't accidentally cause silent recosts. Reuses existing change-log infrastructure.
+            <span class="label">Why not shipped today:</span>
+            Feature design, not regression fix. Touches change-log, recost-queue, approval flows. ~4-8 hrs serious work + product validation. May 29 launch is 9 days out — better as post-launch refinement after real user feedback.
+            <span class="label">Dependency:</span>
+            Likely paired with <code>feature-sales-design-editable-style-identification-fields</code> — if sales/design can't edit those fields yet, the modal has nothing to prompt for. Sequence: that feature first, this modal as polish layer.
+          </div>
+        </div>
+        <div class="item" data-id="audit-curl-test-near-pollution-may20">
+          <div class="item-header"><input type="checkbox">
+            <div class="item-text">May 20 near-pollution: "diagnostic" curl included a non-empty write payload — round-trip protocol applies to ALL writes, not just intentional ones</div>
+            <span class="item-priority priority-high">AUDIT</span></div>
+          <div class="test-detail">
+            <span class="label">Origin:</span>
+            May 20 during backend curl audit of PATCH /styles allowlist behavior. Web Claude proposed a diagnostic curl that wrote <code>{"projQty":99999}</code> against real style <code>mouedkzymvttk</code>, then sent a "wait — don't run that" mid-message reversal. Daniel ran the original snippet before reading the correction. SELECT confirmed proj_qty stayed NULL — write didn't persist (probably field-allowlist filtered, possibly shell-quoting issue, didn't matter which). Same style as May 14 data-pollution incident; would have re-polluted the same record.
+            <span class="label">Risk pattern:</span>
+            Web Claude framed the curl as "quick diagnostic to check 200 vs 403" — but the request body contained a real value (99999) for a real field. The "diagnostic intent" framing masked that this was a write test against real data without round-trip protocol. The previous CLAUDE.md lesson (May 14) said "verification PATCHes use empty body OR round-trip restoration" — but that lesson was applied only to "verification" tests, not to "diagnostic" tests.
+            <span class="label">Locked discipline (memory edit reinforced May 20):</span>
+            ANY curl that includes a non-empty body, regardless of framing intent (verification / diagnostic / quick-check / "just to see"), requires explicit round-trip protocol. The pattern of "I'm just checking" is the same pattern that bit on May 14 — different words, same shape. Reinforced: mid-message reversals don't beat the linear-instructions memory edit; pause and reconsider before sending diagnostic write tests in the first place.
+            <span class="label">Style mouedkzymvttk status:</span>
+            Still NULL on proj_qty. Two near-misses now (May 14 actual pollution → reverted to NULL, May 20 near-pollution → didn't persist). Re-enter through normal UI workflow when convenient.
           </div>
         </div>
         <div class="item done" data-id="audit-orphan-propose-flow-functions">
