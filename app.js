@@ -119,8 +119,8 @@ App = (() => {
     if (prog && prog.status === 'Placed' && (u.role === 'admin' || u.role === 'pc' || u.role === 'planning' || u.role === 'sales')) {
       return navigate('overview', id);
     }
-    // planning → design-costing (no pricing); sales → cost-summary (full pricing)
-    if (u.role === 'design' || u.role === 'planning') navigate('design-costing', id);
+    // design → design-costing (no pricing); planning + sales → cost-summary (full pricing, matches A12.3f canEditQtySell gate)
+    if (u.role === 'design') navigate('design-costing', id);
     else navigate('cost-summary', id);
   }
 
