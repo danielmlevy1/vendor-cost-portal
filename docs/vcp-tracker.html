@@ -207,7 +207,7 @@
 <body>
 
 <h1>Vendor Cost Portal — Tracker</h1>
-<div class="subtitle">May 20 · A12.3f shipped (v220) — sales projQty/projSellPrice edit access restored in cost matrix · A12.3c framing-error acknowledged (was regression for sales/planning, not silent-fail collateral) · planning routing discovery surfaced for follow-up · 9 days to Stage A go-live (May 29)</div>
+<div class="subtitle">May 24 · A12.3g shipped (v221) — planning dispatcher swap completes A12.3c regression fix · Design Handoff Pending Changes KPI shipped (v222) · Status taxonomy audit locked (decisions captured for post-launch refactor) · IT response received + Tuesday 4:30 PM meeting with Igor + Bar scheduled · 5 days to Stage A go-live (May 29)</div>
 
 <div class="milestone-box">
   <strong>🎯 Go-Live Milestone — Staged Rollout (locked May 8)</strong>
@@ -445,42 +445,112 @@
   <strong>QA legend:</strong> <span class="qa-badge qa-cc-done">CC ✓</span> = Claude Code reported done · <span class="qa-badge qa-d-done">D ✓</span> = Daniel verified visually
 </div>
 
-<div class="todo-box">
-  <strong>📋 Next session (May 21+) — RESUME HERE</strong>
+<div class="ship-box">
+  <strong>🎯 What's done today (May 24 — extended session covering May 21-24 work)</strong>
   <br><br>
-  A12.3f shipped May 20 to restore sales projQty/projSellPrice edit access (regression from A12.3c). Planning routing question surfaced for follow-up. Smoke pass partial — 4 of 8 roles confirmed clean. Resume protocol:
+  <strong>Code commits (2 shipped to origin):</strong>
+  <br>✓ <strong>A12 Phase A12.3g</strong> <span class="qa-badge qa-cc-done">CC ✓</span><span class="qa-badge qa-d-done">D ✓</span> — <code>35ebbd3</code> (v221). Single-line dispatcher swap in <code>App.openProgram</code> at app.js:122-123. Removed <code>planning</code> from the design-costing branch, falling through to cost-summary (matching sales). Completes the A12.3c regression fix for planning that A12.3f only solved for sales. 5-role smoke confirmed: planning + sales both editable in cost matrix; design stays on design-costing (unchanged); admin/PC unchanged. Recon caught the framing error in earlier conversation ("Submitted for Release" cannot merge with "Submitted to Sales" — actor-state distinct), preventing a wrong-direction implementation. Documented sellInStatus access gap as separate audit-note.
+  <br>✓ <strong>Design Handoff Pending Changes KPI</strong> <span class="qa-badge qa-cc-done">CC ✓</span><span class="qa-badge qa-d-done">D ✓</span> — <code>7769924</code> (v222). New Stage A feature surfacing <code>design_changes</code> rows with <code>status='pending'</code> on Design Handoff views. List view: 📝 N pending blue pill next to styles badge (mirrors stagedPill pattern). Detail page: 📝 N Pending Changes kpi-card between progress bar and pending styles section. Both click-through to Program Changes view (zero new navigation code — reused existing program-changes route). ~14-20 LOC across 2 files (views-admin.js + index.html), no backend changes. Hidden when no linked program OR zero pending — zero-noise UX.
+  <br><br>
+  <strong>Documents shipped (3 deliverables):</strong>
+  <br>✓ <code>vcp-entra-groups-for-IT.xlsx</code> — 3 sheets: README + 8 internal Entra security groups + 5 placeholder vendor groups. Daniel populates internal-group member emails before sending to IT.
+  <br>✓ <code>vcp-meeting-prep-igor-bar-tuesday.md</code> — 5-part agenda covering VCP overview (per Bar's request), app registration setup, 7 clarification questions from IT response, deliverables exchange, and locked decisions.
+  <br>✓ <code>status-taxonomy-audit-decisions-may21.md</code> — full audit doc capturing locked taxonomy decisions, refactor scope (conservative + ambitious paths), open future-work items. Saved as standalone doc for repo <code>docs/</code> folder.
+  <br><br>
+  <strong>IT response received (early-stage unblock for A3 v2 / A6 SSO):</strong>
+  <br>• Group naming convention locked: <code>sec-hl-vcp-{role}-{rw|ro}</code> for internal, <code>sec-hl-vcp-vendor-{tc_code}</code> for vendors
+  <br>• Vendor structure: Option A (one Entra group per TC, ~27+ groups for Stage B+)
+  <br>• Internal: Option B (shared groups + attribute) acceptable
+  <br>• Graph API approved: <code>User.Read.All</code> + <code>Group.Read.All</code>
+  <br>• B2B guest accounts for vendors at Stage B (no per-guest licensing cost)
+  <br>• Conditional Access: MFA every login until Azure networking is set up
+  <br>• Architecture review required before launch (security review process)
+  <br>• Meeting locked: <strong>Tuesday at 4:30 PM</strong> with Igor + Bar for app registration setup + Q&A
+  <br>• IT will create groups; Daniel provides Excel list with members
+  <br><br>
+  <strong>Status taxonomy audit — locked decisions (refactor deferred to post-launch):</strong>
+  <br>Final 5-stage location-led taxonomy: 🎨 <strong>With Design</strong> → 🏭 <strong>With Production</strong> → 💼 <strong>With Sales</strong> → 🧮 <strong>In Costing</strong> → ✓ <strong>Placed</strong> (+ ✕ Cancelled).
+  <br>Universal principle: "Complete = nothing left for anyone to do." "Placed" carries that semantic. The word "Complete" disappears from taxonomy entirely.
+  <br>Key recon save: "Submitted for Release" originally hypothesized to merge with "Submitted to Sales" — recon proved NOT SAFE (actor-state distinct, PC-approval queue vs Sales-action queue). Caught the merge error before commit.
+  <br>Refactor scope captured (conservative ~10-15 LOC + ambitious ~50-80 LOC with case normalization). Decision: ship as post-launch commit, not pre-launch. Stage A is 5 days out — label polish is non-blocking.
+  <br>Full decision doc captured in <code>status-taxonomy-audit-decisions-may21.md</code> for repo.
+  <br><br>
+  <strong>8-role smoke pass (7 of 8 confirmed, prod_dev documented as untested):</strong>
+  <br>✓ admin — full editable (regression check)
+  <br>✓ pc — full editable (regression check)
+  <br>✓ pc_readonly — all static (regression check, comprehensive yesterday)
+  <br>✓ planning — A12.3g restored cost-summary edit access on qty/sell
+  <br>✓ sales — A12.3f restored qty/sell edit access
+  <br>✓ design — confirmed working; 2 findings captured (style-name edit request as feature, Style Changes click → dashboard dead-end as bug)
+  <br>✓ tech_design — confirmed working; 1 bug (tech_pack frontend gate blocks allowed write) + 1 polish (handoff icon consistency)
+  <br>✓ vendor (SHK login) — confirmed working; no console errors, MyPrograms/Quote views populate
+  <br>⊘ prod_dev — no seed user, documented as untested intentionally
+  <br><br>
+  <strong>Pre-shipping near-miss recovered cleanly:</strong>
+  <br>During backend curl audit on May 21, Web Claude included a test write (<code>PATCH /styles/mouedkzymvttk</code> with <code>projQty: 99999</code>) in a diagnostic snippet, then sent a "wait — don't run that" mid-message reversal. Daniel ran the original snippet before reading the correction. SELECT confirmed proj_qty stayed NULL — write didn't persist (likely field-allowlist filtered). Same style as May 14 incident; would have re-polluted the same record. No harm done, but bad pacing on Web Claude's part. Reinforced lesson: <em>even "diagnostic" curls with non-empty bodies need round-trip protocol</em>.
+  <br><br>
+  <strong>Process observations from this extended session:</strong>
+  <br>• <strong>"Pause to audit before shipping" pays off.</strong> The KPI feature recon ran into a status-taxonomy question; rather than dismissing it, we ran a focused 30-min audit and locked decisions. Recon caught a merge error (Submitted for Release + Submitted to Sales) that would have been a real regression if shipped. Discipline: when a question surfaces, treat it as a signal worth investigating rather than a distraction.
+  <br>• <strong>Documents-as-deliverables count.</strong> Today shipped 2 code commits + 3 documents. The Excel + meeting prep + audit doc are real work — they unblock IT integration and capture decisions that would otherwise drift. Tracker should reflect this kind of work too, not just commits.
+  <br>• <strong>Token-aware pacing held.</strong> At 79% Claude Code monthly usage flagged early, scope decisions stayed conservative throughout. No commits got bundled unnecessarily; no commits got fragmented. Audit work (mostly Web Claude conversation) was cheap; Claude Code only spent tokens on recon + implementation.
+  <br>• <strong>Browser smoke earned its place again.</strong> A12.3g smoke for planning required two iterations — initial check showed "no edits" → DevTools inspection revealed planning was on renderDesignCostingView (different view than expected) → dispatcher fix landed correctly on second attempt. Smoke is non-negotiable.
+  <br><br>
+  <strong>QA legend:</strong> <span class="qa-badge qa-cc-done">CC ✓</span> = Claude Code reported done · <span class="qa-badge qa-d-done">D ✓</span> = Daniel verified visually
+</div>
+
+<div class="todo-box">
+  <strong>📋 Next session (May 25+) — RESUME HERE</strong>
+  <br><br>
+  A12.3g shipped May 21 (planning dispatcher swap completes A12.3c regression fix). Design Handoff Pending Changes KPI shipped May 24. Status taxonomy decisions locked (refactor deferred post-launch). IT response received; <strong>Tuesday May 26 at 4:30 PM meeting with Igor + Bar locked</strong>. Stage A go-live: <strong>Friday May 29 — 5 days away</strong>.
   <br>
   <ol>
-    <li><strong>Read this tracker first.</strong> Especially the subtitle, the May 20 ship-box (A12.3f + framing-error accounting + planning routing discovery + near-pollution incident), and this resume block.</li>
+    <li><strong>Read this tracker first.</strong> Especially the subtitle, the May 21-24 ship-box (A12.3g + KPI feature + IT response + taxonomy audit + 8-role smoke results), and this resume block.</li>
     <li><strong>Run codebase verification:</strong>
       <ul>
-        <li><code>vcp-status</code> alias — confirms HEAD on main, working tree clean, v=220 on all 5 tags, server status</li>
+        <li><code>vcp-status</code> alias — confirms HEAD = <code>7769924</code> on main, working tree clean, v=222 on all 5 tags, server status</li>
         <li>If server not running: <code>vcp-start</code> in a fresh tab</li>
       </ul>
     </li>
-    <li><strong>Stage A remaining work — pick one (order suggestion):</strong>
+    <li><strong>BEFORE TUESDAY (May 26 4:30 PM meeting):</strong>
       <ul>
-        <li><strong>Planning routing investigation (RECOMMENDED FIRST)</strong> — 30 min recon to answer: does planning's sidebar default belong on <code>cost-summary</code> (single-line dispatcher swap) or on <code>design-costing</code> (current state, but their view lacks edit affordances)? Quick recon, then a decision. If dispatcher swap is correct, ~5 min implementation closes both the routing question and gives planning back their qty/sell edits in cost matrix.</li>
-        <li><strong>Complete the 8-role smoke pass</strong> — design, tech_design, vendor remaining. ~30-45 min. Should be quick since A12.3f only touched buildCostMatrix and those roles don't reach it.</li>
-        <li><strong>feature-design-handoff-pending-change-indicator</strong> — Stage A scope. Add KPI tile to Design Handoff view (similar to Style Changes KPI) showing count of pending changes per program. ~30-60 min. Existing KPI tile pattern reusable.</li>
-        <li><strong>Stage A pilot user identification</strong> — was a May 15 decision deadline; remains open. First internal person to use VCP for real work. Decide before launch.</li>
-        <li><strong>Tracker maintenance</strong> — once Stage A items resolve, walk the blocker box, mark complete, recalculate Stage A countdown.</li>
+        <li><strong>Populate Excel members</strong> — open <code>vcp-entra-groups-for-IT.xlsx</code>, fill in the yellow-highlighted Members column on Sheet 1 with employee emails for each role. Decide whether tech_design merges into design (IT prep doc allows merge if access is the same — current decision: KEEP SEPARATE).</li>
+        <li><strong>Review meeting prep doc</strong> — <code>vcp-meeting-prep-igor-bar-tuesday.md</code> covers VCP overview (Bar's request), app registration setup, 7 clarification questions, deliverables exchange. Skim to refresh.</li>
+        <li><strong>Send Excel to IT</strong> ahead of meeting (or bring to meeting — confirm with Igor)</li>
       </ul>
     </li>
-    <li><strong>IT-blocked items (still waiting on response):</strong>
+    <li><strong>Stage A remaining work — order suggestion:</strong>
       <ul>
-        <li>A3 v2 design (Entra groups → roles/permissions); needs IT response to P0 questions in <code>/docs/IT-prep.md</code></li>
-        <li>A6 Entra SSO for internal; same blocker</li>
-        <li>A12.5 group integration (<code>VCP-Highlife-PC-ReadOnly</code> Entra group → <code>pc_readonly</code> role mapping); same blocker — A12.1-A12.4 work is fully ready to receive this when IT lands</li>
+        <li><strong>(A) Bundle commit A12.3h</strong> — fix 2 small bugs surfaced in May 24 smoke pass:
+          <ul>
+            <li><code>audit-style-changes-click-dispatcher-gap-non-admin-pc</code> — Style Changes table → click style → <code>navigate('styles', programId)</code> dead-ends to dashboard for design/tech_design/planning/sales. Fix: change navigation target OR add 'styles' route to those dispatchers. ~10 min recon + ~5 LOC fix.</li>
+            <li><code>audit-tech_design-tech-pack-frontend-gate-blocks-allowed-write</code> — frontend <code>canEditTechPack</code> gate denies tech_design even though backend allowlist permits it. ~5 LOC fix.</li>
+          </ul>
+          Total scope: ~15-20 LOC, single commit, ~30 min Claude Code time.</li>
+        <li><strong>(B) Pilot user identification</strong> — was May 15 decision deadline; STILL OPEN. First internal person to use VCP for real work. Their reactions become the forcing function. Pick before May 29.</li>
+        <li><strong>(C) Pre-launch real-data population</strong> (May 27-28) — populate real TC + Factory list via admin UI. Captured as <code>feature-real-data-population-pre-launch</code>. Tracker item, not Claude Code work.</li>
+        <li><strong>(D) Vendor batching checkbox audit</strong> — <code>audit-batching-vendor-checkboxes-pre-checked-incorrectly</code>. Daniel's spec: Batch 1 = blank picker; Batch 2+ = pre-checked for vendors already selected in prior batches. Worth 30-min recon to confirm scope before deciding fix priority.</li>
+      </ul>
+    </li>
+    <li><strong>IT-blocked items (Tuesday 4:30 meeting will unblock):</strong>
+      <ul>
+        <li>A3 v2 design doc finalization — needs Tenant ID, Client ID, sample token from Tuesday meeting</li>
+        <li>A6 Entra SSO implementation — kicks off after Tuesday meeting deliverables</li>
+        <li>A12.5 group integration — bundled with A6</li>
+      </ul>
+    </li>
+    <li><strong>Post-launch refactor queue (do NOT touch pre-May-29):</strong>
+      <ul>
+        <li>Status taxonomy refactor (conservative ~10-15 LOC label-only OR ambitious ~50-80 LOC with case normalization) — full decision doc in <code>status-taxonomy-audit-decisions-may21.md</code></li>
+        <li><code>audit-pc_readonly-role-name-consider-rename-post-launch</code> — rename consideration</li>
+        <li><code>feature-style-edit-typo-vs-cost-change-modal</code> — when sales/design get styleName/category/fabrication edit access, this modal solves the typo-vs-recost workflow</li>
+        <li><code>feature-sales-design-editable-style-identification-fields</code> — backend allowlist expansion + product validation</li>
       </ul>
     </li>
     <li><strong>Open observation queue (not blocking, knock out when convenient):</strong>
       <ul>
-        <li><code>data-pollution-mouedkzymvttk-proj-qty-unknown</code> — style CHM-Q4-LE-01 has NULL proj_qty since May 14 verification incident. Same record was nearly re-polluted today May 20 (recovered cleanly). Re-enter through UI workflow when convenient.</li>
-        <li>26 audit-notes captured (see AUDIT-NOTEs section) — apply during deeper audit pass (Stage B work).</li>
-        <li><code>audit-pc_readonly-role-name-consider-rename-post-launch</code> — Daniel raised renaming <code>pc_readonly</code> to something less confusable with <code>pc</code> (e.g., <code>VCP-HighLife-Read</code>). Deferred — touches every gate shipped in A12.1-A12.3e, real regression risk, real token cost. Reconsider post-launch.</li>
-        <li><code>audit-renderCustomers-renderInternalPrograms-dispatcher-gap</code> — pre-existing dispatcher bug: both routes silently redirect non-admin to dashboard. Affects PC too, not just pc_readonly. Surfaced during A12.4 smoke.</li>
-        <li><strong>NEW</strong> <code>audit-a12.3c-was-actually-a-regression-for-sales-planning</code>, <code>audit-a12.4-was-not-actually-comprehensive</code>, <code>audit-planning-routes-to-design-costing-view-not-cost-summary</code>, <code>feature-sales-design-editable-style-identification-fields</code>, <code>feature-style-edit-typo-vs-cost-change-modal</code>, <code>audit-curl-test-near-pollution-may20</code> — captured May 20.</li>
+        <li><code>data-pollution-mouedkzymvttk-proj-qty-unknown</code> — style CHM-Q4-LE-01 has NULL proj_qty since May 14 incident (nearly re-polluted May 21, recovered cleanly). Re-enter through UI workflow when convenient.</li>
+        <li>33 audit-notes captured (see AUDIT-NOTEs section) — apply during deeper audit pass (Stage B work).</li>
+        <li><strong>NEW from May 24 session:</strong> <code>audit-style-changes-click-dispatcher-gap-non-admin-pc</code>, <code>audit-tech_design-tech-pack-frontend-gate-blocks-allowed-write</code>, <code>audit-planning-sales-sell-in-status-access-after-dispatcher-swap</code>, <code>polish-design-handoff-style-change-icon-consistency-vs-cost-summary</code>, <code>audit-status-taxonomy-decisions-locked</code>, <code>audit-design-handoff-kpi-list-view-iteration-cost</code>, <code>audit-batching-vendor-checkboxes-pre-checked-incorrectly</code>, <code>feature-real-data-population-pre-launch</code>.</li>
       </ul>
     </li>
   </ol>
@@ -489,10 +559,11 @@
   <br>• Verification trio after every Claude Code commit: <code>git log --oneline -3</code> + <code>git status</code> + <code>grep "?v=" index.html</code>
   <br>• Recon-first protocol for non-trivial changes (Claude Code investigates before editing)
   <br>• Terminal tab discipline — server tab is read-only for commands; new tab for everything else
-  <br>• Verification PATCHes use empty body OR round-trip restoration to avoid data pollution — applies to "diagnostic" curls too, not just intentional writes (May 20 lesson)
+  <br>• Verification PATCHes use empty body OR round-trip restoration to avoid data pollution — applies to "diagnostic" curls too, not just intentional writes (May 20-21 lesson)
   <br>• Restart server before any test that exercises new code (route handlers register at server boot)
   <br>• Comprehensive smoke means explicit per-role checks against explicit per-role expectations (May 20 lesson — A12.4's "all clean" missed 2-of-8 roles' actual regression)
-  <br>• DOM inspection earned its place: when a gate evaluates correctly but UI doesn't match, jump to DevTools Elements panel sooner rather than later (May 20 lesson)
+  <br>• DOM inspection earned its place: when a gate evaluates correctly but UI doesn't match, jump to DevTools Elements panel sooner rather than later (May 20-21 lesson)
+  <br>• When a question surfaces mid-flow, treat it as a signal worth investigating — not a distraction. The status taxonomy audit (May 24) caught a merge error that would have shipped as a regression (May 21-24 lesson).
 </div>
 
 <div class="blocker-box">
@@ -524,8 +595,9 @@
   <br>&nbsp;&nbsp;✅ <strong>A12.3d DONE May 19</strong> — Backend allowlist expansion (5 GET endpoints, 2 forked READ constants) + frontend silent-fail hardening + openConsolidatedBatchReview latent defect fix. <code>5f00e04</code> (v218).
   <br>&nbsp;&nbsp;✅ <strong>A12.3e DONE May 19</strong> — Final silent-fail sweep: cost-matrix checkboxes + bulk-action toolbar + Handoff Detail pendingSection + Delivery Plan comments + Design Change Confirm buttons. <code>63d6f9d</code> (v219).
   <br>&nbsp;&nbsp;⚠️ <strong>A12.4 DONE May 19 (gaps discovered May 20)</strong> — Comprehensive verification framed at the time as covering pc_readonly thoroughly. May 20 8-role smoke surfaced that A12.4 only tested admin + PC + pc_readonly, missing the A12.3c regression for sales/planning. "Comprehensive" framing was inaccurate.
-  <br>&nbsp;&nbsp;✅ <strong>A12.3f DONE May 20</strong> — Split <code>canEdit</code> into <code>canEdit</code> + <code>canEditQtySell</code> in buildCostMatrix. Restores sales projQty/projSellPrice edit access in cost matrix. 4 site swaps, ~5 LOC net. <code>616b5b4</code> (v220). Note: planning still shows static cells in their default view because planning's sidebar lands on renderDesignCostingView (different code path than A12.3f touched) — captured as <code>audit-planning-routes-to-design-costing-view-not-cost-summary</code>.
-  <br>&nbsp;&nbsp;⛔ <strong>A12.5 (IT-blocked)</strong> — Wire up <code>VCP-Highlife-PC-ReadOnly</code> Entra group → <code>pc_readonly</code> role mapping in the group-claim handler. Bundled with A3 v2 implementation. Frontend + backend are FULLY READY — only needs the group claim handler to land.
+  <br>&nbsp;&nbsp;✅ <strong>A12.3f DONE May 20</strong> — Split <code>canEdit</code> into <code>canEdit</code> + <code>canEditQtySell</code> in buildCostMatrix. Restores sales projQty/projSellPrice edit access in cost matrix. 4 site swaps, ~5 LOC net. <code>616b5b4</code> (v220). Note: planning still shows static cells in their default view because planning's sidebar lands on renderDesignCostingView (different code path than A12.3f touched) — addressed in A12.3g below.
+  <br>&nbsp;&nbsp;✅ <strong>A12.3g DONE May 21</strong> — Dispatcher swap in <code>App.openProgram</code> (app.js:122-123). Removed <code>planning</code> from the design-costing branch, falling through to cost-summary (matching sales). Completes the A12.3c regression fix for planning. ~2 LOC net change. <code>35ebbd3</code> (v221). A12 saga truly complete with this. Note: sellInStatus access gap surfaced as separate audit-note (planning lost that field in renderDesignCostingView; matches sales' current state).
+  <br>&nbsp;&nbsp;⛔ <strong>A12.5 (IT-blocked, partially unblocked May 24)</strong> — Wire up <code>VCP-Highlife-PC-ReadOnly</code> Entra group → <code>pc_readonly</code> role mapping in the group-claim handler. Bundled with A3 v2 implementation. Frontend + backend are FULLY READY — only needs the group claim handler to land. <strong>IT meeting Tuesday May 26 at 4:30 PM will unblock app registration; A12.5 implementation can start after that.</strong>
   <br>
   <strong><span class="stage-tag stage-a">A</span> 22. Bug fix: PC Propose TC modal missing Payment Terms field (captured May 18)</strong> ✅ <strong>DONE May 18</strong> — Shipped via <code>55d5715</code> (v214). Closed scope: PC propose TC modal got paymentTerms dropdown + PC propose COO modal got seaLeadDays input + backend TC update branch's data-loss bug closed structurally (conditional SET clauses) + form labels added to all PC propose modal fields. 4-test verification suite passed with non-destructive round-trip.
   <br>
@@ -579,8 +651,8 @@
   <div>
     <div class="section complete">
       <div class="section-header">
-        <div class="section-title">✅ Now: A12 + A12.3f addendum shipped · Stage A countdown — 9 days · Planning routing investigation + complete smoke pass + Handoff KPI feature on deck</div>
-        <div class="section-count">May 20 EOD</div>
+        <div class="section-title">✅ Now: A12 fully complete (3f + 3g shipped) · Design Handoff KPI shipped · Status taxonomy locked · IT meeting Tuesday May 26 · Stage A countdown — 5 days</div>
+        <div class="section-count">May 24 EOD</div>
       </div>
       <div class="group">
         <div class="group-label">Site testing — May 17-18 results</div>
@@ -1032,7 +1104,7 @@
     <div class="section urgent">
       <div class="section-header">
         <div class="section-title">🔒 AUDIT-NOTEs — for authorization audit pass</div>
-        <div class="section-count">27 items</div>
+        <div class="section-count">35 items</div>
       </div>
       <div class="group">
         <div class="group-label">Captured during today's triage — apply during audit pass, not before</div>
@@ -1420,6 +1492,136 @@
             ANY curl that includes a non-empty body, regardless of framing intent (verification / diagnostic / quick-check / "just to see"), requires explicit round-trip protocol. The pattern of "I'm just checking" is the same pattern that bit on May 14 — different words, same shape. Reinforced: mid-message reversals don't beat the linear-instructions memory edit; pause and reconsider before sending diagnostic write tests in the first place.
             <span class="label">Style mouedkzymvttk status:</span>
             Still NULL on proj_qty. Two near-misses now (May 14 actual pollution → reverted to NULL, May 20 near-pollution → didn't persist). Re-enter through normal UI workflow when convenient.
+          </div>
+        </div>
+        <div class="item" data-id="audit-style-changes-click-dispatcher-gap-non-admin-pc">
+          <div class="item-header"><input type="checkbox">
+            <div class="item-text">Style Changes view → click style row navigates to dead-end dashboard for design/tech_design/planning/sales roles</div>
+            <span class="item-priority priority-medium">AUDIT</span></div>
+          <div class="test-detail">
+            <span class="label">Origin:</span>
+            May 24 8-role smoke pass as design. Style Changes table at <code>views-admin.js:5200</code> click handler: <code>onclick="App.navigate('styles','${style?.programId}')"</code>. But design's dispatcher block at app.js:484-498 doesn't include <code>route === 'styles'</code>. Falls through to default → renderDashboard. Same dead-end confirmed for tech_design; likely also affects planning + sales.
+            <span class="label">Recommended fix:</span>
+            Change navigation target from <code>'styles'</code> to <code>'design-costing'</code> (for design/tech_design) or <code>'cost-summary'</code> (for planning/sales/admin/PC). Single line change at views-admin.js:5200. OR: add 'styles' route to non-admin dispatchers, but that exposes Style Manager (admin/PC view) to non-admin roles.
+            <span class="label">Effort:</span>
+            ~10 min recon + ~5 LOC fix. Captured for tomorrow's A12.3h bundle.
+          </div>
+        </div>
+        <div class="item" data-id="audit-tech_design-tech-pack-frontend-gate-blocks-allowed-write">
+          <div class="item-header"><input type="checkbox">
+            <div class="item-text">Frontend <code>canEditTechPack</code> gate blocks tech_design's write access in cost-matrix despite backend allowing it</div>
+            <span class="item-priority priority-medium">AUDIT</span></div>
+          <div class="test-detail">
+            <span class="label">Origin:</span>
+            May 24 smoke pass as tech_design. In renderDesignCostingView, tech_design cannot edit Tech Pack status dropdown — gate is <code>canEditTechPack</code> derived from <code>App.getPerms()</code>. Backend allowlist at <code>routes.js:921+</code> permits tech_design to write <code>techPackStatus</code> and <code>techDesignNotes</code> (their dedicated field-level allowlist branch).
+            <span class="label">Daniel intent:</span>
+            "Tech design should be able to edit Tech Pack status." (May 24 conversation)
+            <span class="label">Fix:</span>
+            Update <code>App.getPerms()</code> tech_design branch to set <code>canEditTechPack: true</code>. ~5 LOC change. Possibly also requires confirmation that design role retains its tech-pack edit access (don't accidentally widen scope).
+            <span class="label">Effort:</span>
+            ~5 LOC fix. Captured for tomorrow's A12.3h bundle.
+          </div>
+        </div>
+        <div class="item" data-id="audit-planning-sales-sell-in-status-access-after-dispatcher-swap">
+          <div class="item-header"><input type="checkbox">
+            <div class="item-text">A12.3g side-effect: planning lost sellInStatus edit access (matches sales' state; not regression-from-baseline)</div>
+            <span class="item-priority priority-low">AUDIT</span></div>
+          <div class="test-detail">
+            <span class="label">Origin:</span>
+            May 21 A12.3g implementation. Planning's <code>openProgram</code> dispatcher was changed to route to cost-summary (renderCostSummary). Their previous default landed on renderDesignCostingView which exposes sellInStatus dropdown editing.
+            <span class="label">Status:</span>
+            <strong>Not a regression from baseline</strong> — sales has been in this state all along (sales defaults to cost-summary; no complaints). Planning now matches sales. Documented behavior, not bug.
+            <span class="label">Open question:</span>
+            Should there be a programTabBar entry for Sell-In Status (or similar route to renderDesignCostingView's sellInStatus UI) for planning/sales who want to edit that field? Defer to post-launch user feedback. If planning users complain, add the tab.
+          </div>
+        </div>
+        <div class="item" data-id="audit-design-handoff-kpi-list-view-iteration-cost">
+          <div class="item-header"><input type="checkbox">
+            <div class="item-text">Design Handoff KPI list view: per-row <code>API.DesignChanges.all().filter()</code> may become slow at scale</div>
+            <span class="item-priority priority-low">AUDIT</span></div>
+          <div class="test-detail">
+            <span class="label">Origin:</span>
+            May 24 KPI feature implementation. The list view (renderDesignHandoff buildRow) calls <code>API.DesignChanges.all().filter(c => c.programId === h.linkedProgramId && c.status === 'pending').length</code> PER ROW. With 50 handoffs and 500 design_changes, that's 25,000 iterations per render.
+            <span class="label">Current state:</span>
+            DB has 6 design_changes total. Not a problem yet.
+            <span class="label">Threshold:</span>
+            ~1000+ design_changes rows AND ~30+ handoff rows on a single page.
+            <span class="label">Mitigation when needed:</span>
+            Build a one-pass map (<code>groupBy programId, status='pending'</code>) at top of renderDesignHandoff, then look up per-row from the map. O(N+M) instead of O(N×M). ~15 LOC refactor.
+          </div>
+        </div>
+        <div class="item" data-id="audit-batching-vendor-checkboxes-pre-checked-incorrectly">
+          <div class="item-header"><input type="checkbox">
+            <div class="item-text">Pending PC Action / Batching: vendor assignment checkboxes pre-checked when they should be blank (or context-aware)</div>
+            <span class="item-priority priority-high">AUDIT</span></div>
+          <div class="test-detail">
+            <span class="label">Origin:</span>
+            May 24 KPI feature smoke pass. Daniel observed: when a handoff reaches Batching stage and PC opens the Pending PC Action panel, ALL vendor checkboxes are pre-checked (along with their COO sub-checkboxes). Forces PC to uncheck most vendors to make a selection — inverse of intended UX.
+            <span class="label">Daniel intent:</span>
+            <ul>
+              <li>Batch 1 (first batch for a program): vendor checkboxes should be <strong>BLANK</strong>. PC consciously picks vendors.</li>
+              <li>Later batches (Batch 2+): vendor checkboxes should be <strong>pre-checked for vendors already selected in prior batches</strong> of the same program.</li>
+            </ul>
+            <span class="label">Status:</span>
+            Daniel notes he had called this out previously — check older tracker entries / transcripts for the earlier mention. Not a regression from May 21-24 work; KPI commit only touched the styles cluster pill + detail page tile, did not modify vendor assignment section.
+            <span class="label">Priority:</span>
+            Real workflow bug for PC. Worth fixing before May 29 launch if scope permits; else captured as post-launch polish.
+            <span class="label">Effort:</span>
+            TBD — needs recon to identify where the pre-check default lives. Likely in the rendering of the assign-coo-chk / assign-tc-chk inputs in renderHandoffDetail (~3990s line range).
+          </div>
+        </div>
+        <div class="item" data-id="audit-status-taxonomy-decisions-locked-may21">
+          <div class="item-header"><input type="checkbox">
+            <div class="item-text">Status taxonomy audit decisions LOCKED (full doc captured in <code>status-taxonomy-audit-decisions-may21.md</code>)</div>
+            <span class="item-priority priority-medium">AUDIT</span></div>
+          <div class="test-detail">
+            <span class="label">Locked taxonomy (5 stages + cancelled):</span>
+            🎨 With Design → 🏭 With Production → 💼 With Sales → 🧮 In Costing → ✓ Placed (+ ✕ Cancelled)
+            <span class="label">Universal principle:</span>
+            "Complete = nothing left for anyone to do." Single, universal meaning across all views.
+            <span class="label">Key recon save:</span>
+            "Submitted for Release" was originally hypothesized to merge with "Submitted to Sales" — recon proved NOT SAFE (distinct actor-states: PC-approval queue vs Sales-action queue). Caught the merge error before it became a wrong-direction commit.
+            <span class="label">Refactor scope:</span>
+            Conservative (label-only) ~10-15 LOC, low risk. Ambitious (with case normalization) ~50-80 LOC + DB migration, low-medium risk.
+            <span class="label">Decision:</span>
+            Ship as post-launch refactor commit. Stage A is 5 days out. Label polish is non-blocking.
+            <span class="label">Full doc:</span>
+            <code>status-taxonomy-audit-decisions-may21.md</code> in repo (covers all 5 audit questions, mapping table, refactor paths, open future-work items).
+          </div>
+        </div>
+        <div class="item" data-id="polish-design-handoff-style-change-icon-consistency-vs-cost-summary">
+          <div class="item-header"><input type="checkbox">
+            <div class="item-text">UI polish: Design Handoff's 📝 style-change-log icon may be confused with note-taking icon vs Cost Summary's recost icon</div>
+            <span class="item-priority priority-low">POLISH</span></div>
+          <div class="test-detail">
+            <span class="label">Origin:</span>
+            May 24 tech_design smoke pass. Daniel observed: the 📝 icon in Design Handoff Detail (for logging style changes) visually conflicts with the user's mental model of "note-taking" vs "logging a change that triggers a recost workflow." Cost Summary uses a different icon for the recost action; Design Handoff's 📝 could be confused with a note-only icon.
+            <span class="label">Status:</span>
+            UI consistency feedback, not a bug. Worth considering whether to:
+            <ul>
+              <li>Use the same icon as Cost Summary's recost (consistent across views)</li>
+              <li>Use a different, more action-clear icon (e.g., 🔄 or ⚠️)</li>
+              <li>Add hover tooltip that clarifies "Log style change (may trigger recost)"</li>
+            </ul>
+            <span class="label">Effort:</span>
+            ~5 min icon swap OR ~10 min tooltip addition. Post-launch polish.
+          </div>
+        </div>
+        <div class="item" data-id="feature-real-data-population-pre-launch">
+          <div class="item-header"><input type="checkbox">
+            <div class="item-text">Pre-launch real-data population (May 27-28) — real TC + Factory list via admin UI</div>
+            <span class="item-priority priority-high">TASK</span></div>
+          <div class="test-detail">
+            <span class="label">Context:</span>
+            Currently VCP DB has 5 demo trading companies (AZ, CS, EG, FHD, GM) + demo factories. Real production list is ~27 TCs (per IT-prep.md). Real list will be uploaded directly to Claude Code closer to launch (Daniel's note from May 21 conversation).
+            <span class="label">Approach (Daniel's preference):</span>
+            Use the admin UI (not Claude Code batch insert) to populate real TCs + factories. Catches schema gaps in the admin workflow itself, validates UX, and gives Daniel a sense of his own admin workflow's friction.
+            <span class="label">Timing:</span>
+            May 27-28 (1-2 days before May 29 launch). Schema is most stable by then.
+            <span class="label">Risks:</span>
+            (1) Real-data privacy if dev environment is shared. (2) Real-world TC data may have fields the current schema doesn't support (multiple offices, contract numbers, multi-tier payment terms). Worth flagging schema gaps surfaced during this work.
+            <span class="label">Deliverable:</span>
+            Live VCP DB with real TC + Factory list ready for Stage A users on May 29.
           </div>
         </div>
         <div class="item done" data-id="audit-orphan-propose-flow-functions">
