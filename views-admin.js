@@ -3237,8 +3237,14 @@ const AdminViews = (() => {
       const stagedPill   = stagedCount
         ? `<span class="tag" style="font-size:0.68rem;background:rgba(245,158,11,0.12);color:#f59e0b;font-weight:600;margin-left:4px;cursor:pointer" onclick="event.stopPropagation();App.openRetractPicker('${h.id}')">⏳ ${stagedCount} pending</span>`
         : '';
+      const dcPendingCount = h.linkedProgramId
+        ? API.DesignChanges.all().filter(c => c.programId === h.linkedProgramId && c.status === 'pending').length
+        : 0;
+      const dcPendingPill = dcPendingCount
+        ? `<span class="tag" style="font-size:0.68rem;background:rgba(99,102,241,0.12);color:#6366f1;font-weight:600;margin-left:4px;cursor:pointer" onclick="event.stopPropagation();App.navigate('program-changes','${h.linkedProgramId}')">📝 ${dcPendingCount} pending</span>`
+        : '';
       const stylesBadge  = styleCount
-        ? `<span class="status-dot dot-green"></span><span class="tag">${styleCount} styles</span>${batchPill}${stagedPill}`
+        ? `<span class="status-dot dot-green"></span><span class="tag">${styleCount} styles</span>${batchPill}${stagedPill}${dcPendingPill}`
         : `<span class="status-dot dot-amber"></span><span class="tag tag-warn">No styles</span>`;
       const fabricsBadge = h.fabricsUploaded
         ? `<span class="status-dot dot-green"></span><span class="tag">${fabricCount} fabrics</span>`
@@ -3915,6 +3921,24 @@ const AdminViews = (() => {
         }).join('')}
       </div>` : '';
 
+    // Pending Design Changes KPI — surfaces design_changes rows with status='pending'
+    // for the linked program. Hidden when no linked program or no pending changes.
+    const dcPendingCount = h.linkedProgramId
+      ? API.DesignChanges.all().filter(c => c.programId === h.linkedProgramId && c.status === 'pending').length
+      : 0;
+    const dcKpiRow = dcPendingCount > 0
+      ? `<div class="kpi-grid" style="margin-bottom:16px">
+           <div class="kpi-card" style="cursor:pointer" onclick="App.navigate('program-changes','${h.linkedProgramId}')">
+             <div class="kpi-icon" style="background:rgba(99,102,241,0.13);color:#6366f1">📝</div>
+             <div class="kpi-body">
+               <div class="kpi-value">${dcPendingCount}</div>
+               <div class="kpi-label">Pending Changes</div>
+               <div class="kpi-sub">Click to review in Program Changes</div>
+             </div>
+           </div>
+         </div>`
+      : '';
+
     // ── PENDING BATCHES SECTION ────────────────────────────────
     // pendingSection emits per-row batch-label inputs, the Submit-for-Release
     // toolbar, and the Update-Handoff file upload. All three hit backend
@@ -4164,6 +4188,9 @@ const AdminViews = (() => {
 
       <!-- PROGRESS + HISTORY -->
       ${totalCount > 0 ? `<div class="card mb-4">${progressBar}${historyChips}</div>` : ''}
+
+      <!-- PENDING DESIGN CHANGES KPI (only when linked program has pending changes) -->
+      ${dcKpiRow}
 
       <!-- PENDING BATCHES (only when unreleased styles exist) -->
       ${pendingSection}
