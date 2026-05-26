@@ -5013,7 +5013,7 @@ const AdminViews = (() => {
       const hasSent = reqs.some(r => r.status === 'sent' || r.status === 'received');
       const hasPending = reqs.some(r => r.status === 'pending');
       const prog = allProgs.find(p => p.id === s.programId);
-      const entry = `<span class="bottleneck-style" onclick="App.navigate('styles','${s.programId}')" title="${prog?.name || ''}">${s.styleNumber}</span>`;
+      const entry = `<span class="bottleneck-style" onclick="App.navigate('cost-summary','${s.programId}')" title="${prog?.name || ''}">${s.styleNumber}</span>`;
       if (!reqs.length) noRequest.push(entry);
       else if (!hasSent && hasPending) notSent.push(entry);
       else if (hasSent && !hasFOB) sentNoQuote.push(entry);
@@ -5224,7 +5224,7 @@ const AdminViews = (() => {
         data-flt-field="${esc(c.field || '')}"
         data-flt-by="${esc(c.changedByName || c.changedBy || '')}">
         <td class="text-sm text-muted">${fmtDate(c.changedAt)}</td>
-        <td class="primary font-bold" style="cursor:pointer" onclick="App.navigate('styles','${style?.programId}')">${c.styleNumber || c.styleId}</td>
+        <td class="primary font-bold" style="cursor:pointer" onclick="App.navigate('cost-summary','${style?.programId}')">${c.styleNumber || c.styleId}</td>
         <td class="text-sm">${prog?.name || '—'}</td>
         <td>${c.field ? `<span class="badge badge-costing">${c.field}</span>` : '—'}</td>
         <td>${c.description || '—'}</td>

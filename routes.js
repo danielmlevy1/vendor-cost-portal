@@ -931,7 +931,11 @@ router.patch('/styles/:id', requireAuth, (req, res) => {
   let allowedFields;
   if (role === 'admin' || role === 'pc') {
     allowedFields = STYLE_FIELDS;
-  } else if (role === 'design' || role === 'tech_design') {
+  } else if (role === 'design') {
+    allowedFields = {
+      techPackStatus:  'tech_pack_status',
+    };
+  } else if (role === 'tech_design') {
     allowedFields = {
       techPackStatus:  'tech_pack_status',
       techDesignNotes: 'tech_design_notes',

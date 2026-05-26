@@ -3101,7 +3101,7 @@ App.getPerms = function() {
     // Role-based fallback (no department assigned)
     if (user.role === 'pc')          return { ...FULL, isAdmin: false };  // defense-in-depth: explicit branch so PC without a dept doesn't silently get the FULL fallthrough
     if (user.role === 'design')      return { canViewFOB: false, canViewSellPrice: false, canEdit: false, canEditTechPack: true,  canEditSellStatus: false, canEditTechNotes: false, isAdmin: false, brandFilter: [], tierFilter: [] };
-    if (user.role === 'tech_design') return { canViewFOB: false, canViewSellPrice: false, canEdit: false, canEditTechPack: false, canEditSellStatus: false, canEditTechNotes: true,  isAdmin: false, brandFilter: [], tierFilter: [] };
+    if (user.role === 'tech_design') return { canViewFOB: false, canViewSellPrice: false, canEdit: false, canEditTechPack: true,  canEditSellStatus: false, canEditTechNotes: true,  isAdmin: false, brandFilter: [], tierFilter: [] };
     if (user.role === 'prod_dev')    return { canViewFOB: false, canViewSellPrice: false, canEdit: false, canEditTechPack: false, canEditSellStatus: false, canEditTechNotes: false, isAdmin: false, brandFilter: [], tierFilter: [] };
     if (user.role === 'planning')    return { canViewFOB: false, canViewSellPrice: false, canEdit: false, canEditTechPack: false, canEditSellStatus: true,  isAdmin: false, brandFilter: [], tierFilter: [] };
     if (user.role === 'sales')       return { canViewFOB: true,  canViewSellPrice: true,  canEdit: false, canEditTechPack: false, canEditSellStatus: true,  isAdmin: false, brandFilter: [], tierFilter: [] };
