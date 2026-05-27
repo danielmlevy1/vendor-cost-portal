@@ -207,7 +207,7 @@
 <body>
 
 <h1>Vendor Cost Portal — Tracker</h1>
-<div class="subtitle">May 24 · A12.3g shipped (v221) — planning dispatcher swap completes A12.3c regression fix · Design Handoff Pending Changes KPI shipped (v222) · Status taxonomy audit locked (decisions captured for post-launch refactor) · IT response received + Tuesday 4:30 PM meeting with Igor + Bar scheduled · 5 days to Stage A go-live (May 29)</div>
+<div class="subtitle">May 27 · A12.3h shipped (v223 May 26) — 4 pre-launch bug fixes (Style Changes click + Bottleneck tracker + tech_design Tech Pack gate + backend allowlist symmetry) · A12.3i shipped (v224 May 27) — internal email digest for PC + prod_dev + SR + New Request gate widening · Tuesday IT meeting completed — Bar granted Daniel direct Entra admin access · Pre-Stage B recon: 11 vendor data exposure leaks + audit log gap surfaced · Excel templates generated for real data population · 2 days to Stage A go-live (May 29)</div>
 
 <div class="milestone-box">
   <strong>🎯 Go-Live Milestone — Staged Rollout (locked May 8)</strong>
@@ -498,59 +498,141 @@
   <strong>QA legend:</strong> <span class="qa-badge qa-cc-done">CC ✓</span> = Claude Code reported done · <span class="qa-badge qa-d-done">D ✓</span> = Daniel verified visually
 </div>
 
-<div class="todo-box">
-  <strong>📋 Next session (May 25+) — RESUME HERE</strong>
+<div class="ship-box">
+  <strong>🎯 What's done May 26-27 (Tuesday meeting day + Wednesday implementation day)</strong>
   <br><br>
-  A12.3g shipped May 21 (planning dispatcher swap completes A12.3c regression fix). Design Handoff Pending Changes KPI shipped May 24. Status taxonomy decisions locked (refactor deferred post-launch). IT response received; <strong>Tuesday May 26 at 4:30 PM meeting with Igor + Bar locked</strong>. Stage A go-live: <strong>Friday May 29 — 5 days away</strong>.
+  <strong>Code commits (2 shipped to origin):</strong>
+  <br>✓ <strong>A12 Phase A12.3h</strong> <span class="qa-badge qa-cc-done">CC ✓</span><span class="qa-badge qa-d-done">D ✓</span> — <code>d85d20d</code> (v223). 4-bug bundle commit Tuesday May 26. (1) Style Changes click dispatcher gap — swapped <code>App.navigate('styles', ...)</code> to <code>'cost-summary'</code> at views-admin.js:5227. Non-admin/PC clicks now land on cost-summary view (auto-redirects to design-costing for design/tech_design). (2) Bottleneck tracker same defect at views-admin.js:5013 — same swap. (3) tech_design canEditTechPack frontend gate — flipped to true at app.js:3104 (backend already allowed). (4) Backend allowlist split at routes.js:934-938 — design and tech_design no longer share allowlist; design gets only techPackStatus, tech_design gets both techPackStatus + techDesignNotes. Permissions matrix now aligned across frontend + backend. Locked permissions matrix: design ✓techPackStatus ✗techDesignNotes; tech_design ✓techPackStatus ✓techDesignNotes. ~13 LOC across 3 files. Server restart required. All 4 fixes smoked clean.
+  <br>✓ <strong>A12 Phase A12.3i</strong> <span class="qa-badge qa-cc-done">CC ✓</span><span class="qa-badge qa-d-done">D ✓</span> — <code>f5df99c</code> (v224). 2-fix bundle commit Wednesday May 27. (1) Internal email digest expansion — new block in <code>sendDailyDigest()</code> queries users WHERE role IN ('pc', 'prod_dev') and sends ONE CONSOLIDATED EMAIL with ALL outstanding fabric_requests across all TCs grouped by TC. Reuses existing <code>byTC</code> group + transporter. Inherits SMTP gating naturally. Vendor digest unchanged. ~71 LOC in server.js. (2) SR + New Request frontend gate widening at views-admin.js:3369 — <code>_canCreateSR</code> changed from 3-role literal to array-includes pattern; adds planning + sales_mgmt + design + tech_design per backend allowlist parity (backend already permitted them at routes-supporting.js:1322). 1 LOC change. Server restart required. Smoke verified: digest endpoint returns cleanly (SMTP unset → silent skip, no crash); planning role sees + New Request button.
+  <br><br>
+  <strong>IT MEETING — Tuesday May 26 at 4:30 PM (Bar + Igor + Daniel):</strong>
+  <br>• <strong>Bar granted Daniel direct Entra admin access</strong> for VCP groups + members management. Significantly changes workflow: Daniel no longer waits on IT to create groups or add members — Daniel does both directly in Entra. IT still owns app registration + tenant config + Graph API approvals.
+  <br>• Daniel surfaced his own gap: <code>prod_dev</code> role was missing from the 8-group Entra chart. Real role + department in the company. Chart corrected to 9 internal groups (with sales group ultimately deferred per workaround below → 8 actually created).
+  <br>• Vendor B2B confirmed as Stage B authentication path (not bcrypt). Auth.js currently has explicit "trading_companies are password-only — they don't have Microsoft accounts" comment; that becomes stale post-Stage-B.
+  <br>• Audit log retention + storage decision: deferred to IT/compliance follow-up. Sensible defaults (1-year SQLite-local) for v1, adjust based on guidance.
+  <br>• Graph API actual use locked to Stage B group claim → role mapping only (not auto-provisioning or periodic sync — those are Stage C work).
+  <br><br>
+  <strong>PRE-STAGE B AUDIT RECON (Tuesday afternoon, read-only):</strong>
+  <br>Comprehensive 5-phase recon surfaced 11 vendor-flow incomplete items pre-Stage B:
+  <br>• <strong>HIGH — 11 cross-vendor data exposure leaks.</strong> GET endpoints without tcId server-side filter. Most severe: <code>GET /programs/:id/customer-buys</code> exposes per-customer FOB sell prices to ANY vendor caller. Must be closed before any second vendor logs in concurrently. CLAUDE.md compliance violation: "Every read endpoint that returns vendor-scoped data filters by trading_company_id SERVER-SIDE in the WHERE clause."
+  <br>• <strong>HIGH — Audit log system absent.</strong> Zero code. No audit_log table, no logging middleware, no audit keyword anywhere. CLAUDE.md flags as v1.0 ship blocker. Greenfield work.
+  <br>• <strong>MEDIUM — Entra B2B vendor auth path not wired.</strong> auth.js excludes vendors from Microsoft sign-in. Code path needs to be built for Stage B.
+  <br>• <strong>MEDIUM — Vendor onboarding flow 0% code.</strong> No invite, no first-login, no welcome screen, no password setup.
+  <br>• <strong>MEDIUM — Graph API integration absent.</strong> IT approved User.Read.All + Group.Read.All; zero code uses them.
+  <br>• <strong>LOW — Notification coverage minimal.</strong> Daily fabric-request digest only. No FOB-quote-pending, no recost-pending, no design-change-confirmed, no flag-set digests. No in-app notification badges.
+  <br>• <strong>LOW — Vendor self-service.</strong> renderMyCompany is read-only. Vendor can't update own email or password.
+  <br><br>
+  <strong>Stage B SCOPE DECISIONS LOCKED (May 26-27):</strong>
+  <br>• <strong>Vendor auth:</strong> Entra B2B guest accounts (not bcrypt). Auth.js needs new code path.
+  <br>• <strong>Vendor self-service:</strong> Read-only by default — admin must add new vendor users in Entra directly. Vendor requests new user → admin approves + adds in Entra. Email/password changes flow through admin/Entra.
+  <br>• <strong>Notification model:</strong> Phased rollout (c) — Phase 1 (expanded email digest, 5+ event types) + Phase 2 (in-app badges) for Stage B; Phase 3 (notification center + per-user preferences) for Stage C.
+  <br>• <strong>Audit log retention:</strong> Deferred — sensible defaults for v1, adjust based on IT/compliance.
+  <br>• <strong>customer-buys exposure:</strong> Per-style placement gate. Vendor sees customer qty for styles placed with their TC only. NEVER sees sell prices. New endpoint <code>/programs/:id/customer-qty-summary</code> returning customer + qty only, status='Placed' AND winning-TC gate.
+  <br>• <strong>Graph API actual use:</strong> Stage B = group claim → role mapping only. Other uses (auto-provision, periodic sync, admin UI) deferred to Stage C.
+  <br>• <strong>SR-cancel preservation TODOs</strong> (routes-supporting.js:1492, 1501): deferred indefinitely. Bundle with status taxonomy refactor post-launch.
+  <br><br>
+  <strong>Stage B NOTIFICATION SCOPE — captured for May 29-June 26 build (NOT pre-launch):</strong>
+  <br>Daniel surfaced richer notification scope mid-A12.3i conversation; correctly scoped OUT of pre-launch (would have been 3-5 days of work + UI flag color rename), into Stage B Phase 1:
+  <br>• Vendor digest expansion: shipping info + recently-fulfilled status (status updates from prod_dev)
+  <br>• Internal digest expansion: "sent in prior 2 days" section so PC + prod_dev can see what was filled
+  <br>• New notification event types: batch releases, added styles, order placements, flagged FOBs
+  <br>• Flag color/label rename: Red → "High", Purple → "Compare", Orange → "Doesn't Make Sense"
+  <br>(All deferred per (c) phased rollout — fits the May 29-June 26 build window.)
+  <br><br>
+  <strong>ENTRA GROUPS — final 8-group structure created May 27:</strong>
+  <br>Daniel discovered <code>sec-hl-vcp-sales-rw</code> doesn't need to be populated. Sales people get assigned to <code>sec-hl-vcp-planning-rw</code> instead (permissions are functionally identical: sales should NOT see FOB; only sales_mgmt should). Sales role becomes orphaned in code (still in CHECK constraint + getPerms + dispatcher blocks; no real users assigned). Workaround captured as audit-note; permissions alignment deferred to Stage B.
+  <br>Final 8 internal groups created (sales skipped per workaround):
+  <br>1. <code>sec-hl-vcp-admin-rw</code> · 2. <code>sec-hl-vcp-pc-rw</code> · 3. <code>sec-hl-vcp-pc-ro</code> · 4. <code>sec-hl-vcp-sales-mgmt-rw</code> · 5. <code>sec-hl-vcp-planning-rw</code> (holds sales + planning users) · 6. <code>sec-hl-vcp-design-rw</code> · 7. <code>sec-hl-vcp-tech-design-rw</code> · 8. <code>sec-hl-vcp-prod-dev-rw</code>
+  <br>Vendor groups (Stage B+, real TC list) deferred to post-launch week 1.
+  <br><br>
+  <strong>REAL DATA POPULATION — Phase 1 (template generation) completed May 27:</strong>
+  <br>Claude Code generated 2 Excel templates with full schema mapping + instructions sheet + example rows:
+  <br>• <code>~/Desktop/vcp-data-fill/trading_companies_template.xlsx</code> — 31 rows (1 header + 3 examples + 27 blanks for ~30 TCs)
+  <br>• <code>~/Desktop/vcp-data-fill/factories_template.xlsx</code> — 76 rows (1 header + 3 examples + 72 blanks for ~75 factories)
+  <br>Templates include: tc_code pairing column for factory→TC linkage, valid COO codes documented, exporter + pay-to optional blocks, full fill class classification (MUST/SHOULD/AUTO/OPTIONAL).
+  <br>Daniel locked Phase 2 (insert script) decisions:
+  <br>• Password convention: random per-TC (admin rotates later)
+  <br>• Factory status: active (skip approval workflow for bulk import)
+  <br>• Collision behavior: fail on existing code match (require wipe first)
+  <br>• Wipe demo seed TCs + factories before import: YES
+  <br>• Validation strictness: STRICT — has_exporter=1 requires exporter_name, shipping_responsible must be in valid set, every COO must exist in coo_rates
+  <br>• COO coverage: confirmed all real factories' countries covered by existing 15-code list (BD, CN, EG, ES, ET, HT, ID, JD, KH, KY, LS, PK, TH, TK, VN)
+  <br>Phase 2 (wipe script + import script) pending Daniel filling templates (~30-90 min Excel work).
+  <br><br>
+  <strong>STAGE A: Document deliverables May 26-27:</strong>
+  <br>• Excel templates ready (2 files, see above)
+  <br>• Tuesday meeting prep doc used (covered Bar's overview request, app registration ask, open questions)
+  <br>• Status taxonomy decisions doc committed (<code>29cbbde</code> May 24)
+  <br>• Entra groups Excel previously delivered (used as visual reference during Tuesday meeting)
+  <br><br>
+  <strong>PROCESS OBSERVATIONS — this multi-day session:</strong>
+  <br>• <strong>"My chart had a gap" — prod_dev was missing from the 8-group Entra chart.</strong> Real role + dept that I didn't surface. Daniel caught it during group creation. Lesson: when listing roles/groups/permissions, cross-reference against the codebase enum (e.g. CHECK constraint values, getPerms branches, dispatcher blocks) rather than relying on prior conversation summaries.
+  <br>• <strong>"Sales should not see FOB" surfaced 3 days before launch.</strong> Sales currently sees FOB per code (canViewFOB: true). Daniel's product intent: only sales_mgmt should. Solving via Entra workaround (sales role orphaned, sales users assigned to planning group) avoids a risky pre-launch getPerms change. Permission alignment captured for Stage B.
+  <br>• <strong>Recon caught merge errors twice.</strong> First (May 21): "Submitted for Release" + "Submitted to Sales" cannot merge (distinct actor-states, PC vs Sales queues). Second (May 26 during A12.3h): backend symmetric on tech-pack fields, frontend asymmetric — Daniel locked the right permissions matrix only AFTER recon surfaced the sibling defect (design canEditTechNotes false despite backend allowing). Both saves prevented wrong-direction commits.
+  <br>• <strong>Scope creep is real and recognizable.</strong> A12.3i started as "internal digest + SR gate" → grew to include "all 5 new notification types + flag color rename" → Daniel correctly narrowed back to original scope. The Stage B notification phase (~3-5 days of work) is appropriately scoped to the May 29-June 26 window. Lesson: when decision momentum carries scope beyond what the timeline supports, articulating the realistic time cost is the right move.
+  <br>• <strong>Privacy distinction worth respecting.</strong> Daniel flagged that personal claude.ai retains conversation data; VS Code Claude Code runs on enterprise subscription with different handling. Forward rule: real TC codes, customer names, employee directory etc. stay in Claude Code (local + enterprise). claude.ai (here) gets counts, workflow shapes, decisions — not specifics.
+  <br><br>
+  <strong>QA legend:</strong> <span class="qa-badge qa-cc-done">CC ✓</span> = Claude Code reported done · <span class="qa-badge qa-d-done">D ✓</span> = Daniel verified visually
+</div>
+
+<div class="todo-box">
+  <strong>📋 Next session (May 28+) — RESUME HERE — 1-2 days to launch</strong>
+  <br><br>
+  A12 saga truly complete: 3g + 3h + 3i shipped. Tuesday IT meeting completed, Bar gave Daniel Entra admin access. Pre-Stage B recon revealed 11 vendor data leaks + audit log gap (Stage B work). Excel templates generated for real data population (Daniel filling). <strong>Stage A go-live: Friday May 29.</strong>
   <br>
   <ol>
-    <li><strong>Read this tracker first.</strong> Especially the subtitle, the May 21-24 ship-box (A12.3g + KPI feature + IT response + taxonomy audit + 8-role smoke results), and this resume block.</li>
+    <li><strong>Read this tracker first.</strong> Especially the subtitle, the May 26-27 ship-box (A12.3h + A12.3i + IT meeting + Stage B scope), and this resume block.</li>
     <li><strong>Run codebase verification:</strong>
       <ul>
-        <li><code>vcp-status</code> alias — confirms HEAD = <code>7769924</code> on main, working tree clean, v=222 on all 5 tags, server status</li>
+        <li><code>vcp-status</code> alias — confirms HEAD = <code>f5df99c</code> on main, working tree clean, v=224 on all 5 tags, server status</li>
         <li>If server not running: <code>vcp-start</code> in a fresh tab</li>
       </ul>
     </li>
-    <li><strong>BEFORE TUESDAY (May 26 4:30 PM meeting):</strong>
+    <li><strong>BLOCKING — pre-launch Stage A work (in order):</strong>
       <ul>
-        <li><strong>Populate Excel members</strong> — open <code>vcp-entra-groups-for-IT.xlsx</code>, fill in the yellow-highlighted Members column on Sheet 1 with employee emails for each role. Decide whether tech_design merges into design (IT prep doc allows merge if access is the same — current decision: KEEP SEPARATE).</li>
-        <li><strong>Review meeting prep doc</strong> — <code>vcp-meeting-prep-igor-bar-tuesday.md</code> covers VCP overview (Bar's request), app registration setup, 7 clarification questions, deliverables exchange. Skim to refresh.</li>
-        <li><strong>Send Excel to IT</strong> ahead of meeting (or bring to meeting — confirm with Igor)</li>
+        <li><strong>(A) Fill Excel templates</strong> — <code>~/Desktop/vcp-data-fill/trading_companies_template.xlsx</code> (~30 TCs) and <code>factories_template.xlsx</code> (~70 factories with tc_code pairing). ~30-90 min Daniel work in Excel. STRICT validation will catch fill errors.</li>
+        <li><strong>(B) Phase 2 — wipe + insert scripts</strong>. After templates filled, Claude Code writes two scripts: (1) wipe demo TCs + factories with explicit confirmation, (2) validate + insert real data. Decisions LOCKED: random per-TC passwords, factory status=active, fail-on-collision, strict validation (exporter_name required when has_exporter=1, valid shipping_responsible enum, COO must exist in coo_rates). Smoke in admin UI after insert.</li>
+        <li><strong>(C) Pilot user identification</strong> — was May 15 decision deadline; <strong>STILL OPEN 13+ days overdue</strong>. First internal person to use VCP for real work on May 29. Their reactions become the forcing function. PICK BEFORE FRIDAY.</li>
+        <li><strong>(D) Quick visual smoke of A12.3i</strong> — confirm "+ New Request" button appears for planning role at Sales Requests view. Probably already works (pushed cleanly), but worth a 30-sec eyeball check.</li>
       </ul>
     </li>
-    <li><strong>Stage A remaining work — order suggestion:</strong>
+    <li><strong>Tuesday meeting follow-ups (waiting on Igor/Bar):</strong>
       <ul>
-        <li><strong>(A) Bundle commit A12.3h</strong> — fix 2 small bugs surfaced in May 24 smoke pass:
-          <ul>
-            <li><code>audit-style-changes-click-dispatcher-gap-non-admin-pc</code> — Style Changes table → click style → <code>navigate('styles', programId)</code> dead-ends to dashboard for design/tech_design/planning/sales. Fix: change navigation target OR add 'styles' route to those dispatchers. ~10 min recon + ~5 LOC fix.</li>
-            <li><code>audit-tech_design-tech-pack-frontend-gate-blocks-allowed-write</code> — frontend <code>canEditTechPack</code> gate denies tech_design even though backend allowlist permits it. ~5 LOC fix.</li>
-          </ul>
-          Total scope: ~15-20 LOC, single commit, ~30 min Claude Code time.</li>
-        <li><strong>(B) Pilot user identification</strong> — was May 15 decision deadline; STILL OPEN. First internal person to use VCP for real work. Their reactions become the forcing function. Pick before May 29.</li>
-        <li><strong>(C) Pre-launch real-data population</strong> (May 27-28) — populate real TC + Factory list via admin UI. Captured as <code>feature-real-data-population-pre-launch</code>. Tracker item, not Claude Code work.</li>
-        <li><strong>(D) Vendor batching checkbox audit</strong> — <code>audit-batching-vendor-checkboxes-pre-checked-incorrectly</code>. Daniel's spec: Batch 1 = blank picker; Batch 2+ = pre-checked for vendors already selected in prior batches. Worth 30-min recon to confirm scope before deciding fix priority.</li>
+        <li>App registration credentials (Tenant ID, Client ID, Client Secret) — Bar to deliver after Tuesday meeting work</li>
+        <li>Sample decoded token for confirming groups claim format</li>
+        <li>Hosting decision (internal server vs Azure App Service vs other)</li>
+        <li>Security review process + timeline</li>
+        <li>Approved-apps registration process</li>
+        <li>Token lifetime / refresh policy</li>
       </ul>
     </li>
-    <li><strong>IT-blocked items (Tuesday 4:30 meeting will unblock):</strong>
+    <li><strong>Stage B foundation work — May 29 → June 26 build window (~28 days, all CAPTURED in new Stage B Backlog section below):</strong>
       <ul>
-        <li>A3 v2 design doc finalization — needs Tenant ID, Client ID, sample token from Tuesday meeting</li>
-        <li>A6 Entra SSO implementation — kicks off after Tuesday meeting deliverables</li>
-        <li>A12.5 group integration — bundled with A6</li>
+        <li>11 cross-vendor data exposure leak fixes (HIGH — recon flagged 11 endpoints needing tcId filters)</li>
+        <li>Audit log system (HIGH — new table + middleware, CLAUDE.md v1.0 ship blocker)</li>
+        <li>Entra B2B vendor auth path (A6 SSO — greenfield work)</li>
+        <li>Vendor onboarding flow (admin-mediated, per Stage B decision)</li>
+        <li>Group claim → role mapping (A12.5 — bundled with A6)</li>
+        <li>customer-qty endpoint with per-style placement gate (Q5 decision)</li>
+        <li>Notification Phase 1 (expanded digest: shipping info, recently-sent, batch releases, added styles, order placements, flagged FOBs) + Phase 2 (in-app badges)</li>
+        <li>Flag color/label rename (Red → "High", Purple → "Compare", Orange → "Doesn't Make Sense")</li>
+        <li>Vendor self-service email update workflow (admin-mediated)</li>
+        <li>Status taxonomy refactor (conservative ~10-15 LOC label-only)</li>
+        <li>Sales role canViewFOB alignment (currently true; should be false — workaround active via Entra group assignment)</li>
+        <li>Vendor batching checkbox UX fix (Batch 1 blank, Batch 2+ pre-checked from prior batches)</li>
       </ul>
     </li>
-    <li><strong>Post-launch refactor queue (do NOT touch pre-May-29):</strong>
+    <li><strong>Week 1 post-launch (May 30 → June 5) — infrastructure work:</strong>
       <ul>
-        <li>Status taxonomy refactor (conservative ~10-15 LOC label-only OR ambitious ~50-80 LOC with case normalization) — full decision doc in <code>status-taxonomy-audit-decisions-may21.md</code></li>
-        <li><code>audit-pc_readonly-role-name-consider-rename-post-launch</code> — rename consideration</li>
-        <li><code>feature-style-edit-typo-vs-cost-change-modal</code> — when sales/design get styleName/category/fabrication edit access, this modal solves the typo-vs-recost workflow</li>
-        <li><code>feature-sales-design-editable-style-identification-fields</code> — backend allowlist expansion + product validation</li>
+        <li><code>task-migrate-to-corporate-github-week-1-post-launch</code> — Daniel added to corporate GitHub; need to migrate the repo + update remote + permissions</li>
+        <li><code>task-branch-strategy-dev-prd-week-1-post-launch</code> — set up dev/prd branches (Option B from earlier discussion). Promote dev→prd via PR for releases.</li>
+        <li>Real vendor Entra groups creation — using real TC codes (~27 vendor groups). Members stay empty until Stage B onboarding.</li>
       </ul>
     </li>
-    <li><strong>Open observation queue (not blocking, knock out when convenient):</strong>
+    <li><strong>Open observation queue:</strong>
       <ul>
-        <li><code>data-pollution-mouedkzymvttk-proj-qty-unknown</code> — style CHM-Q4-LE-01 has NULL proj_qty since May 14 incident (nearly re-polluted May 21, recovered cleanly). Re-enter through UI workflow when convenient.</li>
-        <li>33 audit-notes captured (see AUDIT-NOTEs section) — apply during deeper audit pass (Stage B work).</li>
-        <li><strong>NEW from May 24 session:</strong> <code>audit-style-changes-click-dispatcher-gap-non-admin-pc</code>, <code>audit-tech_design-tech-pack-frontend-gate-blocks-allowed-write</code>, <code>audit-planning-sales-sell-in-status-access-after-dispatcher-swap</code>, <code>polish-design-handoff-style-change-icon-consistency-vs-cost-summary</code>, <code>audit-status-taxonomy-decisions-locked</code>, <code>audit-design-handoff-kpi-list-view-iteration-cost</code>, <code>audit-batching-vendor-checkboxes-pre-checked-incorrectly</code>, <code>feature-real-data-population-pre-launch</code>.</li>
+        <li><code>data-pollution-mouedkzymvttk-proj-qty-unknown</code> — style CHM-Q4-LE-01 has NULL proj_qty since May 14 (nearly re-polluted May 21, recovered cleanly). Re-enter through UI workflow when convenient.</li>
+        <li>40+ audit-notes captured (see AUDIT-NOTEs section) — apply during deeper audit pass (Stage B work).</li>
       </ul>
     </li>
   </ol>
@@ -563,7 +645,10 @@
   <br>• Restart server before any test that exercises new code (route handlers register at server boot)
   <br>• Comprehensive smoke means explicit per-role checks against explicit per-role expectations (May 20 lesson — A12.4's "all clean" missed 2-of-8 roles' actual regression)
   <br>• DOM inspection earned its place: when a gate evaluates correctly but UI doesn't match, jump to DevTools Elements panel sooner rather than later (May 20-21 lesson)
-  <br>• When a question surfaces mid-flow, treat it as a signal worth investigating — not a distraction. The status taxonomy audit (May 24) caught a merge error that would have shipped as a regression (May 21-24 lesson).
+  <br>• When a question surfaces mid-flow, treat it as a signal worth investigating — not a distraction. Status taxonomy audit (May 21) and A12.3h symmetry recon (May 26) both caught merge errors that would have shipped as regressions.
+  <br>• Scope creep is real — when decision momentum carries scope beyond what timeline supports, articulate the realistic time cost. A12.3i scope contraction (May 27) was the right move.
+  <br>• Cross-reference roles/permissions against codebase (CHECK constraint, getPerms, dispatcher blocks) rather than relying on prior conversation summaries. prod_dev was missed in initial 8-group chart (May 21-26); Daniel caught it during group creation.
+  <br>• Privacy distinction: real business specifics (TC codes, customer names, employee directory) stay in Claude Code (enterprise) — not claude.ai (personal retention). claude.ai gets counts + workflow shapes + decisions.
 </div>
 
 <div class="blocker-box">
@@ -597,7 +682,7 @@
   <br>&nbsp;&nbsp;⚠️ <strong>A12.4 DONE May 19 (gaps discovered May 20)</strong> — Comprehensive verification framed at the time as covering pc_readonly thoroughly. May 20 8-role smoke surfaced that A12.4 only tested admin + PC + pc_readonly, missing the A12.3c regression for sales/planning. "Comprehensive" framing was inaccurate.
   <br>&nbsp;&nbsp;✅ <strong>A12.3f DONE May 20</strong> — Split <code>canEdit</code> into <code>canEdit</code> + <code>canEditQtySell</code> in buildCostMatrix. Restores sales projQty/projSellPrice edit access in cost matrix. 4 site swaps, ~5 LOC net. <code>616b5b4</code> (v220). Note: planning still shows static cells in their default view because planning's sidebar lands on renderDesignCostingView (different code path than A12.3f touched) — addressed in A12.3g below.
   <br>&nbsp;&nbsp;✅ <strong>A12.3g DONE May 21</strong> — Dispatcher swap in <code>App.openProgram</code> (app.js:122-123). Removed <code>planning</code> from the design-costing branch, falling through to cost-summary (matching sales). Completes the A12.3c regression fix for planning. ~2 LOC net change. <code>35ebbd3</code> (v221). A12 saga truly complete with this. Note: sellInStatus access gap surfaced as separate audit-note (planning lost that field in renderDesignCostingView; matches sales' current state).
-  <br>&nbsp;&nbsp;⛔ <strong>A12.5 (IT-blocked, partially unblocked May 24)</strong> — Wire up <code>VCP-Highlife-PC-ReadOnly</code> Entra group → <code>pc_readonly</code> role mapping in the group-claim handler. Bundled with A3 v2 implementation. Frontend + backend are FULLY READY — only needs the group claim handler to land. <strong>IT meeting Tuesday May 26 at 4:30 PM will unblock app registration; A12.5 implementation can start after that.</strong>
+  <br>&nbsp;&nbsp;⛔ <strong>A12.5 (IT-blocked, Tuesday meeting completed May 26)</strong> — Wire up <code>sec-hl-vcp-pc-ro</code> Entra group → <code>pc_readonly</code> role mapping in the group-claim handler. Bundled with A3 v2 implementation. Frontend + backend are FULLY READY — only needs the group claim handler to land. <strong>Tuesday May 26 IT meeting completed; Bar gave Daniel direct Entra admin access. Waiting on app registration credentials from Bar (Tenant ID, Client ID, Client Secret) to start A6 + A12.5 implementation. Bundled with A6 — kicks off post-launch.</strong>
   <br>
   <strong><span class="stage-tag stage-a">A</span> 22. Bug fix: PC Propose TC modal missing Payment Terms field (captured May 18)</strong> ✅ <strong>DONE May 18</strong> — Shipped via <code>55d5715</code> (v214). Closed scope: PC propose TC modal got paymentTerms dropdown + PC propose COO modal got seaLeadDays input + backend TC update branch's data-loss bug closed structurally (conditional SET clauses) + form labels added to all PC propose modal fields. 4-test verification suite passed with non-destructive round-trip.
   <br>
@@ -651,8 +736,8 @@
   <div>
     <div class="section complete">
       <div class="section-header">
-        <div class="section-title">✅ Now: A12 fully complete (3f + 3g shipped) · Design Handoff KPI shipped · Status taxonomy locked · IT meeting Tuesday May 26 · Stage A countdown — 5 days</div>
-        <div class="section-count">May 24 EOD</div>
+        <div class="section-title">✅ Now: A12 fully complete (3f + 3g + 3h + 3i shipped) · Design Handoff KPI shipped · Status taxonomy locked · IT meeting completed Tuesday May 26 · Stage A countdown — 2 days</div>
+        <div class="section-count">May 27 EOD</div>
       </div>
       <div class="group">
         <div class="group-label">Site testing — May 17-18 results</div>
@@ -1622,6 +1707,186 @@
             (1) Real-data privacy if dev environment is shared. (2) Real-world TC data may have fields the current schema doesn't support (multiple offices, contract numbers, multi-tier payment terms). Worth flagging schema gaps surfaced during this work.
             <span class="label">Deliverable:</span>
             Live VCP DB with real TC + Factory list ready for Stage A users on May 29.
+          </div>
+        </div>
+        <div class="item" data-id="audit-sales-canViewFOB-misaligned-from-product-intent">
+          <div class="item-header"><input type="checkbox">
+            <div class="item-text">audit-sales-canViewFOB-misaligned-from-product-intent — sales role currently sees FOB; product intent: only sales_mgmt should</div>
+            <span class="item-priority priority-high">STAGE-B</span></div>
+          <div class="test-detail">
+            <span class="label">Source:</span>
+            May 27 conversation. Daniel: "I thought sales can't see FOB, only sales management can." Code says <code>sales: { canViewFOB: true, canViewSellPrice: true, ... }</code> at app.js:3107.
+            <span class="label">Workaround (active):</span>
+            Sales people get assigned to <code>sec-hl-vcp-planning-rw</code> Entra group instead of <code>sec-hl-vcp-sales-rw</code>. Sales role remains in code (CHECK constraint + getPerms + dispatchers) but has zero real users assigned. Planning's permissions (canViewFOB: false) become the effective gate for sales personnel.
+            <span class="label">Stage B fix:</span>
+            Decision needed: (a) align sales to match planning's permissions (canViewFOB: false), keep separate role names — or (b) merge sales+planning into a single role and deprecate sales. Daniel's preference: (a) — keep flexibility for future divergence.
+            <span class="label">Risk if deferred:</span>
+            If a real user somehow gets assigned to <code>sec-hl-vcp-sales-rw</code> (group claim handler maps to sales role), they get FOB visibility. Group claim handler (A6/A12.5) must handle empty sales group correctly OR map sales → planning.
+            <span class="label">Pre-launch risk:</span>
+            None — sales role has zero users in production. Workaround holds for Stage A launch.
+          </div>
+        </div>
+        <div class="item" data-id="audit-sales-role-orphaned-in-code-via-planning-group-workaround">
+          <div class="item-header"><input type="checkbox">
+            <div class="item-text">audit-sales-role-orphaned-in-code-via-planning-group-workaround — sales role intentionally unused at Stage A; Entra-level workaround</div>
+            <span class="item-priority priority-medium">STAGE-B</span></div>
+          <div class="test-detail">
+            <span class="label">Source:</span>
+            May 27 design decision. Sales-vs-planning permission mismatch surfaced 3 days before launch. Pre-launch fix carries regression risk; Entra workaround chosen as safest path.
+            <span class="label">Implementation:</span>
+            <code>sec-hl-vcp-sales-rw</code> Entra group SKIPPED at creation. Real sales users assigned to <code>sec-hl-vcp-planning-rw</code> instead. Sales role still exists in code (DB CHECK, getPerms, dispatchers) — keeps working, never fires for real users.
+            <span class="label">Group claim handler implication:</span>
+            When A6/A12.5 lands, claim handler must map <code>sec-hl-vcp-sales-rw</code> membership → role <code>planning</code> (not <code>sales</code>) — OR reject as inactive group with admin-contact message.
+            <span class="label">If divergence needed later:</span>
+            Undo workaround: align getPerms (canViewFOB: false for sales), populate the sales group, update group claim handler. Estimated ~5-10 LOC change.
+          </div>
+        </div>
+        <div class="item" data-id="audit-group-claim-mapping-sales-group-fallback-handling">
+          <div class="item-header"><input type="checkbox">
+            <div class="item-text">audit-group-claim-mapping-sales-group-fallback-handling — A6/A12.5 implementation note for orphaned sales Entra group</div>
+            <span class="item-priority priority-medium">STAGE-B</span></div>
+          <div class="test-detail">
+            <span class="label">Source:</span>
+            May 27 — implementation contract for A6 Entra SSO group claim handler.
+            <span class="label">Decision needed when A6 lands:</span>
+            What happens if a user appears in <code>sec-hl-vcp-sales-rw</code> Entra group? Two options:
+            (a) Map to <code>planning</code> role (current workaround semantics — sales group becomes alias for planning)
+            (b) Error with admin-contact message (locks sales group as inactive)
+            <span class="label">Recommendation:</span>
+            (a) — keeps workaround forward-compatible. If a user accidentally gets added to sales group (e.g. via Entra group transitivity), they still get correct permissions.
+          </div>
+        </div>
+        <div class="item done" data-id="audit-manual-new-sr-button-only-admin-pc-sales-blocked-rest">
+          <div class="item-header"><input type="checkbox" checked>
+            <div class="item-text">✓ RESOLVED May 27 (<code>f5df99c</code>) — Manual + New Request frontend gate blocked planning, sales_mgmt, design, tech_design despite backend permitting all 4. A12.3i widened frontend allowlist to match backend.</div>
+            <span class="item-priority priority-debt">DONE</span></div>
+        </div>
+        <div class="item" data-id="audit-vcp-cross-vendor-data-exposure-11-endpoints">
+          <div class="item-header"><input type="checkbox">
+            <div class="item-text">audit-vcp-cross-vendor-data-exposure-11-endpoints — 11 GET endpoints lack server-side tcId filter; any vendor can read other vendors' data</div>
+            <span class="item-priority priority-high">STAGE-B HIGH</span></div>
+          <div class="test-detail">
+            <span class="label">Source:</span>
+            May 26 pre-Stage B audit recon (read-only). 11 endpoints identified with no vendor-scoping branch.
+            <span class="label">Affected endpoints:</span>
+            <code>GET /programs/:id/customer-assignments</code>, <code>GET /programs/:id/customer-buys</code> (MOST SEVERE — exposes per-customer FOB sell prices), <code>GET /styles/:id/design-changes</code>, <code>GET /programs/:id/design-changes</code>, <code>GET /recost-requests</code>, <code>GET /submissions/:id/flags</code>, <code>GET /submissions/:id/revisions</code>, <code>GET /programs/:id/cost-history</code>, <code>GET /styles/:id/cost-history</code>, <code>GET /styles/:id/tech-pack-history</code>, <code>GET /programs/:id/style-links</code>
+            <span class="label">CLAUDE.md compliance:</span>
+            VIOLATION. CLAUDE.md states: "Every read endpoint that returns vendor-scoped data filters by trading_company_id SERVER-SIDE in the WHERE clause."
+            <span class="label">Stage A risk:</span>
+            LOW — Stage A is internal-only, no vendor B2B accounts active yet. Risk activates the moment two vendors log in concurrently (Stage B).
+            <span class="label">Fix scope:</span>
+            Per-endpoint, add tcId filter in WHERE clause based on requester's TC (req.user.tc_id). Estimated ~80-100 LOC across routes.js + routes-supporting.js. Required before Stage B vendor onboarding.
+            <span class="label">customer-buys gating decision LOCKED May 27:</span>
+            NEW endpoint <code>/programs/:id/customer-qty-summary</code> returning customer + qty only (no sell price), gated by <code>status='Placed'</code> AND vendor's TC won the winning placement for that specific style. Original <code>customer-buys</code> endpoint remains admin/pc only.
+          </div>
+        </div>
+        <div class="item" data-id="audit-vcp-audit-log-absent-no-table-no-middleware">
+          <div class="item-header"><input type="checkbox">
+            <div class="item-text">audit-vcp-audit-log-absent-no-table-no-middleware — zero audit logging exists; CLAUDE.md v1.0 ship blocker</div>
+            <span class="item-priority priority-high">STAGE-B HIGH</span></div>
+          <div class="test-detail">
+            <span class="label">Source:</span>
+            May 26 pre-Stage B audit recon. Confirmed: no <code>audit_log</code> table in schema.sql, no logging middleware, "audit" keyword absent from code.
+            <span class="label">CLAUDE.md status:</span>
+            Flagged as open question. Per Daniel: "force the decision — vendor mutations need a trail before launch."
+            <span class="label">Stage A risk:</span>
+            MEDIUM — internal mutations untracked. Acceptable for pilot users (small set, known actors), unacceptable when vendors transact.
+            <span class="label">Stage B scope:</span>
+            New <code>audit_log</code> table (id, actor_user_id, action, target_table, target_id, before_state JSON, after_state JSON, timestamp). Middleware on all POST/PATCH/DELETE routes. Retention default: 1-year SQLite-local (Daniel deferred final decision to IT/compliance follow-up Tuesday meeting).
+            <span class="label">Fix scope:</span>
+            ~3-5 days of focused work. New table, new middleware, integration with existing routes, possibly admin UI to view audit trail.
+          </div>
+        </div>
+        <div class="item" data-id="feature-vendor-digest-shipping-info-and-recently-fulfilled">
+          <div class="item-header"><input type="checkbox">
+            <div class="item-text">feature-vendor-digest-shipping-info-and-recently-fulfilled — Stage B Phase 1 notification: vendor digest should include shipping info + recently-shipped status</div>
+            <span class="item-priority priority-medium">STAGE-B PHASE 1</span></div>
+          <div class="test-detail">
+            <span class="label">Source:</span>
+            May 27 Stage B notification scope conversation. Daniel: "for vendors it should only send vendors their own requests and updated info like shipping info that product dev sends, with updated status."
+            <span class="label">Scope:</span>
+            Expand vendor digest (server.js sendDailyDigest) to include: (1) outstanding requests (current), (2) requests fulfilled in last N days with shipping info (tracking, shipped date, status updates from prod_dev).
+            <span class="label">Data model implications:</span>
+            Need to verify <code>fabric_packages</code> has shipping_info / tracking_number / shipped_at fields. May require schema additions if not present. Original recon focused on permissions, not shipping fields.
+          </div>
+        </div>
+        <div class="item" data-id="feature-internal-digest-recently-sent-section">
+          <div class="item-header"><input type="checkbox">
+            <div class="item-text">feature-internal-digest-recently-sent-section — Stage B Phase 1: internal digest should include "sent in prior 2 days" section</div>
+            <span class="item-priority priority-medium">STAGE-B PHASE 1</span></div>
+          <div class="test-detail">
+            <span class="label">Source:</span>
+            May 27 Stage B scope. Daniel: "should have open requests, what has been sent the prior 2 days so we know it was filled."
+            <span class="label">Scope:</span>
+            Expand internal digest (added in A12.3i for PC + prod_dev) to include second section showing fabric_requests with status='sent' AND sent_at >= today - 2 days. Purpose: PC + prod_dev confirm recent work shipped.
+          </div>
+        </div>
+        <div class="item" data-id="feature-notification-batch-releases-added-styles-order-placements-flagged-fobs">
+          <div class="item-header"><input type="checkbox">
+            <div class="item-text">feature-notification-batch-releases-added-styles-order-placements-flagged-fobs — 4 new event types for Stage B Phase 1 notification system</div>
+            <span class="item-priority priority-medium">STAGE-B PHASE 1</span></div>
+          <div class="test-detail">
+            <span class="label">Source:</span>
+            May 27 scope expansion conversation. Daniel listed 4 new notification event types beyond fabric requests.
+            <span class="label">Event types:</span>
+            (1) Batch releases — when PC releases a batch of FOB submissions to vendors. (2) Added styles — when a style is added to a program. (3) Order placements — when a program reaches status='Placed'. (4) Flagged FOBs — when PC flags a vendor's submission for re-quote.
+            <span class="label">Implementation pattern:</span>
+            Each event needs trigger point (route handler), recipient logic (role-based + TC-based), and digest content (or separate email if real-time). Real-time vs digested — TBD per event.
+            <span class="label">Scope:</span>
+            ~3-5 days of focused work. Part of Stage B Phase 1 notification system.
+          </div>
+        </div>
+        <div class="item" data-id="feature-flag-color-label-rename-red-purple-orange">
+          <div class="item-header"><input type="checkbox">
+            <div class="item-text">feature-flag-color-label-rename-red-purple-orange — flag color/label rename: Red → "High", Purple → "Compare", Orange → "Doesn't Make Sense"</div>
+            <span class="item-priority priority-low">STAGE-B</span></div>
+          <div class="test-detail">
+            <span class="label">Source:</span>
+            May 27 conversation. Daniel surfaced rename intent during Stage B notification scope discussion.
+            <span class="label">Scope:</span>
+            Rename flag colors/labels throughout UI: Red → "High", Purple → "Compare", Orange → "Doesn't Make Sense". Touches: badge classes, tooltips, KPI counts, status enums (backend), filter chip labels, possibly notification text.
+            <span class="label">Scope warning:</span>
+            Not a CSS-only swap. Likely 10+ render sites across views-admin.js, possibly backend status enums. Should be its own focused commit.
+          </div>
+        </div>
+        <div class="item done" data-id="audit-design-needs-fabric-standards-management-access">
+          <div class="item-header"><input type="checkbox" checked>
+            <div class="item-text">✗ REJECTED May 27 — Initial assumption was that design+tech_design need fabric standards access. Daniel clarified: prod_dev owns fabric standards (it's their workflow), design+tech_design don't need it. prod_dev already has full access via existing role gates.</div>
+            <span class="item-priority priority-debt">REJECTED</span></div>
+        </div>
+        <div class="item done" data-id="audit-prod_dev-missing-from-entra-groups-chart">
+          <div class="item-header"><input type="checkbox" checked>
+            <div class="item-text">✓ CORRECTED May 27 — prod_dev role was missing from initial 8-group Entra chart. Daniel caught it during Entra group creation. Chart corrected to include <code>sec-hl-vcp-prod-dev-rw</code>. Final count: 8 internal groups created (sales skipped per workaround; prod_dev added).</div>
+            <span class="item-priority priority-debt">CORRECTED</span></div>
+        </div>
+        <div class="item" data-id="task-migrate-to-corporate-github-week-1-post-launch">
+          <div class="item-header"><input type="checkbox">
+            <div class="item-text">task-migrate-to-corporate-github-week-1-post-launch — Daniel was added to corporate GitHub; migrate repo from personal account post-launch</div>
+            <span class="item-priority priority-medium">WEEK 1 POST-LAUNCH</span></div>
+          <div class="test-detail">
+            <span class="label">Source:</span>
+            May 27 conversation. Daniel: "I was also added to the corporate GitHub, so I need to move my stuff there."
+            <span class="label">Current state:</span>
+            Repo lives at <code>github.com/danielmlevy1/vendor-cost-portal</code> (personal account).
+            <span class="label">Migration touches:</span>
+            New remote URL → all push commands point somewhere new. Repo permissions → team members, possibly Igor/Bar get access. CI/CD if configured (none currently). Webhooks. Documentation referencing old URL. Local clone remote updates.
+            <span class="label">Timing:</span>
+            Post-launch week 1 (May 30 - June 5). NOT pre-launch (no repo migration in launch week).
+          </div>
+        </div>
+        <div class="item" data-id="task-branch-strategy-dev-prd-week-1-post-launch">
+          <div class="item-header"><input type="checkbox">
+            <div class="item-text">task-branch-strategy-dev-prd-week-1-post-launch — set up dev/prd branches with PR promotion workflow</div>
+            <span class="item-priority priority-medium">WEEK 1 POST-LAUNCH</span></div>
+          <div class="test-detail">
+            <span class="label">Source:</span>
+            May 27 conversation. Daniel: "I think we should also make branches for dev and prd after 5/29."
+            <span class="label">Current state:</span>
+            Everything on <code>main</code>. Fine for solo + pre-launch; needs structure post-launch.
+            <span class="label">Recommended approach (b):</span>
+            Two-branch model: <code>dev</code> (active work) and <code>prd</code> (production = what's deployed). Promote dev → prd via PR for releases.
+            <span class="label">Timing:</span>
+            Week 1 post-launch, AFTER corporate GitHub migration (since branch strategy lives in new repo).
           </div>
         </div>
         <div class="item done" data-id="audit-orphan-propose-flow-functions">
