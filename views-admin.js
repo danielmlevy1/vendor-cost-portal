@@ -3366,7 +3366,7 @@ const AdminViews = (() => {
   function renderSalesRequests() {
     const _srUser      = typeof App !== 'undefined' && App._getState ? App._getState()?.user || {} : {};
     const _isPlanning    = _srUser.role === 'planning';
-    const _canCreateSR   = _srUser.role === 'admin' || _srUser.role === 'pc' || _srUser.role === 'sales';
+    const _canCreateSR   = ['admin','pc','sales','sales_mgmt','planning','design','tech_design'].includes(_srUser.role);
     const _canConvertSRList = _srUser.role === 'admin' || _srUser.role === 'pc';
     const _srIsPCReadonly = _srUser.role === 'pc_readonly';
     const requests = API.SalesRequests.all().slice().reverse();

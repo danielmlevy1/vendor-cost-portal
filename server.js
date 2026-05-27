@@ -189,6 +189,77 @@ async function sendDailyDigest() {
     }
   }
 
+  // ── Internal digest: consolidated email to PC + prod_dev ──
+  // Sent in addition to the vendor-by-TC emails above. Lists ALL
+  // outstanding requests grouped by TC so internal stakeholders see
+  // the full queue without logging in. Skipped silently when no
+  // internal recipients exist.
+  try {
+    const internalRecipients = db.prepare(
+      "SELECT email, name FROM users WHERE role IN ('pc', 'prod_dev') AND email IS NOT NULL AND email != ''"
+    ).all();
+
+    if (!internalRecipients.length) {
+      console.log('[digest] No internal recipients (pc/prod_dev with email) — skipping internal digest.');
+    } else {
+      const todayMs = Date.now();
+      const daysOutstanding = ts => ts ? Math.floor((todayMs - new Date(ts).getTime()) / 86400000) : '—';
+
+      let intTextBody = `Outstanding fabric swatch requests across all vendors as of ${dateStr}.\n\n`;
+      let intHtmlRows = '';
+
+      for (const tc of Object.values(byTC)) {
+        intTextBody += `TC: ${tc.tcName}\n${'─'.repeat(40)}\n`;
+        intHtmlRows += `<tr><td colspan="4" style="background:#1e293b;color:#94a3b8;padding:8px 12px;font-size:0.8rem;letter-spacing:.06em;text-transform:uppercase">${tc.tcName}</td></tr>`;
+        tc.requests.forEach(r => {
+          const styles = Array.isArray(r.styleNumbers) ? r.styleNumbers.join(', ') : (r.styleNumbers || '—');
+          intTextBody += `  Style:        ${styles}\n  Fabric:       ${r.fabricCode || '—'} — ${r.fabricName || '—'}\n  Swatch Qty:   ${r.swatchQty || '—'}\n  Days Outstanding: ${daysOutstanding(r.requestedAt)}\n\n`;
+          intHtmlRows += `<tr>
+            <td style="padding:10px 12px;border-bottom:1px solid #1e293b;font-size:0.82rem">${styles}</td>
+            <td style="padding:10px 12px;border-bottom:1px solid #1e293b">${r.fabricCode || '—'} — ${r.fabricName || '—'}</td>
+            <td style="padding:10px 12px;border-bottom:1px solid #1e293b;text-align:center;font-weight:600">${r.swatchQty || '—'}</td>
+            <td style="padding:10px 12px;border-bottom:1px solid #1e293b;text-align:center">${daysOutstanding(r.requestedAt)}</td>
+          </tr>`;
+        });
+      }
+
+      const intHtml = `<!DOCTYPE html><html><body style="margin:0;padding:0;background:#0f172a;font-family:'Segoe UI',sans-serif;color:#e2e8f0">
+      <div style="max-width:680px;margin:0 auto;padding:32px 16px">
+        <div style="margin-bottom:24px">
+          <div style="font-size:1.4rem;font-weight:700;color:#fff">🧵 Outstanding Fabric Requests — Internal Digest</div>
+          <div style="color:#94a3b8;margin-top:4px">${dateStr}</div>
+        </div>
+        <p style="color:#94a3b8">Consolidated view of all outstanding fabric swatch requests across vendors. Each vendor received their own per-TC reminder simultaneously.</p>
+        <table width="100%" cellpadding="0" cellspacing="0" style="background:#1a2744;border-radius:8px;overflow:hidden;margin:24px 0">
+          <thead><tr style="background:#0f172a">
+            <th style="padding:10px 12px;text-align:left;font-size:0.75rem;color:#64748b;text-transform:uppercase;letter-spacing:.06em">Styles</th>
+            <th style="padding:10px 12px;text-align:left;font-size:0.75rem;color:#64748b;text-transform:uppercase;letter-spacing:.06em">Fabric</th>
+            <th style="padding:10px 12px;text-align:center;font-size:0.75rem;color:#64748b;text-transform:uppercase;letter-spacing:.06em">Swatch Qty</th>
+            <th style="padding:10px 12px;text-align:center;font-size:0.75rem;color:#64748b;text-transform:uppercase;letter-spacing:.06em">Days</th>
+          </tr></thead>
+          <tbody>${intHtmlRows}</tbody>
+        </table>
+        <p style="color:#64748b;font-size:0.8rem">— ${COMPANY_NAME}</p>
+      </div></body></html>`;
+
+      const toList = internalRecipients.map(u => u.email).join(', ');
+      try {
+        await transporter.sendMail({
+          from:    `"${COMPANY_NAME}" <${FROM_EMAIL}>`,
+          to:      toList,
+          subject: `[VCP] Outstanding Fabric Requests — Internal Digest (${dateStr})`,
+          text:    intTextBody,
+          html:    intHtml,
+        });
+        console.log(`[digest] Internal digest sent to ${internalRecipients.length} recipient(s)`);
+      } catch (err) {
+        console.error('[digest] Failed to send internal digest:', err.message);
+      }
+    }
+  } catch (err) {
+    console.error('[digest] Internal digest error:', err);
+  }
+
   return { sent: sentCount, total: Object.keys(byTC).length };
 }
 
