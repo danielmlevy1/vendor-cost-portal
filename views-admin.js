@@ -6714,6 +6714,7 @@ const AdminViews = (() => {
             ${f.status === 'rejected' ? `
               <button class="btn btn-secondary btn-sm" onclick="App.reviewFactoryAgain('${esc(f.id)}')">Re-open</button>
             ` : ''}
+            <button class="btn btn-secondary btn-sm" onclick="App.openFactoryFormAdmin('${esc(f.id)}')" title="Edit factory details">✏ Edit</button>
             <button class="btn btn-danger btn-sm" onclick="App.deleteFactory('${esc(f.id)}')" title="Delete">🗑</button>
           </div>` : ''}
         </div>
